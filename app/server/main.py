@@ -7,7 +7,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import agent, trace
+from . import agent, live, trace
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
 
@@ -28,6 +28,11 @@ async def panel() -> FileResponse:
 @app.get("/trace")
 async def get_trace() -> list[dict]:
     return trace.recent()
+
+
+@app.websocket("/live")
+async def live_ws(socket: WebSocket) -> None:
+    await live.run(socket)
 
 
 @app.websocket("/ws")

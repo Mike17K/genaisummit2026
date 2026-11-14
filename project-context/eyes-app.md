@@ -91,3 +91,9 @@ timeline
 1. **`app/server/agent.py`:** Implement the real Google Gemini Flash API call passing the latest JPEG frame and transcribed voice text.
 2. **Oumi Iris Integration:** Add parallel decision call to score `is_image_clear` and `is_safe_to_answer`.
 3. **Tunnel Setup:** Run `cloudflared tunnel --url http://localhost:8000` so your Android phone opens `https://<tunnel-url>` with full camera/mic permissions enabled.
+
+## Update: realtime voice (Gemini Live)
+- Phone test showed browser speech recognition sent nothing, and the browser voice sounded poor. Replaced by the **Gemini Live API** (`gemini-2.5-flash-native-audio-latest`, v1beta endpoint): mic audio (PCM16 16 kHz) and 1 fps JPEG frames go to `/live`; the model answers with natural speech (PCM16 24 kHz), handles interruptions and calls tools by voice. The Live and TTS models only exist on `v1beta` for our key; the default `v1` endpoint rejects them.
+- Other models verified on v1beta: TTS `gemini-3.8-flash-lite-tts` (~1.7-2.2 s), `gemini-3.8-flash-tts` (~2.6-2.8 s), `gemini-2.5-flash-preview-tts`, `gemini-3.1-flash-tts-preview`; `gemini-3.5-transcribe-live` for transcription.
+- Tested without a phone using synthesized speech: question heard and transcribed, picture read aloud, `call_contact` demo tool triggered by voice; first audio about 1.5 s after the end of speech (VAD silence set to 500 ms, `EYES_SILENCE_MS`).
+- Not yet tested on a real phone with the new Live client. Risks: echo (speaker into mic), iPhone Safari audio, 2-minute audio+video session limit (sliding-window compression enabled), connection drops outdoors.
