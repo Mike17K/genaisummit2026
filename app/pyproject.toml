@@ -7,5 +7,6 @@ dependencies = [
     "fal-client>=1.0.3",
     "fastapi>=0.115",
     "google-genai>=3.3.0",
+    "pillow>=13.0.0",
     "uvicorn[standard]>=0.30",
 ]

@@ -90,3 +90,8 @@ FAL_TTS_MODEL = os.environ.get("FAL_TTS_MODEL", "fal-ai/elevenlabs/tts/eleven-v3
 FAL_TTS_VOICE = os.environ.get("FAL_TTS_VOICE", "Rachel")   # e.g. Aria, Roger, Sarah, Laura, Charlie, George
 # Which service speaks the alerts: "gemini" (default) or "fal" (ElevenLabs v3 through fal; billed per character).
 TTS_PROVIDER = os.environ.get("EYES_TTS_PROVIDER", "gemini")
+
+# One composite image instead of several: the watcher gets COMPOSE_FRAMES frames tiled into a single picture (server/compose.py).
+WATCH_COMPOSE = os.environ.get("EYES_WATCH_COMPOSE", "0") == "1"
+COMPOSE_FRAMES = int(os.environ.get("EYES_COMPOSE_FRAMES", "5"))
+COMPOSE_TILE_W = int(os.environ.get("EYES_COMPOSE_TILE_W", "320"))

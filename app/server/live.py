@@ -336,7 +336,7 @@ async def _watch_once(state: State, now: float) -> None:
             state.attention = watch.Attention()
             await _announce_rate(state, "alerts off")
         return
-    frames = watch.select_frames(state.frames, state.attention.spacing, now, n=config.WATCH_FRAMES)
+    frames = watch.select_frames(state.frames, state.attention.spacing, now, n=config.COMPOSE_FRAMES if config.WATCH_COMPOSE else config.WATCH_FRAMES)
     if len(frames) < 2 or frames[-1][0] <= state.last_judged_frame:
         return  # nothing new to look at
     global _watch_slots

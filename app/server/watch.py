@@ -5,6 +5,7 @@ needs to be told something. A strict policy then decides whether the model's wis
 (confidence, confirmation, cooldowns, de-duplication, rate limit, never talking over the user).
 The model is told to stay silent by default: silence is the normal, correct answer.
 """
+import asyncio
 import re
 import time
 from collections import deque
@@ -13,7 +14,7 @@ from typing import Literal
 from google.genai import types
 from pydantic import BaseModel
 
-from . import agent, config, phrases
+from . import agent, compose, config, phrases
 
 
 class WatchDecision(BaseModel):
@@ -27,7 +28,7 @@ class WatchDecision(BaseModel):
     hazard_type: Literal["moving", "static"] = "static"
 
 
-WATCH_SYSTEM = """You are the silent safety watcher for a blind person who is walking or standing somewhere. A phone camera on them gives you the last 3 frames, oldest first, about one second apart. You only decide whether to interrupt them. Silence is the normal answer.
+WATCH_SYSTEM = """You are the silent safety watcher for a blind person who is walking or standing somewhere. A phone camera on them gives you the last few frames, oldest first, about one second apart. You only decide whether to interrupt them. Silence is the normal answer.
 
 Interrupt (notify=true) ONLY when, comparing the frames, there is a real, current danger or obstacle that the person probably does not know about:
 - something in or next to their path that they are about to reach: steps up or down, a curb, a hole or drop-off, a pole, wall, glass door, parked vehicle, low branch or sign, an open door or cabinet at head height, a wet floor
@@ -55,9 +56,16 @@ def _age(now: float, t: float) -> str:
     return f"{now - t:.0f}s ago"
 
 
-def build_contents(frames: list[tuple[float, bytes]], recent: list[tuple[float, str, str]], lang: str, sensors: str = "") -> list:
+def build_contents(frames: list[tuple[float, bytes]], recent: list[tuple[float, str, str]], lang: str, sensors: str = "", sheet: bytes | None = None) -> list:
     now = time.time()
     parts: list = []
+    if config.WATCH_COMPOSE and len(frames) > 1:
+        parts.append(types.Part.from_text(text=(
+            f"One image holds the last {len(frames)} camera frames as a contact sheet, oldest first (tile 1), newest last "
+            f"(tile {len(frames)}, marked NEW), left to right then top to bottom, about one second apart. "
+            "Compare the tiles in order to see what is moving. Judge the situation as of the NEWEST tile.")))
+        parts.append(types.Part.from_bytes(data=sheet or compose.compose(frames, now, config.COMPOSE_TILE_W), mime_type="image/jpeg"))
+        frames = []
     labels = ["oldest", "middle", "newest"]
     labels = labels[-len(frames):] if len(frames) < 3 else labels
     for label, (t, jpeg) in zip(labels, frames):
@@ -95,7 +103,8 @@ def _generation_config(thinking) -> types.GenerateContentConfig:
 
 async def judge(frames: list[tuple[float, bytes]], recent: list[tuple[float, str, str]], lang: str, sensors: str = "") -> tuple[WatchDecision, dict]:
     global _thinking_ok
-    contents = build_contents(frames, recent, lang, sensors)
+    sheet = await asyncio.to_thread(compose.compose, frames, time.time(), config.COMPOSE_TILE_W) if config.WATCH_COMPOSE and len(frames) > 1 else None
+    contents = build_contents(frames, recent, lang, sensors, sheet)
     client = agent._get_client()
     thinking = _thinking_config()
     try:
