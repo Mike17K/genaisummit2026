@@ -1,19 +1,27 @@
 """FastAPI server: serves the page and one WebSocket for frames, voice text and replies."""
 import asyncio
 import base64
+from contextlib import asynccontextmanager
 from pathlib import Path
+import uuid
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-import uuid
-
-from . import agent, live, tools, trace
+from . import agent, config, live, speak, tools, trace
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
 
-app = FastAPI(title="VoxEye")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    if config.API_KEY:
+        asyncio.create_task(speak.warm_common())
+    yield
+
+
+app = FastAPI(title="VoxEye", lifespan=lifespan)
 
 
 @app.get("/")

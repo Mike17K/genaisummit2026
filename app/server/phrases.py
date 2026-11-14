@@ -1,11 +1,9 @@
-"""Fixed alert phrases, in English and Greek.
+"""Fixed alert phrases, in English and Greek, including 1-5 danger level phrases.
 
-Why: an alert is only instant if its voice is already made. Common alerts are spoken ahead of time (speak.warm_common) and
-the watcher is told to prefer these exact words, so most alerts play with no wait. Alerts that come from the phone's own
-on-device detector are built from these phrases, so they are always ready.
+Common alerts and calibrated danger-level commands are pre-synthesized at startup (speak.warm_common)
+so urgent warnings play with zero synthesis delay.
 """
 
-# group -> (English, Greek). Used for alerts from the on-device detector (always "ahead": only things in the path alert).
 LOCAL = {
     "vehicle": ("Vehicle ahead, stop!", "Όχημα μπροστά, σταμάτα!"),
     "bike": ("Bike ahead, stop!", "Ποδήλατο μπροστά, σταμάτα!"),
@@ -14,7 +12,24 @@ LOCAL = {
     "obstacle": ("Obstacle ahead, stop.", "Εμπόδιο μπροστά, σταμάτα."),
 }
 
-# Phrases the watcher is encouraged to reuse word for word (so their voices are already made).
+# Calibrated short commands for danger_level 1..5 (minimal tokens, clear escalation of urgency).
+DANGER_LEVEL = {
+    "English": {
+        1: "Careful ahead.",
+        2: "Slow down.",
+        3: "Slow down now.",
+        4: "Stop!",
+        5: "Stop now!",
+    },
+    "Greek": {
+        1: "Προσοχή μπροστά.",
+        2: "Πιο αργά.",
+        3: "Επιβράδυνε τώρα.",
+        4: "Σταμάτα!",
+        5: "Σταμάτα τώρα!",
+    },
+}
+
 WATCHER = {
     "English": [
         "Car ahead, stop!", "Car from the right, stop.", "Car from the left, stop.", "Vehicle approaching, stop!",
@@ -31,7 +46,6 @@ WATCHER = {
     ],
 }
 
-# COCO labels from the on-device detector -> group
 _GROUP = {
     "car": "vehicle", "truck": "vehicle", "bus": "vehicle", "motorcycle": "vehicle", "train": "vehicle",
     "bicycle": "bike",
@@ -51,14 +65,24 @@ def local_alert(label: str, lang: str = "English") -> tuple[str, str]:
     return f"{group}-ahead", greek if lang == "Greek" else english
 
 
+def danger_phrase(level: int, lang: str = "English") -> str:
+    """Return the calibrated warning phrase for danger level 1..5."""
+    clamped = max(1, min(5, int(level)))
+    bank = DANGER_LEVEL.get(lang) or DANGER_LEVEL["English"]
+    return bank[clamped]
+
+
 def all_phrases() -> list[str]:
-    """Everything worth making ahead of time."""
-    out = [p for pair in LOCAL.values() for p in pair]
-    for phrases in WATCHER.values():
-        out.extend(phrases)
-    return out
+    """Every unique phrase worth pre-synthesizing, ordered with active 1-5 danger phrases first."""
+    out: list[str] = []
+    for level_map in DANGER_LEVEL.values():
+        out.extend(level_map.values())
+    out.extend(p for pair in LOCAL.values() for p in pair)
+    for items in WATCHER.values():
+        out.extend(items)
+    return list(dict.fromkeys(out))
 
 
 def prefer_list(lang: str) -> str:
-    phrases = WATCHER.get(lang) or WATCHER["English"]
-    return " | ".join(phrases)
+    items = WATCHER.get(lang) or WATCHER["English"]
+    return " | ".join(items)

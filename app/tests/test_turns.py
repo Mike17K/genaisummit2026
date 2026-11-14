@@ -84,10 +84,10 @@ def run():
     log = run_script(t, [voice()] * 12 + [silence()] * 7 + [voice()] * 12 + [silence()] * 20)   # 0.6 s pause
     check("a 0.6 s pause inside a sentence stays one turn", all_kinds(log).count("start") == 1 and all_kinds(log).count("end") == 1, all_kinds(log).count("start"))
 
-    # the old failure: a 300 ms setting used to split speech; now it is floored
-    t = TurnTracker(end_wait=0.3)
-    log = run_script(t, [voice()] * 15 + [silence()] * 6 + [voice()] * 15 + [silence()] * 20)   # 0.5 s pause
-    check("a 300 ms setting no longer splits a sentence at a 0.5 s pause", all_kinds(log).count("start") == 1, all_kinds(log).count("start"))
+    # the old failure: a sub-floor setting used to split speech; now it is floored at 400 ms
+    t = TurnTracker(end_wait=0.2)
+    log = run_script(t, [voice()] * 15 + [silence()] * 4 + [voice()] * 15 + [silence()] * 20)   # 0.34 s pause (< 400 ms floor)
+    check("a 200 ms setting is floored to 400 ms and keeps a 0.34 s pause as one turn", all_kinds(log).count("start") == 1, all_kinds(log).count("start"))
 
     # ---- barge-in while the assistant is speaking
     t = TurnTracker(end_wait=0.9)

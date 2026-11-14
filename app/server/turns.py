@@ -14,7 +14,7 @@ cancelled each other's answers):
 from dataclasses import dataclass, field
 
 BYTES_PER_S = 32000          # PCM16 mono 16 kHz
-END_WAIT_FLOOR_S = 0.7
+END_WAIT_FLOOR_S = 0.4
 BARGE_IN_S = 0.45
 SHORT_S = 1.0
 SHORT_EXTRA_S = 0.4

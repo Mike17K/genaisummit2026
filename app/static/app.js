@@ -1,9 +1,5 @@
-// Realtime voice: mic (PCM16 16 kHz) -> /live -> Gemini Live -> speech (PCM16 24 kHz) back.
-// Gemini detects when you start and stop talking, and you can interrupt it at any time.
-// Add ?debug=0 to hide the debug panel.
-// ---- app scope ----
-// Everything below lives inside one function so none of it becomes a page global. (MediaPipe's loader calls any global
-// named `dbg` as a function, and this file's debug state used to be called that.)
+// Realtime voice: mic (PCM16 16 kHz) -> /live -> Gemini Live -> speech (PCM16 24 kHz) back,
+// running in parallel with the stateless 3-frame safety watcher.
 (function () {
 "use strict";
 const go = document.getElementById("go");
@@ -15,11 +11,10 @@ const canvas = document.getElementById("canvas");
 
 const IN_RATE = 16000;
 const OUT_RATE = 24000;
-// Noise gate (static/micgate.js): audio below this level is not treated as speech, so room noise and speaker echo are
-// not sent as voice. A turn opens only after about 250 ms of sustained sound. Change the level on the page
-// (gate - / gate +), with ?gate=0.05, or it is remembered from last time.
+const SILENCE_WAIT_MS = 400; // Fixed 400 ms wait after user stops talking
 const GATE_DEFAULT = 0.03;
-const ECHO_FACTOR = 2.5;   // while the assistant is speaking the gate is this many times higher: only clearly louder speech cuts in
+const ECHO_FACTOR = 2.5;
+
 function loadGate() {
   const q = parseFloat(new URLSearchParams(location.search).get("gate"));
   if (q > 0) return q;
@@ -29,17 +24,14 @@ function loadGate() {
 let gate = loadGate();
 const micGate = new MicGate({ onsetMs: 250, hangMs: 500, rate: IN_RATE });
 
-// Phone motion sensors (gyro, accelerometer) and the on-device detector (static/looming.js, static/spatial.js).
-const imu = new Looming.ImuState();
+const imu = new Looming.ImuState({ panDegS: 160, stableDegS: 110 });
 window.addEventListener("devicemotion", (e) => imu.handleMotion(e, performance.now()));
 window.addEventListener("deviceorientation", (e) => imu.handleOrientation(e));
 let spatial = null;
-// The on-device detector is optional (add ?ondevice=1 to the address): it uses the phone's CPU/GPU and downloads a few MB, and the cloud
-// watcher is the main path. Turn it on to try faster warnings for approaching vehicles, bikes and people.
 const ON_DEVICE = new URLSearchParams(location.search).get("ondevice") === "1";
-let alertMuteUntil = 0;   // for a moment after an alert the gate is much higher, so the alert's own beep and voice cannot leak into the mic
+let alertMuteUntil = 0;
+let assistantEnabled = true;
 
-// iPhones ask for motion-sensor permission, and only inside a tap handler before any await.
 function requestSensorPermissions() {
   try {
     if (typeof DeviceMotionEvent !== "undefined" && typeof DeviceMotionEvent.requestPermission === "function") DeviceMotionEvent.requestPermission().catch(() => {});
@@ -47,36 +39,24 @@ function requestSensorPermissions() {
   } catch (_) {}
 }
 
-// The phone speaks an urgent alert itself (no network wait) when the server has not got the better voice ready yet.
-function speakLocal(text) {
+// Expressive local TTS calibrated to danger_level 1..5
+function speakLocal(text, dangerLevel = 0) {
   try {
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     u.lang = /[\u0370-\u03ff]/.test(text) ? "el-GR" : "en-US";
-    u.rate = 1.15;
+    const lvl = Math.max(1, Math.min(5, +dangerLevel || 3));
+    u.rate = [1.0, 1.05, 1.12, 1.2, 1.3, 1.38][lvl];
+    u.pitch = [1.0, 1.0, 1.05, 1.12, 1.22, 1.32][lvl];
     speechSynthesis.speak(u);
   } catch (_) {}
 }
-
-// How long the assistant waits after you stop talking before it answers (applies the next time you tap Start).
-// Counted from the end of your voice. Below about 700 ms a natural pause splits your sentence into pieces that cancel
-// each other's answers, so that is the minimum (the server enforces it too). Stored under a new key so an old 300 ms is dropped.
-const WAIT_MIN_MS = 700;
-const WAIT_DEFAULT_MS = 900;
-function loadWait() {
-  const q = parseInt(new URLSearchParams(location.search).get("silence"), 10);
-  if (q > 0) return Math.max(WAIT_MIN_MS, q);
-  try { const v = parseInt(localStorage.getItem("eyesWait2"), 10); if (v >= WAIT_MIN_MS) return v; } catch (_) {}
-  return WAIT_DEFAULT_MS;
-}
-let waitMs = loadWait();
 
 let socket, stream, ctx, processor, frameTimer, wakeLock, debugTimer;
 let running = false;
 let nextPlayTime = 0;
 const playing = new Set();
 
-// ---- debug state ----------------------------------------------------------
 const dbg = {
   state: "idle", camera: "-", mic: "-", audioCtx: "-", ws: "-", gemini: "-",
   micLevel: 0, micPeak: 0, sentKB: 0, sentFrames: 0, recvKB: 0, recvChunks: 0,
@@ -123,11 +103,11 @@ function renderDebug() {
     ["audio ctx", cls(dbg.audioCtx === "running" ? true : dbg.audioCtx === "-" ? null : false, dbg.audioCtx)],
     ["session id", esc(dbg.conn) + "  (filter the server trace with /panel?conn=" + esc(dbg.conn) + ")"],
     ["websocket", cls(wsState === "open" ? true : wsState === "-" ? null : wsState === "connecting" ? null : false, wsState) + (dbg.ws !== "-" ? "  " + esc(dbg.ws) : "")],
-    ["gemini", cls(dbg.gemini === "ready" ? true : dbg.gemini === "-" ? null : false, esc(dbg.gemini))],
+    ["gemini", cls(dbg.gemini === "ready" ? true : dbg.gemini === "-" ? null : false, esc(dbg.gemini)) + " (assistant: " + (assistantEnabled ? "on" : "off") + ")"],
     ["received", `${dbg.recvKB.toFixed(0)} KB in ${dbg.recvChunks} chunks, last audio ${sinceAudio}`],
     ["you said", esc(dbg.lastHeard || "-")],
     ["eyes said", esc(dbg.lastReply || "-")],
-    ["on-device", esc(spatial ? spatial.summary() : (ON_DEVICE ? "waiting to start" : "off (add ?ondevice=1 to the address to try it)"))],
+    ["on-device", esc(spatial ? spatial.summary() : (ON_DEVICE ? "waiting to start" : "off (add ?ondevice=1 to try it)"))],
     ["phone motion", esc(imu.panning ? "panning" : imu.walking === true ? "walking" : imu.walking === false ? "stationary" : "movement unknown") + `  gyro ${imu.angularSpeed} deg/s, pitch ${imu.pitchDeg ?? "?"}`],
     ["watcher", esc(dbg.watch) + "  (mode: " + esc(dbg.alertMode) + ")"],
     ["last alert", (dbg.alerts ? dbg.alerts + " so far. " : "") + esc(dbg.lastAlert)],
@@ -139,16 +119,18 @@ function renderDebug() {
 }
 
 function updateLiveState() {
-  // Derive what is happening from the audio flow, so the badge matches reality.
   if (!running) return;
   const now = Date.now();
-  if (dbg.voiceOpen) dbg.lastSpeechAt = now;
+  if (dbg.voiceOpen && assistantEnabled) dbg.lastSpeechAt = now;
   const speaking = playing.size > 0 || (dbg.lastModelAudioAt && now - dbg.lastModelAudioAt < 700);
   let next = "listening";
   if (speaking) next = "speaking";
-  else if (dbg.voiceOpen) next = "hearing";
-  else if (dbg.lastSpeechAt && now - dbg.lastSpeechAt < 6000 && dbg.lastSpeechAt > dbg.lastModelAudioAt) next = "thinking";
-  if (next !== dbg.state) setState(next, { listening: "Listening. Ask me anything.", hearing: "Hearing you...", thinking: "Thinking...", speaking: "Speaking..." }[next]);
+  else if (dbg.voiceOpen && assistantEnabled) next = "hearing";
+  else if (assistantEnabled && dbg.lastSpeechAt && now - dbg.lastSpeechAt < 6000 && dbg.lastSpeechAt > dbg.lastModelAudioAt) next = "thinking";
+  const label = !assistantEnabled && next === "listening"
+    ? "Safety watcher active (assistant off)."
+    : { listening: "Listening. Ask me anything.", hearing: "Hearing you...", thinking: "Thinking...", speaking: "Speaking..." }[next];
+  if (next !== dbg.state) setState(next, label);
 }
 
 function fail(where, err) {
@@ -161,7 +143,6 @@ function fail(where, err) {
 window.addEventListener("error", (e) => fail("page", e.error || e.message));
 window.addEventListener("unhandledrejection", (e) => fail("promise", e.reason));
 
-// ---- sounds ---------------------------------------------------------------
 function chime(freq = 880) {
   if (!ctx) return;
   const o = ctx.createOscillator(), g = ctx.createGain();
@@ -170,20 +151,27 @@ function chime(freq = 880) {
   o.start(); o.stop(ctx.currentTime + 0.12);
 }
 
-// Alert cue: short and distinct, plus a buzz. Played the moment an alert is approved, before the spoken words arrive.
-function alertCue(urgency) {
+// Danger-level calibrated alert cue + haptic buzz (levels 1..5).
+function alertCue(urgency, dangerLevel = 0) {
   if (!ctx) return;
-  const tones = urgency === "high" ? [[990, 0, 0.09], [990, 0.13, 0.09]] : [[660, 0, 0.07]];
+  const lvl = +dangerLevel || (urgency === "high" ? 4 : 2);
+  let tones;
+  if (lvl >= 5) tones = [[1240, 0, 0.08], [1240, 0.10, 0.08], [1240, 0.20, 0.10]];
+  else if (lvl >= 4) tones = [[1040, 0, 0.09], [1040, 0.12, 0.09]];
+  else if (lvl >= 3) tones = [[880, 0, 0.08], [880, 0.12, 0.08]];
+  else tones = [[660, 0, 0.07]];
+
   for (const [freq, at, len] of tones) {
     const o = ctx.createOscillator(), g = ctx.createGain();
-    o.frequency.value = freq; g.gain.value = 0.12;
+    o.frequency.value = freq; g.gain.value = lvl >= 4 ? 0.16 : 0.11;
     o.connect(g).connect(ctx.destination);
     o.start(ctx.currentTime + at); o.stop(ctx.currentTime + at + len);
   }
-  try { navigator.vibrate?.(urgency === "high" ? [90, 50, 90] : [60]); } catch (_) {}
+  try {
+    navigator.vibrate?.(lvl >= 5 ? [120, 40, 120, 40, 140] : lvl >= 3 ? [90, 50, 90] : [60]);
+  } catch (_) {}
 }
 
-// ---- playback -------------------------------------------------------------
 function playPcm(arrayBuffer) {
   dbg.recvKB += arrayBuffer.byteLength / 1024;
   dbg.recvChunks++;
@@ -203,12 +191,12 @@ function playPcm(arrayBuffer) {
 }
 
 function stopPlayback() {
+  try { speechSynthesis.cancel(); } catch (_) {}
   for (const s of playing) { try { s.stop(); } catch (_) {} }
   playing.clear();
   nextPlayTime = 0;
 }
 
-// ---- microphone -----------------------------------------------------------
 function downsampleToInt16(float32, fromRate) {
   const ratio = fromRate / IN_RATE;
   const n = Math.floor(float32.length / ratio);
@@ -227,7 +215,6 @@ function effectiveGate(now) {
   return assistantSpeaking ? gate * ECHO_FACTOR : gate;
 }
 
-// Every audio message is 1 flag byte (1 = voice, 0 = quiet) followed by PCM16 mono 16 kHz.
 function sendAudio(pcm, flag) {
   const out = new Uint8Array(1 + pcm.byteLength);
   out[0] = flag;
@@ -246,24 +233,27 @@ function startMic() {
     for (let i = 0; i < input.length; i++) sum += input[i] * input[i];
     dbg.micLevel = Math.sqrt(sum / input.length);
     dbg.micPeak = Math.max(dbg.micPeak * 0.995, dbg.micLevel);
-    if (!socket || socket.readyState !== 1) return;
+    if (!socket || socket.readyState !== 1 || !assistantEnabled) {
+      dbg.voiceOpen = false;
+      return;
+    }
     const pcm = downsampleToInt16(input, ctx.sampleRate);
     const now = Date.now();
     dbg.effGate = effectiveGate(now);
     const wasOpen = micGate.open;
-    for (const [chunk, flag] of micGate.process(pcm, dbg.micLevel, now, dbg.effGate)) sendAudio(chunk, flag);
+    for (const [chunk, flag] of micGate.process(pcm, dbg.micLevel, now, dbg.effGate)) {
+      sendAudio(chunk, flag);
+    }
     dbg.voiceOpen = micGate.open;
-    if (!wasOpen && micGate.open) setTimeout(() => sendFrame(true), 0);   // not inside the audio callback
+    if (!wasOpen && micGate.open) setTimeout(() => sendFrame(true), 0);
   };
-  const mute = ctx.createGain(); mute.gain.value = 0; // keeps the processor running without echoing the mic
+  const mute = ctx.createGain(); mute.gain.value = 0;
   source.connect(processor); processor.connect(mute); mute.connect(ctx.destination);
   const track = stream.getAudioTracks()[0];
   dbg.mic = "ok";
   note(`mic: ${track ? track.label || "default" : "no track"} @ ${ctx.sampleRate} Hz`);
 }
 
-// ---- camera ---------------------------------------------------------------
-// How often camera images are sent. The server raises it when the AI watcher wants a closer look and lowers it again.
 function setFrameRate(fps) {
   fps = Math.min(5, Math.max(0.5, +fps || 1));
   dbg.fps = fps;
@@ -271,7 +261,6 @@ function setFrameRate(fps) {
   frameTimer = setInterval(sendFrame, 1000 / fps);
 }
 
-// A tiny 16x16 greyscale copy of each picture, to tell the server how much the scene changed (so it can skip looks when nothing moves).
 const motionCanvas = document.createElement("canvas");
 motionCanvas.width = motionCanvas.height = 16;
 const motionCtx = motionCanvas.getContext("2d", { willReadFrequently: true });
@@ -288,36 +277,32 @@ function frameMotion() {
   } catch (_) { return null; }
 }
 
-// Normal frames are 512 px wide (enough for the safety watcher, and lighter to send); the fresh frame taken when you start
-// talking is 640 px, since your question may be about reading something.
 function sendFrame(fresh = false) {
   if (!cam.videoWidth || !socket || socket.readyState !== 1) return;
-  const w = fresh === true ? 640 : 512;
+  const w = fresh === true ? 640 : 384;
   canvas.width = w;
   canvas.height = Math.round(w * cam.videoHeight / cam.videoWidth);
   canvas.getContext("2d").drawImage(cam, 0, 0, canvas.width, canvas.height);
-  const data = canvas.toDataURL("image/jpeg", fresh === true ? 0.6 : 0.55).split(",")[1];
+  const data = canvas.toDataURL("image/jpeg", fresh === true ? 0.6 : 0.5).split(",")[1];
   const motion = frameMotion();
   const msg = { type: "frame", data, imu: imu.snapshot() };
   if (motion !== null) msg.motion = Number(motion.toFixed(4));
-  if (fresh === true) msg.fresh = true;   // a picture taken the moment you start talking: the voice model uses it at once
+  if (fresh === true) msg.fresh = true;
   socket.send(JSON.stringify(msg));
   dbg.sentFrames++;
   const t = Date.now();
   dbg.frameStamps.push(t);
-  while (dbg.frameStamps.length && t - dbg.frameStamps[0] > 3000) dbg.frameStamps.shift();   // measured rate over 3 s
+  while (dbg.frameStamps.length && t - dbg.frameStamps[0] > 3000) dbg.frameStamps.shift();
 }
 
-// ---- lifecycle ------------------------------------------------------------
 async function start() {
-  requestSensorPermissions();   // must be first: iOS only allows it synchronously inside the tap
-  try { speechSynthesis.speak(new SpeechSynthesisUtterance("")); } catch (_) {}   // unlocks the phone's own voice for urgent alerts
+  requestSensorPermissions();
+  try { speechSynthesis.speak(new SpeechSynthesisUtterance("")); } catch (_) {}
   Object.assign(dbg, { error: "", camera: "-", mic: "-", ws: "-", gemini: "-", sentKB: 0, sentFrames: 0, recvKB: 0,
     recvChunks: 0, lastHeard: "", lastReply: "", lastEvent: "", lastModelAudioAt: 0, lastSpeechAt: 0, micPeak: 0,
     startedAt: Date.now() });
   setState("starting", "Starting...");
 
-  // Must happen inside the tap so phones allow audio.
   ctx = new (window.AudioContext || window.webkitAudioContext)();
   await ctx.resume();
   dbg.audioCtx = ctx.state;
@@ -340,8 +325,8 @@ async function start() {
 
   setState("connecting", "Connecting to the assistant...");
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  socket = new WebSocket(`${proto}://${location.host}/live?silence=${waitMs}${"speechSynthesis" in window ? "" : "&client_tts=0"}`);
-  note(`wait after you stop talking: ${waitMs} ms`);
+  socket = new WebSocket(`${proto}://${location.host}/live?silence=${SILENCE_WAIT_MS}${"speechSynthesis" in window ? "" : "&client_tts=0"}`);
+  note(`wait after you stop talking: ${SILENCE_WAIT_MS} ms`);
   socket.binaryType = "arraybuffer";
   socket.onmessage = (e) => {
     if (e.data instanceof ArrayBuffer) { playPcm(e.data); return; }
@@ -350,25 +335,29 @@ async function start() {
     if (m.type === "ready") {
       dbg.gemini = "ready"; dbg.conn = m.conn || "-"; chime(); note("gemini session ready, id " + dbg.conn);
       socket.send(JSON.stringify({ type: "mode", mode: dbg.alertMode }));
+      socket.send(JSON.stringify({ type: "assistant", enabled: assistantEnabled }));
     }
-    else if (m.type === "interrupted") { stopPlayback(); note("interrupted by you"); }
+    else if (m.type === "interrupted") { stopPlayback(); note("interrupted"); }
     else if (m.type === "heard") { dbg.lastHeard = m.text; note("heard: " + m.text); }
     else if (m.type === "reply") { if (m.text) { dbg.lastReply = m.text; note("reply: " + m.text); } }
     else if (m.type === "tool") note("tool call: " + m.name + " " + JSON.stringify(m.args || {}));
     else if (m.type === "error") { dbg.gemini = "error"; fail("server", m.text); chime(330); stop(false); }
     else if (m.type === "go_away") note("server says the session will end soon");
     else if (m.type === "alert") {
-      stopPlayback();                // whatever was being said is cancelled at once
-      alertCue(m.urgency);
+      stopPlayback();
+      alertCue(m.urgency, m.danger_level);
       alertMuteUntil = Date.now() + 1800;
-      if (m.client_voice) setTimeout(() => speakLocal(m.text), 120);   // just after the beep
-      dbg.alerts++; dbg.lastAlert = `${m.urgency.toUpperCase()}${m.source === "local" ? " (on-device)" : ""}: ${m.text}${m.client_voice ? " [phone voice]" : m.voice_cached ? " [cached voice]" : ""}`;
-      note(`ALERT (${m.urgency}): ${m.text}`);
+      if (m.client_voice) setTimeout(() => speakLocal(m.text, m.danger_level), 110);
+      const lvlTag = m.danger_level ? `L${m.danger_level} ` : "";
+      dbg.alerts++;
+      dbg.lastAlert = `${lvlTag}${m.urgency.toUpperCase()}${m.source === "local" ? " (on-device)" : ""}: ${m.text}${m.client_voice ? " [phone voice]" : m.voice_cached ? " [cached voice]" : ""}`;
+      note(`ALERT (${lvlTag}${m.urgency}): ${m.text}`);
     }
     else if (m.type === "watch") {
-      dbg.watch = `${m.outcome}${m.key ? " [" + m.key + "]" : ""} conf ${(+m.confidence).toFixed(2)} ${m.ms} ms`;
+      const lvlTag = m.danger_level ? ` L${m.danger_level}` : "";
+      dbg.watch = `${m.outcome}${lvlTag}${m.key ? " [" + m.key + "]" : ""} conf ${(+m.confidence).toFixed(2)} ${m.ms} ms`;
     }
-    else if (m.type === "speak_text") { try { speechSynthesis.speak(new SpeechSynthesisUtterance(m.text)); } catch (_) {} note("fallback voice: " + m.text); }
+    else if (m.type === "speak_text") { speakLocal(m.text, m.danger_level); note("fallback voice: " + m.text); }
     else if (m.type === "rate") {
       setFrameRate(m.fps); dbg.attention = m.attention;
       note(`camera rate ${m.fps} fps (attention ${m.attention})`);
@@ -387,8 +376,7 @@ async function start() {
   });
 
   startMic();
-  setFrameRate(2);   // the server announces its own rate right after connecting
-  // The on-device detector loads in the background; everything else works without it.
+  setFrameRate(3);
   if (ON_DEVICE && typeof SpatialSentry === "function") spatial = new SpatialSentry({
     video: cam, imu,
     onLocalAlert: (h) => { if (socket && socket.readyState === 1) socket.send(JSON.stringify({ type: "local_alert", ...h })); note(`on-device: ${h.label} approaching (growth ${h.growth}/s)`); },
@@ -400,7 +388,7 @@ async function start() {
   dbg.startedAt = Date.now();
   go.setAttribute("aria-pressed", "true");
   go.textContent = "Listening. Tap to stop.";
-  setState("listening", "Waiting for the assistant...");
+  setState("listening", assistantEnabled ? "Listening. Ask me anything." : "Safety watcher active (assistant off).");
 }
 
 function stop(announce = true) {
@@ -445,16 +433,22 @@ modeBtn.addEventListener("click", () => {
   note("alert mode: " + dbg.alertMode);
 });
 
-const waitVal = document.getElementById("waitVal");
-function setWait(v) {
-  waitMs = Math.min(4000, Math.max(WAIT_MIN_MS, Math.round(v / 100) * 100));
-  waitVal.textContent = waitMs + " ms";
-  try { localStorage.setItem("eyesWait2", String(waitMs)); } catch (_) {}
-  note("wait set to " + waitMs + " ms" + (running ? " (applies next start)" : ""));
+const agentBtn = document.getElementById("agentBtn");
+try { assistantEnabled = localStorage.getItem("eyesAssistant") !== "0"; } catch (_) {}
+function syncAgentButton() {
+  agentBtn.textContent = `assistant: ${assistantEnabled ? "on" : "off"}`;
 }
-document.getElementById("waitDown").addEventListener("click", () => setWait(waitMs - 200));
-document.getElementById("waitUp").addEventListener("click", () => setWait(waitMs + 200));
-waitVal.textContent = waitMs + " ms";
+syncAgentButton();
+agentBtn.addEventListener("click", () => {
+  assistantEnabled = !assistantEnabled;
+  try { localStorage.setItem("eyesAssistant", assistantEnabled ? "1" : "0"); } catch (_) {}
+  syncAgentButton();
+  if (!assistantEnabled) stopPlayback();
+  if (socket && socket.readyState === 1) {
+    socket.send(JSON.stringify({ type: "assistant", enabled: assistantEnabled }));
+  }
+  note(`assistant is now ${assistantEnabled ? "on" : "off"}`);
+});
 
 go.addEventListener("click", () => {
   if (running) stop();

@@ -1,4 +1,8 @@
 .DS_Store
 *.DS_Store
 .worktrees/
+server.log
+server.pid
+app/debug_triggers/
+app/trigger_logs/
 

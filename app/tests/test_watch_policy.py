@@ -93,6 +93,38 @@ def run():
     check("same_hazard synonyms (stairs vs curb)", same_hazard("stairs-down", "curb-ahead"), True)
     check("same_hazard different objects, same direction", same_hazard("car-ahead", "pole-ahead"), False)
 
+    # danger_level 1..5 normalization, deduplication, escalation, and similarity latch
+    import io
+    from PIL import Image
+    from server.watch import apply_danger_level, is_similar_to_danger
+
+    p = AlertPolicy()
+    d2 = apply_danger_level(WatchDecision(danger_level=2, hazard_key="wall-ahead"))
+    check("danger_level 2 maps to Slow down.", (d2.message, d2.urgency), ("Slow down.", "low"))
+    check("danger_level 2 speaks immediately on first sighting", p.decide(d2, 0, 99), (True, "ok"))
+    p.record(d2, 0)
+    check("same danger_level 2 right after is deduplicated", p.decide(d2, 3, 99), (False, "duplicate"))
+    d4 = apply_danger_level(WatchDecision(danger_level=4, hazard_key="wall-ahead"))
+    check("danger_level 4 escalates to Stop! through duplicate gate", (d4.message, p.decide(d4, 3, 99)), ("Stop!", (True, "ok")))
+
+    def make_jpeg(color: int) -> bytes:
+        buf = io.BytesIO()
+        Image.new("RGB", (64, 64), (color, color, color)).save(buf, "JPEG")
+        return buf.getvalue()
+
+    j_dark, j_almost_dark, j_bright = make_jpeg(20), make_jpeg(25), make_jpeg(220)
+    check("nearly identical scene triggers similarity skip", is_similar_to_danger(j_dark, j_almost_dark)[0], True)
+    check("changed scene clears similarity skip", is_similar_to_danger(j_dark, j_bright)[0], False)
+
+    # clear_resolved resets dedupe after a confirmed clear path so a new wall ahead speaks immediately
+    p = AlertPolicy()
+    w1 = apply_danger_level(WatchDecision(danger_level=4, hazard_key="wall-ahead"))
+    check("first wall speaks", p.decide(w1, 10.0, 99), (True, "ok"))
+    p.record(w1, 10.0)
+    check("same wall before clear is held as duplicate", p.decide(w1, 12.0, 99), (False, "duplicate"))
+    p.clear_resolved()
+    check("new wall after clear path speaks after 1s high cooldown", p.decide(w1, 12.0, 99), (True, "ok"))
+
     print(f"\n{sum(results)}/{len(results)} passed")
     return all(results)
 

@@ -1,342 +1,179 @@
-"""Proactive safety watcher.
+"""Stateless 3-frame safety watcher optimized for minimal token & decoding latency.
 
-Every couple of seconds a fast vision model looks at the last 3 camera frames and DECIDES whether the user
-needs to be told something. A strict policy then decides whether the model's wish to speak is allowed through
-(confidence, confirmation, cooldowns, de-duplication, rate limit, never talking over the user).
-The model is told to stay silent by default: silence is the normal, correct answer.
+Inspects at most 3 recent frames tiled into a compact 224px-per-tile composite sheet using
+MINIMAL thinking, MEDIUM media resolution, and a tiny JSON output (~5 tokens when safe,
+~20 tokens on danger). Re-exports policy, attention, and similarity symbols.
 """
 import asyncio
+import json
 import re
 import time
-from collections import deque
-from typing import Literal
 
 from google.genai import types
-from pydantic import BaseModel
 
-from . import agent, compose, config, phrases
+from . import agent, compose, config
+from .attention import Attention, sensors_text, user_moving
+from .policy import AlertPolicy, WatchDecision, apply_danger_level, same_hazard
+from .similarity import image_difference, is_similar_to_danger, scene_is_static, select_frames
 
+__all__ = [
+    "AlertPolicy",
+    "Attention",
+    "WatchDecision",
+    "apply_danger_level",
+    "build_contents",
+    "image_difference",
+    "is_similar_to_danger",
+    "judge",
+    "same_hazard",
+    "scene_is_static",
+    "select_frames",
+    "sensors_text",
+    "user_moving",
+]
 
-class WatchDecision(BaseModel):
-    notify: bool = False
-    urgency: Literal["low", "high"] = "low"
-    confidence: float = 0.0
-    hazard_key: str = ""
-    message: str = ""
-    reason: str = ""
-    attention: Literal["normal", "elevated", "high"] = "normal"
-    hazard_type: Literal["moving", "static"] = "static"
-
-
-WATCH_SYSTEM = """You are the silent safety watcher for a blind person who is walking or standing somewhere. A phone camera on them gives you the last few frames, oldest first, about one second apart. You only decide whether to interrupt them. Silence is the normal answer.
-
-Interrupt (notify=true) ONLY when, comparing the frames, there is a real, current danger or obstacle that the person probably does not know about:
-- something in or next to their path that they are about to reach: steps up or down, a curb, a hole or drop-off, a pole, wall, glass door, parked vehicle, low branch or sign, an open door or cabinet at head height, a wet floor
-- something moving toward them that is getting closer or bigger across the frames: car, bike, scooter, person on a collision course, animal
-- a hot, sharp or dangerous object within reach
-- a clear threat
-
-Do NOT interrupt for: ordinary scenery, things far away or off to the side that are not coming toward them, static objects that are not in their path, things already announced recently (listed below), shops, signs, people just standing or walking away, vague unease, blurry or dark frames you cannot read (stay silent), or anything that you cannot see changing or blocking the way. If unsure, stay silent. A false alarm is worse than a missed minor detail, but never miss something that is clearly about to hurt them.
-
-urgency: "high" only if impact or a fall is likely within about 3 seconds (vehicle closing in, drop-off or step right ahead, something about to hit them). Otherwise "low".
-confidence: 0.0 to 1.0, how sure you are that this is real and relevant.
-hazard_key: 2 or 3 lowercase words joined by hyphens, object then direction, e.g. car-right, step-down, pole-ahead. Use the same key for the same hazard across checks.
-message: at most 8 words, spoken aloud, minimal, with a clock position or direction and distance when you can tell. Examples: "Car from the right, stop." "Step down, two steps ahead." "Pole at twelve o'clock." Write it in the language requested below. Do not describe the scene. When one of the "preferred phrases" given below fits, use those exact words (they are spoken instantly).
-The message also gets the phone's motion sensors when available: if the camera is panning fast, apparent motion is NOT real; if the user is stationary, static obstacles are not a danger until they move toward them.
-reason: one short sentence for the log.
-hazard_type: "moving" if the hazard itself is moving (vehicle, bike, person, animal); "static" if it is a fixed obstacle (step, pole, wall, door).
-attention: how closely to keep watching. It only controls how often you receive new images (it never speaks to the user).
-  "normal": nothing relevant is going on.
-  "elevated": something could become a danger soon even though no warning is needed yet: an object or person moving toward them, a road, crossing or driveway nearby, stairs or a drop coming up, a crowded or fast-changing scene, or you are unsure.
-  "high": a warning is justified right now, or you expect to need one within a couple of seconds.
-If notify is false, leave message and hazard_key empty."""
+WATCH_SYSTEM = """Fast stateless obstacle detector for a blind pedestrian.
+Input: up to 3 sequential camera tiles, oldest (1) to newest (NEW). Judge danger as of NEW.
+If path is clear/safe, output ONLY: {"lvl":0}
+If real obstacle or approaching hazard is in path, output compact JSON:
+{"lvl":1..5,"key":"wall-ahead","type":"static|moving","why":"<=6 words"}
+Levels:
+5 = immediate impact (<1 step / <1s) -> Stop now!
+4 = very close obstacle (1-2 steps) -> Stop!
+3 = obstacle in path (2-3 steps) -> Slow down now.
+2 = obstacle ahead (3-5 steps) -> Slow down.
+1 = minor caution -> Careful ahead."""
 
 
 def _age(now: float, t: float) -> str:
-    return f"{now - t:.0f}s ago"
+    return f"{max(0.0, now - t):.1f}s ago"
 
 
-def build_contents(frames: list[tuple[float, bytes]], recent: list[tuple[float, str, str]], lang: str, sensors: str = "", sheet: bytes | None = None) -> list:
+def build_contents(
+    frames: list[tuple[float, bytes]],
+    recent: list[tuple[float, str, str]],
+    lang: str,
+    sensors: str = "",
+    sheet: bytes | None = None,
+) -> list:
     now = time.time()
     parts: list = []
-    if config.WATCH_COMPOSE and len(frames) > 1:
-        parts.append(types.Part.from_text(text=(
-            f"One image holds the last {len(frames)} camera frames as a contact sheet, oldest first (tile 1), newest last "
-            f"(tile {len(frames)}, marked NEW), left to right then top to bottom, about one second apart. "
-            "Compare the tiles in order to see what is moving. Judge the situation as of the NEWEST tile.")))
-        parts.append(types.Part.from_bytes(data=sheet or compose.compose(frames, now, config.COMPOSE_TILE_W), mime_type="image/jpeg"))
-        frames = []
-    labels = ["oldest", "middle", "newest"]
-    labels = labels[-len(frames):] if len(frames) < 3 else labels
-    for label, (t, jpeg) in zip(labels, frames):
-        parts.append(types.Part.from_text(text=f"Frame ({label}, {_age(now, t)}):"))
-        parts.append(types.Part.from_bytes(data=jpeg, mime_type="image/jpeg"))
-    if recent:
-        listed = "; ".join(f'{key or "alert"} ("{msg}", {_age(now, t)})' for t, key, msg in recent)
-        parts.append(types.Part.from_text(text=f"Already announced recently (do not repeat unless it got clearly worse): {listed}"))
+    if sheet is not None:
+        parts.append(types.Part.from_bytes(data=sheet, mime_type="image/jpeg"))
+        prompt = f"Tiles 1..{len(frames)} oldest->NEW."
     else:
-        parts.append(types.Part.from_text(text="Nothing announced recently."))
+        for idx, (t, jpeg) in enumerate(frames, start=1):
+            parts.append(types.Part.from_text(text=f"F{idx} ({_age(now, t)}):"))
+            parts.append(types.Part.from_bytes(data=jpeg, mime_type="image/jpeg"))
+        prompt = "Compare frames oldest->newest."
+
     if sensors:
-        parts.append(types.Part.from_text(text=f"Phone sensors: {sensors}"))
-    parts.append(types.Part.from_text(text=f"Preferred phrases (use word for word when one fits): {phrases.prefer_list(lang)}"))
-    parts.append(types.Part.from_text(text=f"Language for the message: {lang}. Decide now."))
+        prompt += f" Sensors: {sensors}."
+    parts.append(types.Part.from_text(text=prompt))
     return [types.Content(role="user", parts=parts)]
 
 
-_thinking_ok = True      # turns False if the model rejects the thinking setting once; then it is not tried again
+_thinking_ok = True
 
 
 def _thinking_config():
     level = (config.WATCH_THINKING or "").strip().upper()
     if not level or not _thinking_ok:
         return None
-    return types.ThinkingConfig(thinking_level=getattr(types.ThinkingLevel, level))
+    enum_val = getattr(types.ThinkingLevel, level, None)
+    return types.ThinkingConfig(thinking_level=enum_val) if enum_val is not None else None
+
+
+def _media_res():
+    name = (config.WATCH_MEDIA_RES or "").strip().upper()
+    return getattr(types.MediaResolution, name, None) if name else None
 
 
 def _generation_config(thinking) -> types.GenerateContentConfig:
-    kwargs = {"thinking_config": thinking} if thinking else {}
+    kwargs: dict = {}
+    if thinking is not None:
+        kwargs["thinking_config"] = thinking
+    mres = _media_res()
+    if mres is not None:
+        kwargs["media_resolution"] = mres
     return types.GenerateContentConfig(
-        system_instruction=WATCH_SYSTEM, response_mime_type="application/json",
-        response_schema=WatchDecision, temperature=0.1, **kwargs,
+        system_instruction=WATCH_SYSTEM,
+        response_mime_type="application/json",
+        temperature=0.0,
+        **kwargs,
     )
 
 
-async def judge(frames: list[tuple[float, bytes]], recent: list[tuple[float, str, str]], lang: str, sensors: str = "") -> tuple[WatchDecision, dict]:
+def _parse_decision(response, lang: str) -> WatchDecision:
+    """Accept both ultra-compact {"lvl":...} JSON and full WatchDecision JSON."""
+    if isinstance(getattr(response, "parsed", None), WatchDecision):
+        d = response.parsed
+    else:
+        raw = json.loads((response.text or "{}").strip())
+        if isinstance(raw, list):
+            raw = raw[0] if raw and isinstance(raw[0], dict) else {}
+        if "lvl" in raw or "key" in raw or "why" in raw:
+            lvl = int(raw.get("lvl", raw.get("danger_level", 0)) or 0)
+            htype = raw.get("type", raw.get("hazard_type", "static"))
+            d = WatchDecision(
+                notify=lvl >= 1 or bool(raw.get("notify", False)),
+                danger_level=lvl,
+                confidence=float(raw.get("confidence", 0.95 if lvl >= 3 else (0.90 if lvl >= 1 else 0.0))),
+                hazard_key=str(raw.get("key", raw.get("hazard_key", ""))),
+                reason=str(raw.get("why", raw.get("reason", ""))),
+                hazard_type="moving" if htype == "moving" else "static",
+            )
+        else:
+            d = WatchDecision.model_validate(raw)
+
+    d.message = re.sub(r"\s+", " ", d.message.replace('"', "")).strip()[:90]
+    d.hazard_key = re.sub(r"[^a-z0-9\- ]", "", d.hazard_key.lower()).strip().replace(" ", "-")[:40]
+    if d.danger_level >= 1:
+        apply_danger_level(d, lang)
+    return d
+
+
+async def _make_sheet(frames: list[tuple[float, bytes]]) -> bytes | None:
+    if not config.WATCH_COMPOSE or len(frames) <= 1:
+        return None
+    try:
+        return await asyncio.to_thread(compose.compose, frames, time.time(), config.COMPOSE_TILE_W, 3, 62)
+    except Exception:
+        return None
+
+
+async def judge(
+    frames: list[tuple[float, bytes]],
+    recent: list[tuple[float, str, str]],
+    lang: str,
+    sensors: str = "",
+) -> tuple[WatchDecision, dict]:
+    """Run one fast stateless watcher check over at most 3 frames."""
     global _thinking_ok
-    sheet = await asyncio.to_thread(compose.compose, frames, time.time(), config.COMPOSE_TILE_W) if config.WATCH_COMPOSE and len(frames) > 1 else None
-    contents = build_contents(frames, recent, lang, sensors, sheet)
+    capped = frames[-3:]
+    sheet = await _make_sheet(capped)
+    contents = build_contents(capped, recent, lang, sensors, sheet)
     client = agent._get_client()
     thinking = _thinking_config()
+
+    async def _call(cfg):
+        return await asyncio.wait_for(
+            client.aio.models.generate_content(model=config.WATCH_MODEL, contents=contents, config=cfg),
+            timeout=config.WATCH_TIMEOUT_S,
+        )
+
     try:
-        response = await client.aio.models.generate_content(model=config.WATCH_MODEL, contents=contents, config=_generation_config(thinking))
+        response = await _call(_generation_config(thinking))
     except Exception as exc:
         if thinking is None or "INVALID_ARGUMENT" not in str(exc):
             raise
-        _thinking_ok = False   # this model does not accept the setting: use its default from now on
-        response = await client.aio.models.generate_content(model=config.WATCH_MODEL, contents=contents, config=_generation_config(None))
-    decision = response.parsed if isinstance(getattr(response, "parsed", None), WatchDecision) else WatchDecision.model_validate_json(response.text)
-    decision.message = re.sub(r"\s+", " ", decision.message.replace('"', "")).strip()[:90]
-    decision.hazard_key = re.sub(r"[^a-z0-9\- ]", "", decision.hazard_key.lower()).strip().replace(" ", "-")[:40]
+        _thinking_ok = False
+        response = await _call(_generation_config(None))
+
+    decision = _parse_decision(response, lang)
     usage = getattr(response, "usage_metadata", None)
     return decision, {
         "prompt_tokens": getattr(usage, "prompt_token_count", None),
         "output_tokens": getattr(usage, "candidates_token_count", None),
+        "composed": sheet is not None,
     }
-
-
-def sensors_text(imu: dict | None) -> str:
-    """One line for the watcher from the phone's motion sensors (None when not available)."""
-    if not imu:
-        return ""
-    speed = imu.get("angularSpeed")
-    walking = imu.get("walking")
-    if imu.get("panning"):
-        state = "panning fast"
-    elif walking is True:
-        state = "walking"
-    elif walking is False:
-        state = "stationary"
-    else:
-        state = "movement unknown"          # no accelerometer reading: never claim the user is standing still
-    bits = [f"user {state}"] if state != "movement unknown" else ["movement unknown"]
-    if speed is not None:
-        bits.append(f"gyro {speed} deg/s")
-    if imu.get("pitchDeg") is not None:
-        bits.append(f"phone pitch {imu['pitchDeg']} deg")
-    return ", ".join(bits)
-
-
-_SYNONYMS = {
-    "car": "vehicle", "vehicle": "vehicle", "truck": "vehicle", "bus": "vehicle", "van": "vehicle", "taxi": "vehicle", "motorcycle": "vehicle",
-    "bike": "bike", "bicycle": "bike", "cyclist": "bike", "scooter": "bike",
-    "person": "person", "pedestrian": "person", "people": "person", "man": "person", "woman": "person", "child": "person",
-    "step": "step", "steps": "step", "stairs": "step", "stair": "step", "curb": "step", "kerb": "step", "drop": "step", "dropoff": "step",
-    "pole": "pole", "post": "pole", "sign": "pole", "signpost": "pole",
-    "dog": "animal", "animal": "animal", "cat": "animal",
-}
-_DIRECTIONS = {"ahead", "front", "left", "right", "behind", "up", "down"}
-
-
-def _tokens(key: str) -> list[str]:
-    return [_SYNONYMS.get(t, t) for t in re.split(r"[-_ ]+", key) if t]
-
-
-def select_frames(buffer, spacing: float, now: float, n: int = 3, max_age: float = 6.0) -> list[tuple[float, bytes]]:
-    """Pick up to n frames from the buffer, newest last, about `spacing` seconds apart.
-    At a higher frame rate the buffer holds more frames, but the watcher still gets 3 well-separated ones so it can see motion."""
-    fresh = [f for f in buffer if now - f[0] <= max_age]
-    if not fresh:
-        return []
-    chosen = [fresh[-1]]
-    for f in reversed(fresh[:-1]):
-        if chosen[-1][0] - f[0] >= spacing * 0.9:
-            chosen.append(f)
-            if len(chosen) == n:
-                break
-    return list(reversed(chosen))
-
-
-class Attention:
-    """How closely to watch right now. Rises at once when the model asks for it, falls one step at a time after a hold
-    (so it does not flap), and is capped so a busy scene cannot keep the expensive rates on forever. Pure logic, testable."""
-
-    ORDER = ("normal", "elevated", "high")
-
-    def __init__(self) -> None:
-        self.level = "normal"
-        self.since = float("-inf")          # when the level was last raised or last re-confirmed as needed
-        self.above_since: float | None = None   # start of the current stretch above normal
-        self.cooldown_until = float("-inf")
-
-    def _rank(self, level: str) -> int:
-        return self.ORDER.index(level)
-
-    def update(self, model_level: str, now: float, *, alerted: bool = False, held: bool = False) -> bool:
-        """Feed one look's result. Returns True if the level changed."""
-        want = model_level if model_level in self.ORDER else "normal"
-        if alerted:
-            want = "high"
-        elif held and self._rank(want) < self._rank("elevated"):
-            want = "elevated"            # a suspected hazard we have not announced yet deserves a closer look
-        if now < self.cooldown_until and not alerted:
-            want = "normal"              # cost guard cool-down: only a real alert can break through
-        old = self.level
-        if self._rank(want) > self._rank(self.level):
-            self.level, self.since = want, now
-        elif self._rank(want) == self._rank(self.level):
-            if self.level != "normal":
-                self.since = now         # still needed: restart the hold
-        elif now - self.since >= config.ATTENTION_HOLD_S[self.level]:
-            self.level = self.ORDER[self._rank(self.level) - 1]
-            self.since = now
-        if self.level != "normal":
-            if self.above_since is None:
-                self.above_since = now
-            elif now - self.above_since > config.ATTENTION_MAX_S:
-                self.level, self.above_since = "normal", None
-                self.cooldown_until = now + config.ATTENTION_COOLDOWN_S
-        else:
-            self.above_since = None
-        return self.level != old
-
-    @property
-    def fps(self) -> float:
-        return config.FPS[self.level]
-
-    @property
-    def look_s(self) -> float:
-        return config.LOOK_S[self.level]
-
-    @property
-    def spacing(self) -> float:
-        return config.SPACING_S[self.level]
-
-
-def same_hazard(a: str, b: str) -> bool:
-    """Keys from the model vary a little between looks, so compare loosely: same kind of object, or mostly the same words."""
-    if not a or not b:
-        return False
-    if a == b:
-        return True
-    ta, tb = _tokens(a), _tokens(b)
-    objects_a = [t for t in ta if t not in _DIRECTIONS]
-    objects_b = [t for t in tb if t not in _DIRECTIONS]
-    if objects_a and objects_b and objects_a[0] == objects_b[0]:
-        return True
-    sa, sb = set(ta), set(tb)
-    return len(sa & sb) / max(1, len(sa | sb)) >= 0.5
-
-
-class AlertPolicy:
-    """Decides whether the model's wish to speak is allowed. Pure logic with an injectable clock, so it is testable."""
-
-    MODES = ("normal", "urgent_only", "off")
-
-    def __init__(self) -> None:
-        self.mode = "normal"
-        self.alert_times: deque[float] = deque(maxlen=50)
-        self.last_alert_at = float("-inf")
-        self.alerted: list[tuple[float, str, str]] = []  # (time, key, urgency)
-        self.sightings: list[tuple[float, str]] = []     # (time, key) of notify candidates seen
-
-    def _recently_seen(self, key: str, now: float, within: float) -> bool:
-        return any(same_hazard(k, key) and now - t <= within for t, k in self.sightings)
-
-    def decide(self, d: WatchDecision, now: float, user_voice_age: float, *, fast_confirm: bool = False,
-               user_moving: bool | None = None) -> tuple[bool, str]:
-        """Return (speak, reason). Call `record` when speaking.
-
-        fast_confirm: skip the two-look confirmation (set for alerts from the phone's own detector).
-        user_moving: from the phone's sensors; True walking, False stationary, None unknown."""
-        if self.mode == "off":
-            return False, "mode_off"
-        if not d.notify or not d.message:
-            return False, "silent"
-        high = d.urgency == "high"
-        if self.mode == "urgent_only" and not high:
-            return False, "urgent_only_mode"
-        if d.confidence < (config.ALERT_MIN_CONF_HIGH if high else config.ALERT_MIN_CONF):
-            self._see(d, now)
-            return False, "low_confidence"
-
-        # A fixed obstacle is not a danger to someone standing still (only the phone's sensors can tell us that).
-        if not high and user_moving is False and d.hazard_type == "static":
-            self._see(d, now)
-            return False, "user_stationary"
-
-        # Low-urgency hazards must be seen on two checks in a row before they are announced, unless the model is very sure
-        # (a lower bar while the user is walking) or the phone's own detector raised it.
-        seen_before = self._recently_seen(d.hazard_key, now, within=max(8.0, config.WATCH_S * 3 + 2))
-        self._see(d, now)
-        sure = d.confidence >= (config.ALERT_FAST_CONF_MOVING if user_moving else config.ALERT_FAST_CONF)
-        if not high and not seen_before and not (fast_confirm or sure):
-            return False, "needs_confirmation"
-
-        # Do not repeat the same hazard unless it just became urgent.
-        for t, key, urgency in reversed(self.alerted):
-            if same_hazard(key, d.hazard_key) and now - t < config.ALERT_DEDUPE_S:
-                if high and urgency == "low":
-                    break  # escalation: allowed through
-                return False, "duplicate"
-
-        gap = now - self.last_alert_at
-        if gap < (config.ALERT_COOLDOWN_HIGH_S if high else config.ALERT_COOLDOWN_S):
-            return False, "cooldown"
-        recent = sum(1 for t in self.alert_times if now - t < 60)
-        if recent >= (config.ALERT_MAX_PER_MIN * 2 if high else config.ALERT_MAX_PER_MIN):
-            return False, "rate_limit"
-        if not high and user_voice_age < 1.5:
-            return False, "user_speaking"
-        return True, "ok"
-
-    def _see(self, d: WatchDecision, now: float) -> None:
-        self.sightings = [(t, k) for t, k in self.sightings if now - t < 30] + [(now, d.hazard_key)]
-
-    def record(self, d: WatchDecision, now: float) -> None:
-        self.last_alert_at = now
-        self.alert_times.append(now)
-        self.alerted = [(t, k, u) for t, k, u in self.alerted if now - t < 120] + [(now, d.hazard_key, d.urgency)]
-
-
-def user_moving(imu: dict | None) -> bool | None:
-    """True walking, False stationary, None unknown (no sensor, or no accelerometer reading yet)."""
-    if not imu:
-        return None
-    walking = imu.get("walking")
-    return walking if isinstance(walking, bool) else None
-
-
-def scene_is_static(motion_history, now: float, last_look_at: float, attention_level: str, last_look_silent: bool) -> bool:
-    """Should this look be skipped because nothing in the picture is changing? Pure logic, testable.
-
-    motion_history: list of (time, motion) from the phone (motion = mean luminance change between frames, 0..1).
-    Never skips while attention is raised, after a look that was not silent, with no recent motion data, or when the last
-    look was STATIC_MAX_SKIP_S or more ago."""
-    if not config.STATIC_SKIP or attention_level != "normal" or not last_look_silent:
-        return False
-    if now - last_look_at >= config.STATIC_MAX_SKIP_S:
-        return False
-    recent = [m for t, m in motion_history if now - t <= 2.0]
-    if len(recent) < 2:
-        return False
-    return max(recent) < config.STATIC_MOTION
