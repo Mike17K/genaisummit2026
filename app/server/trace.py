@@ -8,7 +8,7 @@ _events: list[dict] = []
 def log(kind: str, **fields) -> dict:
     event = {"t": round(time.time(), 3), "kind": kind, **fields}
     _events.append(event)
-    del _events[:-200]  # keep the last 200 only
+    del _events[:-500]  # keep the last 500 only
     print(json.dumps(event), flush=True)
     return event
 

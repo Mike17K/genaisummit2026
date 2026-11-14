@@ -28,3 +28,16 @@ VOICE = os.environ.get("GEMINI_VOICE", "Kore")  # try Aoede, Puck, Charon, Fenri
 
 # Wait after the user stops talking before the assistant answers (ms). The page can override it with ?silence=.
 SILENCE_MS = int(os.environ.get("EYES_SILENCE_MS", "1200"))
+
+# ---- proactive safety watcher ----
+WATCH_MODEL = os.environ.get("GEMINI_WATCH_MODEL", "gemini-3.5-flash-lite")  # decides from the last 3 frames, ~1.5 s per call
+WATCH_S = float(os.environ.get("EYES_WATCH_S", "2.0"))            # look about every N seconds (each look is one model call)
+ALERT_MIN_CONF = float(os.environ.get("EYES_ALERT_MIN_CONF", "0.75"))      # low urgency needs at least this confidence
+ALERT_MIN_CONF_HIGH = float(os.environ.get("EYES_ALERT_MIN_CONF_HIGH", "0.6"))
+ALERT_COOLDOWN_S = float(os.environ.get("EYES_ALERT_COOLDOWN_S", "6"))     # min gap between low-urgency alerts
+ALERT_COOLDOWN_HIGH_S = float(os.environ.get("EYES_ALERT_COOLDOWN_HIGH_S", "1.5"))
+ALERT_DEDUPE_S = float(os.environ.get("EYES_ALERT_DEDUPE_S", "25"))        # same hazard is not repeated within this time
+ALERT_MAX_PER_MIN = int(os.environ.get("EYES_ALERT_MAX_PER_MIN", "6"))
+
+# Alerts are spoken by a TTS model (exact words, no instruction leakage), not by the Live model.
+TTS_MODEL = os.environ.get("GEMINI_TTS_MODEL", "gemini-3.8-flash-lite-tts")  # ~1.7-2.2 s for a short sentence, cached after

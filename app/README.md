@@ -29,6 +29,17 @@ assistant interrupts itself (echo). The older text path (`/ws`, `server/agent.py
 Test without a phone: run the server, then `PYTHONPATH=. uv run --with pillow --with websockets python <script>`
 that synthesizes speech with a TTS model and sends it to `/live` (this is how it was verified).
 
+## Wait after you stop talking
+Default 1200 ms (`EYES_SILENCE_MS`); change on the page with the wait -/+ buttons (applies at next start) or `?silence=1500`.
+Longer = fewer interruptions during pauses but a slower answer. Noise gate: gate -/+ or `?gate=0.05`.
+
+## Proactive safety alerts
+Every ~2 s a vision model looks at the last 3 frames and decides whether to interrupt you (obstacle in your path, something
+approaching). A strict policy (confidence, confirmation, cooldowns, no repeats, never while you talk) keeps it quiet.
+An alert stops whatever is playing, beeps and vibrates, then speaks the warning. Button on the page: alerts normal / urgent only / off.
+Details and settings: `project-context/eyes-app-characteristics.md` section 5b. Tests: `uv run python tests/test_watch_policy.py`.
+Cost: about 100k tokens per minute while running; use `off` or raise `EYES_WATCH_S` to save credits.
+
 ## On-screen debug (phone)
 The page shows a state badge (idle, starting, connecting, listening, hearing, thinking, speaking, error) and a debug
 panel: camera and mic status with permission errors, a live mic level meter, KB and frames sent, KB received, websocket

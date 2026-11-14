@@ -42,7 +42,8 @@ events (heard, reply, ...)    <--JSON over WS--     trace log (/trace, /panel)
 ```
 
 - **Transport:** one WebSocket per session at `/live`. Binary frames carry audio, JSON text frames carry camera frames and events.
-- **Voice activity detection** is done by Gemini (with settings below), not in the browser. The browser only applies a noise gate.
+- **Voice activity control** is done by the server (manual activity signals to Gemini), driven by the browser's noise gate. See section 6.
+- **Proactive safety watcher** (section 5b) looks at the camera by itself and can interrupt the assistant with a short spoken alert.
 - **Hosting:** uvicorn on port 8000. For phone use the camera and microphone need HTTPS, so a Cloudflare quick tunnel (`cloudflared tunnel --url http://localhost:8000`) is used. Tunnel addresses are public to anyone with the link and change each run.
 - **No Node, no build step, no database.** Everything is Python plus plain HTML and JavaScript.
 
@@ -67,7 +68,7 @@ events (heard, reply, ...)    <--JSON over WS--     trace log (/trace, /panel)
 - **Noise gate:**
   - Audio below a level threshold is replaced by silence of the same length, so room noise and speaker echo are not sent, and the server can still detect the end of a sentence.
   - Default threshold 0.030 (RMS, 0 to 1). It was 0.015 before. Range 0.005 to 0.300.
-  - Hang time 450 ms after the voice drops, plus the chunk just before the voice starts is included, so word starts and ends are not clipped.
+  - Hang time 800 ms after the voice drops, plus the chunk just before the voice starts is included, so word starts and ends are not clipped.
   - Adjustable live with **gate −** and **gate +** buttons (steps of 0.005), saved in the browser, or set with `?gate=0.05` in the address.
 
 ### 5.2 Camera in
@@ -101,12 +102,49 @@ The debug panel (add `?debug=0` to hide) shows:
 - last thing heard, last reply, last event, and the last error;
 - a rolling log of the last 14 timestamped steps.
 
+## 5b. Proactive safety alerts (the app speaks without being asked)
+
+The assistant does not only answer. Every ~2 seconds a separate AI **watcher** looks at the **last 3 camera frames** (about 3 seconds, oldest to newest, so it can see motion) and **decides whether the user needs to be told something**. Silence is the normal answer.
+
+### What the AI watcher is told
+- Interrupt only for a real, current danger the user probably does not know about: something in or next to their path they are about to reach (steps, curb, drop-off, pole, wall, glass door, parked vehicle, low branch, open door, wet floor), something that gets **closer or bigger across the frames** (vehicle, bike, scooter, person on a collision course, animal), a hot or sharp object in reach, or a clear threat.
+- Never interrupt for ordinary scenery, distant or side objects not coming toward them, static things not in their path, things already announced recently, blurry or dark frames, or vague unease. If unsure, stay silent: a false alarm is worse than missing a minor detail.
+- Output (structured JSON): `notify`, `urgency` (`low` or `high`; high only if impact or a fall is likely within about 3 seconds), `confidence`, a stable `hazard_key` (for example `car-right`, `step-down`), a `message` of at most 8 words with direction or distance, and a one-line `reason`.
+- It is shown the alerts it already made in the last minutes so it does not repeat them unless things got clearly worse. The message is written in the language the user last spoke (Greek or English).
+
+### The policy that makes it hard to speak (`server/watch.py`, 26 automated checks)
+The AI's wish to speak only passes if all of these allow it:
+| Gate | Default |
+|---|---|
+| Alert mode is not `off`; in `urgent_only` only high urgency passes | `normal` |
+| Confidence at least | 0.75 (low urgency), 0.60 (high urgency) |
+| Low urgency must be seen on **two checks in a row** (confirmation) | high urgency fires at once |
+| Same hazard not repeated within | 25 s, unless it escalated from low to high; keys are compared loosely (car, vehicle and truck count as the same kind of object) |
+| Gap between alerts | 6 s (low), 1.5 s (high) |
+| Rate limit per minute | 6 (low), 12 (high) |
+| Not while the user is talking (low urgency); danger still gets through | |
+
+Settings are environment variables (`EYES_ALERT_*`, `EYES_WATCH_S`).
+
+### What happens when an alert fires
+1. The page is told immediately: whatever was playing **stops at once**, a short beep plays (one tone for low, two for high urgency) and the phone vibrates.
+2. If the assistant was speaking, the server interrupts it with a manual activity signal (a plain message does not interrupt) and throws away its audio that is still in flight. The interrupt turn is left open so the assistant does not resume or answer the old request until the user speaks.
+3. The alert is spoken by a **text-to-speech model** in the same voice: exact words, never an instruction read aloud. Spoken alerts are cached, and when an alert is one confirmation away from firing the voice is prepared in advance, so repeats play instantly.
+4. The assistant gets a silent note of what was said, so "what was that?" works.
+Typical timing in tests: about 2 s from the hazard appearing to the alert decision, then about 2 to 3 s until the words are heard (the beep and the cut come first).
+
+### User control
+- Button on the page cycles **alerts: normal / urgent only / off** (remembered). The user can also say "only warn me about serious things" or "be quiet" (tool `set_alert_mode`).
+- `/panel` and the debug panel show every check (silent, held back with the reason, or ALERT) with confidence, key and time.
+
 ## 6. Server features (`app/server/`)
 
 | File | Role |
 |---|---|
 | `main.py` | FastAPI app. Routes: `/` (page), `/panel` (judges' trace screen), `/trace` (JSON events), `/live` (WebSocket for voice), `/ws` (older text path), `/static/*`. |
-| `live.py` | The Gemini Live bridge. Opens one Live session per browser connection, forwards audio and frames, streams speech back, runs tools, logs everything. |
+| `live.py` | The Gemini Live bridge. Opens one Live session per browser connection, forwards audio and frames, controls voice activity, streams speech back, runs tools, runs the watcher loop and the alert interrupt, logs everything. |
+| `watch.py` | The AI watcher (prompt, structured decision) and the alert policy. |
+| `speak.py` | Text-to-speech for alerts, with a cache. |
 | `agent.py` | The older turn-based path (text plus one frame through `generate_content`), with per-connection history, a silence token and error handling. Kept for tests and as a fallback design. |
 | `tools.py` | The agent's tools (section 8). |
 | `config.py` | Loads `.env` without extra libraries (real environment variables win) and defines models, voice, and the key. |
@@ -115,24 +153,26 @@ The debug panel (add `?debug=0` to hide) shows:
 ### Live session settings (`live.py`)
 - Response modality: audio. Voice: `Kore` by default (`GEMINI_VOICE`; others: Aoede, Puck, Charon, Fenrir, Leda, Zephyr).
 - Input and output **transcription on**, which gives text for the trace and debug panel.
-- **Automatic voice activity detection:** start-of-speech sensitivity high, end-of-speech sensitivity high, silence needed to end a turn 500 ms (`EYES_SILENCE_MS`). This keeps answers fast.
+- **Voice activity is controlled by the server, not by Gemini** (automatic detection is off). The page's noise gate sends pure silence when you are quiet; any sound means you are talking. The server sends "you started" to Gemini at the first sound and "you stopped" after your wait (1200 ms by default, `EYES_SILENCE_MS`, or `?silence=<ms>` from the page, clamped 300 to 4000). The page already keeps sending quiet audio for 0.8 s after you stop, so the server adds the rest (setting minus 0.8 s, at least 0.25 s). A longer wait avoids cutting in on pauses but delays the answer by about the same amount. Manual control is also what lets an alert force an interrupt.
 - **Sliding-window context compression on**, to extend audio-plus-video sessions beyond the roughly 2-minute default.
 - Barge-in (interruption) handled by the model; the server forwards an `interrupted` event and the browser stops playback.
 - A `go_away` notice from the server is passed to the page.
 
 ### WebSocket protocol (`/live`)
 - Browser to server: binary = PCM16 mono 16 kHz audio; JSON `{"type":"frame","data":"<base64 jpeg>"}`.
-- Server to browser: binary = PCM16 mono 24 kHz speech; JSON events `ready`, `heard` (what the user said), `reply` (what the assistant said), `tool` (name and arguments), `interrupted`, `go_away`, `error`.
+- Browser to server also sends `{"type":"mode","mode":"normal|urgent_only|off"}`.
+- Server to browser: binary = PCM16 mono 24 kHz speech (model speech and spoken alerts); JSON events `ready`, `heard` (what the user said), `reply` (what the assistant said), `tool` (name and arguments), `interrupted`, `alert` (urgency and text: stop playing, beep, vibrate), `watch` (each look), `suppressed` (an alert held back, with the reason), `mode`, `speak_text` (fallback if the alert voice fails), `go_away`, `error`.
 
 ## 7. Observability (show the work)
 - `/panel` live table of events (heard, tool calls, replies, errors) refreshed every second; `/trace` returns the same as JSON.
-- Events recorded: `live_connect`, `first_mic_audio`, `first_frame`, `first_audio` (with latency in ms), `heard`, `reply`, `tool`, `interrupted`, `go_away`, `error`, `live_input_totals` (KB of microphone audio and frames received), `live_disconnect`. The text path also logs token counts.
+- Events recorded: `watch` (every look: silent, held back with the reason, or ALERT, with confidence, key, ms and tokens), `alert`, `alert_spoken`, `alert_mode`, `user_turn` (start and end), `live_connect`, `first_mic_audio`, `first_frame`, `first_audio` (with latency in ms), `heard`, `reply`, `tool`, `interrupted`, `go_away`, `error`, `live_input_totals` (KB of microphone audio and frames received), `live_disconnect`. The text path also logs token counts.
 - The input counters answer "did the phone's audio and camera actually reach the server?".
 
 ## 8. Tools the agent can call
 All tool calls are logged and shown in the trace.
 - `remember_place(name, note)`: saves a place or object the user mentions (kept in memory, lost on restart).
 - `recall_places()`: lists what was saved.
+- `set_alert_mode(mode)`: `normal`, `urgent_only` or `off`, by voice command.
 - `call_contact(name, message)`: **demo only**. No call is placed. It returns a "simulated" result and the assistant tells the user it was a demo call.
 
 ## 9. Configuration (`app/.env`, never committed)
@@ -143,15 +183,25 @@ All tool calls are logged and shown in the trace.
 | `GEMINI_VOICE` | `Kore` | Assistant voice. |
 | `GEMINI_MODEL` | `gemini-3.5-flash-lite` | Text and vision model for the older path. |
 | `GEMINI_HARD_MODEL` | `gemini-3.8-flash` | Reserved, not used yet. |
-| `EYES_SILENCE_MS` | `500` | Silence that ends the user's turn (server side). |
+| `EYES_SILENCE_MS` | `1200` | Wait after the user stops talking before the assistant answers (ms). The page can override it per connection. |
+| `GEMINI_WATCH_MODEL` | `gemini-3.5-flash-lite` | Model that decides from the last 3 frames whether to alert (about 1 to 1.4 s per look). |
+| `GEMINI_TTS_MODEL` | `gemini-3.8-flash-lite-tts` | Voice for spoken alerts. |
+| `EYES_WATCH_S` | `2.0` | Seconds between looks. |
+| `EYES_ALERT_MIN_CONF` / `_HIGH` | `0.75` / `0.6` | Confidence needed for low / high urgency. |
+| `EYES_ALERT_COOLDOWN_S` / `_HIGH_S` | `6` / `1.5` | Minimum gap between alerts. |
+| `EYES_ALERT_DEDUPE_S` | `25` | Same hazard is not repeated within this time. |
+| `EYES_ALERT_MAX_PER_MIN` | `6` | Rate limit (double for high urgency). |
 
-URL options on the page: `?gate=0.05` (noise gate level) and `?debug=0` (hide debug panel).
+URL options on the page: `?gate=0.05` (noise gate level), `?silence=1500` (wait after you stop talking, in ms) and `?debug=0` (hide debug panel). The page also has **gate −/+** and **wait −/+** buttons (wait in steps of 200 ms, saved in the browser, applied the next time you tap Start).
 
 ## 10. Performance (measured)
-- **Realtime voice:** first speech audio about 1.2 to 2.1 s after the end of the user's question (the test appends about 1 s of silence, so real latency from the end of speech is about 1.5 s).
+- **Realtime voice:** in a synthetic-speech test, first speech audio arrived about 3.9 s after the end of speech with a 600 ms wait, and about 4.7 to 5.6 s with a 2000 ms wait (the wait adds roughly its own length; the rest is model and network time, which varies). An earlier test with a 500 ms wait measured 1.2 to 2.1 s after a padded end, so expect 2 to 4 s in practice; real phone latency is untested.
 - **Text and vision path:** about 1 to 2 s on `gemini-3.5-flash-lite`; the bigger model about 3 to 6 s with tools.
 - **TTS only:** about 1.7 to 2.8 s per short sentence (not used now).
 - Camera: 1 frame per second, about 640 px wide.
+
+## 10b. Cost of the watcher
+Each look sends 3 images and costs about 3,800 input tokens. At one look every ~2 s that is roughly 100,000 tokens per minute while the session runs (plus the Live session itself). It only runs while the app is started and not in `off` mode. Raise `EYES_WATCH_S` or use `off` to reduce it. Credits are limited, so this is worth watching.
 
 ## 11. Safety, privacy and limits
 - **Not a navigation safety system.** It supports a cane or guide dog. It must never claim a road is safe; this is in the prompt and was tested ("I cannot tell if the road is safe").
@@ -164,6 +214,7 @@ URL options on the page: `?gate=0.05` (noise gate level) and `?debug=0` (hide de
 
 ## 12. Known limits and risks
 - Not tested on a real phone yet with the Live client (camera, mic, playback, gate). The debug panel was verified in a desktop browser pane where camera and mic are blocked.
+- **Alerts are decision support, not a safety guarantee.** The watcher can miss a hazard or raise a false one. It was tested on synthetic images only (an empty road stayed silent, a growing car triggered a high-urgency alert), not on real streets.
 - **Echo:** speaker audio can reach the mic and make the assistant interrupt itself. The noise gate, echo cancellation and headphones or low volume mitigate this; the gate level needs tuning per phone.
 - **iPhone Safari** is the strictest about audio and may need extra handling; Chrome on Android is the primary target.
 - **Session length:** audio plus video sessions are normally limited to about 2 minutes; compression is enabled but long sessions are untested. Connections can drop outdoors; the page shows the close code and asks for a tap.
@@ -178,6 +229,8 @@ URL options on the page: `?gate=0.05` (noise gate level) and `?debug=0` (hide de
 - **Live voice path, without a phone:** a spoken question synthesized with a TTS model and sent with a camera frame to `/live`. It was heard and transcribed, the picture was read aloud, and a spoken "call the pharmacy and ask for aspirin" triggered the demo tool. Input counters appeared in the trace.
 - **Fake-model tests:** routing, history, missing frame note, model-error handling, silence token, tools, trace panel.
 - **UI:** page loads, noise-gate buttons change and save the value (range 0.005 to 0.300), debug panel renders, permission failure shows the red error state with `NotAllowedError`.
+- **Proactive alerts, tested without a phone:** 26 automated policy checks (silence default, confirmation, thresholds, duplicates and synonyms, escalation, cooldown, rate limit, not talking over the user, modes). AI watcher on synthetic frames: empty road and a car that does not grow stayed silent, a growing car gave high urgency with confidence 0.95 to 1.0. 30 seconds of an empty road gave 14 looks and 0 alerts. End to end: while a long story was playing a car approached; the alert stopped the story at once, was spoken about 2 to 3 s later in exact words, the story did not resume, and the follow-up "What did you just warn me about?" was answered correctly.
+- **Observed once and not explained:** in two of about six story tests the model produced no answer to the long-story request until the alert arrived; normal short questions worked every time. Worth re-checking on a phone.
 - **Not tested:** real phone, real microphone, real playback, long sessions, iPhone.
 
 ## 14. Run it

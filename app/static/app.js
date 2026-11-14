@@ -45,6 +45,7 @@ const dbg = {
   micLevel: 0, micPeak: 0, sentKB: 0, sentFrames: 0, recvKB: 0, recvChunks: 0,
   lastHeard: "", lastReply: "", lastEvent: "", lastModelAudioAt: 0, lastSpeechAt: 0,
   error: "", startedAt: 0, log: [],
+  watch: "-", lastAlert: "-", alertMode: "normal", alerts: 0,
 };
 const hideDebug = new URLSearchParams(location.search).get("debug") === "0";
 if (hideDebug) debugEl.style.display = "none";
@@ -87,6 +88,8 @@ function renderDebug() {
     ["received", `${dbg.recvKB.toFixed(0)} KB in ${dbg.recvChunks} chunks, last audio ${sinceAudio}`],
     ["you said", esc(dbg.lastHeard || "-")],
     ["eyes said", esc(dbg.lastReply || "-")],
+    ["watcher", esc(dbg.watch) + "  (mode: " + esc(dbg.alertMode) + ")"],
+    ["last alert", (dbg.alerts ? dbg.alerts + " so far. " : "") + esc(dbg.lastAlert)],
     ["last event", esc(dbg.lastEvent || "-")],
   ];
   if (dbg.error) rows.push(["error", cls(false, esc(dbg.error))]);
@@ -124,6 +127,19 @@ function chime(freq = 880) {
   o.frequency.value = freq; g.gain.value = 0.08;
   o.connect(g).connect(ctx.destination);
   o.start(); o.stop(ctx.currentTime + 0.12);
+}
+
+// Alert cue: short and distinct, plus a buzz. Played the moment an alert is approved, before the spoken words arrive.
+function alertCue(urgency) {
+  if (!ctx) return;
+  const tones = urgency === "high" ? [[990, 0, 0.09], [990, 0.13, 0.09]] : [[660, 0, 0.07]];
+  for (const [freq, at, len] of tones) {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.value = freq; g.gain.value = 0.12;
+    o.connect(g).connect(ctx.destination);
+    o.start(ctx.currentTime + at); o.stop(ctx.currentTime + at + len);
+  }
+  try { navigator.vibrate?.(urgency === "high" ? [90, 50, 90] : [60]); } catch (_) {}
 }
 
 // ---- playback -------------------------------------------------------------
@@ -242,13 +258,28 @@ async function start() {
     if (e.data instanceof ArrayBuffer) { playPcm(e.data); return; }
     const m = JSON.parse(e.data);
     dbg.lastEvent = m.type + (m.name ? ":" + m.name : "");
-    if (m.type === "ready") { dbg.gemini = "ready"; chime(); note("gemini session ready"); }
+    if (m.type === "ready") {
+      dbg.gemini = "ready"; chime(); note("gemini session ready");
+      socket.send(JSON.stringify({ type: "mode", mode: dbg.alertMode }));
+    }
     else if (m.type === "interrupted") { stopPlayback(); note("interrupted by you"); }
     else if (m.type === "heard") { dbg.lastHeard = m.text; note("heard: " + m.text); }
     else if (m.type === "reply") { if (m.text) { dbg.lastReply = m.text; note("reply: " + m.text); } }
     else if (m.type === "tool") note("tool call: " + m.name + " " + JSON.stringify(m.args || {}));
     else if (m.type === "error") { dbg.gemini = "error"; fail("server", m.text); chime(330); stop(false); }
     else if (m.type === "go_away") note("server says the session will end soon");
+    else if (m.type === "alert") {
+      stopPlayback();                // whatever was being said is cancelled at once
+      alertCue(m.urgency);
+      dbg.alerts++; dbg.lastAlert = `${m.urgency.toUpperCase()}: ${m.text}`;
+      note(`ALERT (${m.urgency}): ${m.text}`);
+    }
+    else if (m.type === "watch") {
+      dbg.watch = `${m.outcome}${m.key ? " [" + m.key + "]" : ""} conf ${(+m.confidence).toFixed(2)} ${m.ms} ms`;
+    }
+    else if (m.type === "speak_text") { try { speechSynthesis.speak(new SpeechSynthesisUtterance(m.text)); } catch (_) {} note("fallback voice: " + m.text); }
+    else if (m.type === "suppressed") note(`held back (${m.reason}): ${m.key}`);
+    else if (m.type === "mode") { dbg.alertMode = m.mode; syncModeButton(); note("alert mode: " + m.mode); }
   };
   socket.onclose = (e) => {
     dbg.ws = `closed code ${e.code}${e.reason ? " " + e.reason : ""}`;
@@ -296,6 +327,21 @@ function setGate(v) {
 document.getElementById("gateDown").addEventListener("click", () => setGate(gate - 0.005));
 document.getElementById("gateUp").addEventListener("click", () => setGate(gate + 0.005));
 gateVal.textContent = gate.toFixed(3);
+
+const MODES = ["normal", "urgent_only", "off"];
+const modeBtn = document.getElementById("modeBtn");
+function syncModeButton() {
+  modeBtn.textContent = { normal: "alerts: normal", urgent_only: "alerts: urgent only", off: "alerts: off" }[dbg.alertMode];
+}
+try { const saved = localStorage.getItem("eyesMode"); if (MODES.includes(saved)) dbg.alertMode = saved; } catch (_) {}
+syncModeButton();
+modeBtn.addEventListener("click", () => {
+  dbg.alertMode = MODES[(MODES.indexOf(dbg.alertMode) + 1) % MODES.length];
+  try { localStorage.setItem("eyesMode", dbg.alertMode); } catch (_) {}
+  syncModeButton();
+  if (socket && socket.readyState === 1) socket.send(JSON.stringify({ type: "mode", mode: dbg.alertMode }));
+  note("alert mode: " + dbg.alertMode);
+});
 
 const waitVal = document.getElementById("waitVal");
 function setWait(v) {

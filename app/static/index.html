@@ -24,9 +24,9 @@
     #meter { height: 8px; background: #21262d; border-radius: 4px; overflow: hidden; margin: 2px 0 4px; }
     #meter > div { height: 100%; width: 0; background: #7ee787; transition: width .08s linear; }
     #log { margin-top: .4rem; border-top: 1px solid #30363d; padding-top: .3rem; color: #8b949e; white-space: pre-wrap; word-break: break-word; }
-    #waitbar, #gatebar { display: flex; align-items: center; gap: .6rem; padding: .4rem .8rem; background: #161b22; font: 12px ui-monospace, monospace; color: #8b949e; }
-    #gatebar span, #waitbar span { flex: 1; }
-    #gatebar button, #waitbar button { width: 3rem; height: 2.2rem; font-size: 1.2rem; border: 1px solid #30363d; border-radius: 6px; background: #21262d; color: #fff; }
+    #modebar, #waitbar, #gatebar { display: flex; align-items: center; gap: .6rem; padding: .4rem .8rem; background: #161b22; font: 12px ui-monospace, monospace; color: #8b949e; }
+    #gatebar span, #waitbar span, #modebar span { flex: 1; }
+    #gatebar button, #waitbar button, #modebar button { width: 3rem; height: 2.2rem; font-size: 1.2rem; border: 1px solid #30363d; border-radius: 6px; background: #21262d; color: #fff; }
     #gatebar b, #waitbar b { color: #fff; min-width: 3.5rem; text-align: center; }
     video { display: none; }
   </style>
@@ -37,6 +37,10 @@
   <div id="gatebar" class="bar" aria-hidden="true">
     <span>voice gate (higher = must speak louder)</span>
     <button id="gateDown" type="button">&minus;</button><b id="gateVal">0.030</b><button id="gateUp" type="button">+</button>
+  </div>
+  <div id="modebar" class="bar" aria-hidden="true">
+    <span>proactive camera alerts (tap to change)</span>
+    <button id="modeBtn" type="button" style="width:auto;padding:0 .8rem">alerts: normal</button>
   </div>
   <div id="waitbar" class="bar" aria-hidden="true">
     <span>wait after you stop talking (applies on next start)</span>
