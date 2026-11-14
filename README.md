@@ -7,6 +7,7 @@
 ## Quick Navigation
 
 ### 🏆 Championship Strategy & Blueprints
+* **[Top 5 Winning Ideas & 4-Stream Grand Slam](project-context/top-5-winning-ideas.md)** — The 5 highest-ranked winning concepts and the unified 4-stream architecture.
 * **[Championship Blueprint](project-context/championship-blueprint.md)** — Deep research on worldwide AI hackathon winners (Cal Hacks, ElevenLabs, Cerebral Valley, Anthropic), PC + Android phone hardware weaponization guide, the 4 top blueprints (DeskKEP, BenchSight, HoldHero, ForkFix), and the 29-hour sprint plan.
 * **[100-Point Idea Benchmark](project-context/benchmark.md)** — Quantitative ranking rubric evaluating judge alignment, sponsor prize stacking, and live demo reliability.
 * **[20 Multi-Track Ideas](project-context/ideas/20-multi-track-ideas.md)** — 20 cross-pollinated concepts combining Biotech, Voice, Content (`fal`), and Hardware.

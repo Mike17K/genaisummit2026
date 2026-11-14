@@ -6,6 +6,7 @@ This directory contains the ideation, benchmarking, and championship architectur
 ---
 
 ## Strategic Documents
+* **[../top-5-winning-ideas.md](../top-5-winning-ideas.md)** — **Top 5 Championship Ideas & The 4-Stream Grand Slam**: The 5 highest-ranked winning concepts and unified 4-stream architecture.
 * **[../championship-blueprint.md](../championship-blueprint.md)** — **The Grand Championship Blueprint**: Global AI hackathon winning patterns (Cal Hacks, ElevenLabs, Cerebral Valley), PC + Android phone hardware weaponization guide, the 4 top-tier blueprints (DeskKEP, BenchSight, HoldHero, ForkFix), and the 29-hour execution sprint schedule.
 * **[../benchmark.md](../benchmark.md)** — **100-Point Scoring & Sponsor-Stacking Benchmark**: Evaluates ideas on judge fit, multi-dipping sponsor prize pools ($1,750 Oumi Iris, $1,500 fal, $850 treg, boxd), and stage wow moments.
 * **[20-multi-track-ideas.md](20-multi-track-ideas.md)** — **20 Multi-Track & Cross-Pollinated Ideas**: 20 engineered concepts combining Biotech, Voice, fal (Content/Art), and Open/Hardware.
