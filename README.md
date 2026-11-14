@@ -7,6 +7,7 @@
 ## Quick Navigation
 
 ### 🏆 Championship Strategy & Blueprints
+* **[TrialPulse Blueprint (ALTP Clinical Trials)](project-context/ideas/trialpulse-altp-challenge.md)** — Tailored solution answering the official Athens LifeHack challenge brief and all 5 mandatory questions.
 * **[Top 5 Winning Ideas & 4-Stream Grand Slam](project-context/top-5-winning-ideas.md)** — The 5 highest-ranked winning concepts and the unified 4-stream architecture.
 * **[Championship Blueprint](project-context/championship-blueprint.md)** — Deep research on worldwide AI hackathon winners (Cal Hacks, ElevenLabs, Cerebral Valley, Anthropic), PC + Android phone hardware weaponization guide, the 4 top blueprints (DeskKEP, BenchSight, HoldHero, ForkFix), and the 29-hour sprint plan.
 * **[100-Point Idea Benchmark](project-context/benchmark.md)** — Quantitative ranking rubric evaluating judge alignment, sponsor prize stacking, and live demo reliability.
@@ -19,6 +20,7 @@
 * **[boxd Infrastructure Guide](project-context/boxd.md)** — MicroVM cloud guide for `<200ms` forking and 100+ zero-setup SaaS integrations.
 
 ### 📂 Upstream Sources
+* **[ALTP Clinical Trials Challenge Brief (Raw)](sources/altp-clinical-trials-challenge-raw.md)** — Official challenge brief text and 5 submission questions directly from Athens LifeTech Park (`sources/ALTP_Clinical_Trials_Challenge_draft (3).docx`).
 * `sources/` contains raw dumps of slides, credentials, and partner guides.
 
 ---

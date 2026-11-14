@@ -47,8 +47,23 @@ flowchart TD
 
 ## Detailed Top 5 Ranked Breakdown
 
-### #1. "BenchSight" — The Sterile Lab-Bench Voice & Vision Copilot
-> **Streams Hit:** **Biotech & AI (ALTP)** $\times$ **Voice (Wonderful)** $\times$ **Open (Hardware)** $\times$ **Digital Art (fal)** *(The 4-Stream Grand Slam)*  
+### #1. "TrialPulse" — The Conversational Patient Experience & Continuous Trial Monitor
+> **Streams Hit:** **Biotech & AI (ALTP)** $\times$ **Voice (Wonderful)** $\times$ **Digital Art (fal)** $\times$ **Open Track (Hardware)**  
+> **Official Challenge Fit:** Direct answer to the **Athens LifeHack Clinical Trials Challenge** brief (Topics 2, 3, 4). See **[ideas/trialpulse-altp-challenge.md](ideas/trialpulse-altp-challenge.md)** for full 5-question submission.  
+> **Score:** **99 / 100**
+
+* **The 0:00 Pitch:** *"In Phase II/III clinical trials, 30% of patients drop out between visits because of unmonitored side effects, while 80% of trials face recruitment delays. TrialPulse turns an Android phone into a continuous conversational patient companion in Greek and English that listens to daily symptoms in their own words, while our clinical dashboard auto-codes CTCAE toxicities and alerts investigators before patients abandon the trial."*
+* **The Stage Wow Moment & Hardware Role:**
+  * **The Inbound Check-in Call:** The Android phone rings on the table. The patient answers on speakerphone in Greek: *"TrialPulse, έχω έντονη ναυτία και τα δάχτυλά μου μυρμηγκιάζουν όταν πιάνω κρύο νερό..."*
+  * **The Conversational Reassurance & fal.ai Push:** The voice agent speaks back gently, explaining that cold dysesthesia is normal for this chemotherapy agent, while **`fal.ai`** generates and pushes a clean visual hydration and pill timing card directly to the phone screen mid-call.
+  * **The Clinical Site Dashboard (PC):** The PC monitor auto-codes the speech to **CTCAE Grade 2 Nausea** and **Grade 1 Neuropathy**. **Oumi Iris** flags `dropout_risk: 84%`, and a `boxd` microVM automatically escalates a priority query to the oncologist and updates the EDC trial records.
+* **Sponsor Prize-Stacking:** ALTP Biotech Track Winner ($$) + Wonderful Voice ($$) + **$1,750 Oumi Iris** + **$1,500 fal** + **€50 boxd** + **€5,000 Quintessential 1st Place**.
+* **Why It Wins:** Directly answers every single requirement of ALTP's official brief, incorporates multilingual patient voice (specifically requested in Topic 3), and demonstrates production-grade CTCAE medical coding.
+
+---
+
+### #2. "BenchSight" — The Sterile Lab-Bench Voice & Vision Copilot
+> **Streams Hit:** **Biotech & AI (ALTP)** $\times$ **Voice (Wonderful)** $\times$ **Open (Hardware)** $\times$ **Digital Art (fal)**  
 > **Score:** **98 / 100**
 
 * **The 0:00 Pitch:** *"Biotech researchers at Athens LifeTech Park lose 90 minutes every day because they cannot touch a keyboard or mouse while wearing nitrile gloves under a sterile hood without contaminating a €50,000 experiment."*
