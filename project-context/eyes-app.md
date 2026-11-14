@@ -7,30 +7,29 @@
 
 ---
 
-## 1. The Strategy: Reuse 100% of the Tech Stack
+## Decisions made
+- **Web app**, not native. **Backend: Python FastAPI**; **frontend: plain HTML/JS** (no Node, no Next.js). Reason: WebSockets for a continuous stream, one process, no build step.
+- **Model: Gemini** via the Google credits (AI Studio key from the `@gcplab.me` account; see `sources/google-cloud-setup-*.pdf`). Plan: a Flash-class multimodal model for the main loop, the Gemini Live API for voice if available in the project, a larger model only when the fast one is unsure. **Verified with our key (2026-11-14):** `gemini-3.5-flash-lite` as the fast default (~1.5 s), `gemini-3.8-flash` as the larger model (~3 s; thinking off ~2.7 s). `gemini-2.5-flash` is retired for new keys. `models.list` showed no Live (`bidiGenerateContent`) models under the filter I used, so the Live API is unconfirmed. Others available: gemini-3.5-flash, 3.6/3.7-flash, 3.1-flash-lite, 2.5-pro, plus gemini-4-* previews.
+- Why not Claude here: no hackathon credits and no live audio input.
 
 Rather than fragmenting into two separate codebases, the team builds **one robust multimodal streaming engine** and ships it across two progressive phases:
 
-```mermaid
-flowchart TD
-    subgraph Core ["The Reusable Core Architecture (app/)"]
-        Client["Android Phone Client (Vanilla HTML/JS)\n• Rear Camera stream (~1 fps JPEG)\n• SpeechRecognition & interruptible TTS\n• Full-screen single tactile button"]
-        WS["FastAPI WebSocket Server (/ws)\n• Low-latency frame + text transport\n• In-memory session state"]
-        Trace["Observability Logger (/trace)\n• Real-time latency, confidence & tool logs"]
-        Agent["Agent Core (server/agent.py)\n• Multimodal Vision (Gemini Flash)\n• Decision & Uncertainty Layer (Oumi Iris)"]
-        Client <-->|/ws| WS
-        WS <--> Agent
-        WS --> Trace
-    end
+## Build order
+1. Page opens camera and mic over HTTPS (done in scaffold; phone needs a tunnel or boxd).
+2. WebSocket sends frames and speech text (done).
+3. Real model call returning a short spoken answer (done and tested live in `app/server/agent.py`).
+4. Interruptible playback (basic version done via `speechSynthesis.cancel()`).
+5. "Read this" and "what's in front of me" flows (handled by the system prompt; needs tuning with real images).
+6. Tool action and spoken uncertainty (done: remember_place, recall_places, call_contact as a demo-only simulation; uncertainty rules in the prompt).
+7. Trace panel (done: `/panel` page, shows heard text, tools, replies, latency, tokens).
 
-    subgraph Stages ["The Two Demonstrable Stages"]
-        V1["V1 MVP: Universal Eyes (Open Track / Hardware)\n• Reads physical medicine boxes, letters, menus\n• Speaks only when useful (not constant chatter)\n• Iris flags blurriness: 'Move 2 inches closer'"]
-        V2["V2: PharmaEyes / Clinical Trials (ALTP Track)\n• Ingests ALTP clinical trial protocol\n• Verifies investigational drug dose & expiration\n• Auto-codes spoken patient side-effects to CTCAE v5.0\n• Escalates high-risk adverse events to investigator via boxd"]
-    end
+## Tested
+Real Gemini call tested with a generated text image: read text, simulated call, remember/recall, and it refuses to say a road is safe; ~1-2 s per answer on the flash-lite model. With a fake model: routing, history, missing-frame note, model-error handling, tools, trace panel. Server start, page and static file served, WebSocket round trip, trace log: passed in a scripted test. Camera, mic and speech not tried in a real browser or phone yet.
 
-    Agent --> V1
-    Agent --> V2
-```
+## Open questions
+- Is the Gemini Live API enabled in our project? (not in the model list I filtered)
+- Do we pursue this or the team's trial-matching / lab-bench direction? Is anyone blind or low-vision available to test with?
+- Who has iPhone and Android to test (Safari is the strictest)?
 
 ---
 
