@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Voice and camera assistant for blind and low-vision users (hackathon scaffold)"
 requires-python = ">=3.11"
 dependencies = [
+    "fal-client>=1.0.3",
     "fastapi>=0.115",
     "google-genai>=3.3.0",
     "uvicorn[standard]>=0.30",

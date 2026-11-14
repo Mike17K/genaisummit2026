@@ -83,3 +83,6 @@ WATCH_FRAMES = int(os.environ.get("EYES_WATCH_FRAMES", "2"))
 STATIC_SKIP = os.environ.get("EYES_STATIC_SKIP", "1") != "0"
 STATIC_MOTION = float(os.environ.get("EYES_STATIC_MOTION", "0.012"))      # mean luminance change (0..1) below which the picture counts as still
 STATIC_MAX_SKIP_S = float(os.environ.get("EYES_STATIC_MAX_SKIP_S", "4"))
+
+# ---- fal (server-side only: never send this key to the browser) ----
+FAL_KEY = os.environ.get("FAL_API_KEY") or os.environ.get("FAL_KEY", "")
