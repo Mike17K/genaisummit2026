@@ -20,6 +20,7 @@
 * **[boxd Infrastructure Guide](project-context/boxd.md)** — MicroVM cloud guide for `<200ms` forking and 100+ zero-setup SaaS integrations.
 
 ### 📂 Upstream Sources
+* **[Oumi CEO Letter & Iris Recipes](sources/oumi-ceo-message-manos.md)** — Overnight guidance from Manos Koukoumidis (CEO of Oumi, ex-Google Cloud PaLM lead) with track-specific decision model recipes.
 * **[ALTP Clinical Trials Challenge Brief (Raw)](sources/altp-clinical-trials-challenge-raw.md)** — Official challenge brief text and 5 submission questions directly from Athens LifeTech Park (`sources/ALTP_Clinical_Trials_Challenge_draft (3).docx`).
 * `sources/` contains raw dumps of slides, credentials, and partner guides.
 

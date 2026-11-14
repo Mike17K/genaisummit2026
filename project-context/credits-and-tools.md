@@ -39,6 +39,13 @@
   - **Best use cases inside our hackathon project:**
     - **Agent guardrails:** Check every action an agent proposes (e.g., before submitting a form, sending an email, or executing code) for safety/policy compliance.
     - **Routing & triage:** Classify incoming tickets/emails/documents by urgency, category, or tool route in one parallel call.
+  - **Direct Guidance from Manos Koukoumidis (Co-founder & CEO, ex-Google Cloud PaLM/Gemini lead):**
+    - *"Your LLM, voice model, or image model creates; Iris decides what should happen next."*
+    - **Voice Track Recipe:** Estimate on *every turn* whether caller is angry, confused, or ready to buy; route between booking, billing, workflows, or human.
+    - **Biotech / Healthcare Recipe:**
+      - **Triage:** Rate urgency of patient messages from routine self-care to emergency before generating responses.
+      - **Safety Checks:** Ask Iris whether a proposed response crosses clinical boundaries (e.g., unauthorized diagnosis) to block or escalate.
+    - **Content / fal Recipe:** Generate 20 takes, have Iris score them against the creative brief, keep the best three.
   - **API Endpoint (`POST https://inference.oumi.ai/v1/systemone`):**
     ```bash
     curl -X POST https://inference.oumi.ai/v1/systemone \
