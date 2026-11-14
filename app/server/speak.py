@@ -12,7 +12,7 @@ from collections import OrderedDict
 from google import genai
 from google.genai import types
 
-from . import config, phrases, trace
+from . import config, fal, phrases, trace
 
 _client: genai.Client | None = None
 _cache: "OrderedDict[str, bytes]" = OrderedDict()
@@ -46,6 +46,8 @@ async def _synthesize(text: str) -> bytes:
     if _slots is None:
         _slots = asyncio.Semaphore(config.MAX_PARALLEL_CALLS)
     async with _slots:
+        if config.TTS_PROVIDER == "fal":
+            return await fal.tts(text)   # already raw PCM16 24 kHz
         response = await _call(text)
     blob = response.candidates[0].content.parts[0].inline_data
     return _to_pcm16(blob.data, blob.mime_type or "")

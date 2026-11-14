@@ -86,3 +86,7 @@ STATIC_MAX_SKIP_S = float(os.environ.get("EYES_STATIC_MAX_SKIP_S", "4"))
 
 # ---- fal (server-side only: never send this key to the browser) ----
 FAL_KEY = os.environ.get("FAL_API_KEY") or os.environ.get("FAL_KEY", "")
+FAL_TTS_MODEL = os.environ.get("FAL_TTS_MODEL", "fal-ai/elevenlabs/tts/eleven-v3")  # $0.10 per 1000 characters
+FAL_TTS_VOICE = os.environ.get("FAL_TTS_VOICE", "Rachel")   # e.g. Aria, Roger, Sarah, Laura, Charlie, George
+# Which service speaks the alerts: "gemini" (default) or "fal" (ElevenLabs v3 through fal; billed per character).
+TTS_PROVIDER = os.environ.get("EYES_TTS_PROVIDER", "gemini")
