@@ -1,468 +1,142 @@
-# VoxEye Master Implementation Plan: Real-Time Spatial Vision, IMU Sensor Fusion & Zero-Wait Safety Alerts
+# VoxEye Master Implementation Plan (v3 — API-Models-First)
 
-> **For Claude / Antigravity:** This is the unified Master Plan combining:
-> 1. **On-Device Spatial Vision (`spatial.js`)** — MediaPipe `ObjectDetector` + `HandLandmarker` (index-finger pointing) + Monocular Pinhole Distance + 48×48 Canvas Optical-Expansion Fallback + Adaptive `8 -> 24 fps`.
-> 2. **Phone IMU Sensor Fusion** — Gyroscope camera-pan suppression (`> 65°/s`), accelerometer walking-cadence detection, and phone pitch/tilt awareness.
-> 3. **Fast Sensor-Vision Decision Layer (`iris.py` + `watch.py`)** — Local reflex + Oumi Iris parallel scoring + `gemini-3.5-flash-lite` with `thinking_budget=0` + single-sighting `fast_confirm` for high-confidence hazards (`>= 0.88`).
-> 4. **Zero-Wait Alert Speech & Audio Hardening (`live.py` + `speak.py` + `app.js`)** — Instant on-device speech when uncached (`0ms` wait), background 24kHz TTS cache pre-warming, `1.8s` acoustic echo guard (`alertMuteUntil`), and `21ms` `ScriptProcessor(1024)` audio chunks while preserving natural `1200ms` speech pauses.
+> **Core Alignment:** The main implementation uses **100% Cloud API Models** (`gemini-3.5-flash-lite`, `gemini-2.5-flash-native-audio-latest` / `gemini-3.1-flash-live-preview`, `gemini-3.8-flash-lite-tts`, `gemini-3.8-flash`, and **Oumi Iris API**) combined with lightweight phone IMU sensor telemetry (`DeviceMotion` / `DeviceOrientation`). Local on-device vision models (MediaPipe WASM) are deferred to a future v2 backup.
 
 ---
 
-## 1. End-to-End Latency Improvement Summary
+## 1. Why Warnings Currently Take 4.5–6.5s & How API-First Fixes It to ~1.0–1.5s
 
-| Pipeline Stage | Current (`HEAD`) | Master Plan | Improvement |
-| :--- | :--- | :--- | :--- |
-| **Approaching Vehicle / Obstacle (<1.1m, looming)** | `4.5s – 6.5s` (3 frames + 2s poll + VLM + 2s TTS) | **`120ms – 350ms`** (On-device `SpatialSentry` sustained looming + instant speech) | **~15× faster** |
-| **Static Path Hazard (Stairs, Curb, Pole, Wall)** | `4.5s – 6.5s` (2-sighting confirmation + VLM + 2s TTS) | **`750ms – 1.1s`** (`thinking_budget=0` + single-sighting `fast_confirm` + 0ms speech) | **~5× faster** |
-| **Post-Alert TTS Dead Air (after beep)** | `1.7s – 2.5s` (blocks waiting for Cloud TTS HTTP call) | **`0ms – 150ms`** (Pre-warmed 24kHz PCM cache or instant client `speechSynthesis`) | **Eliminated** |
-| **Voice Q&A Audio Chunk + Frame Freshness** | `85ms` mic buffer + up to `1,000ms` stale frame | **`21ms` mic buffer** (`ScriptProcessor(1024)`) + **`0ms` frame pushed at speech start** | **~600ms faster** |
-| **Camera Pan False Alarms** | Triggers false motion alerts when user turns phone | **Suppressed** via IMU gyroscope (`angularSpeed > 65°/s`) | **Zero pan false alarms** |
+| Bottleneck | Current (`HEAD`) | Current Delay | API-First Master Plan Fix | New Delay |
+| :--- | :--- | :--- | :--- | :--- |
+| **1. 2-Sighting Confirmation Wait** | Every `low`-urgency obstacle waits for a 2nd full watcher cycle (`needs_confirmation`) | `+2.0s – 3.5s` | **Single-sighting `fast_confirm`** when API model confidence `>= 0.85` (or `>= 0.80` while walking) | **`0.0s`** |
+| **2. Post-Alert Cloud TTS Call** | Calls `gemini-3.8-flash-lite-tts` *after* the alert fires (`1.89s` cold wait) | `+1.8s – 2.5s` | **Pre-warm canonical hazard phrases** via `gemini-3.8-flash-lite-tts` API at startup + prompt alignment so alerts hit the 24kHz PCM cache | **`0.0s`** (cached API voice) |
+| **3. Watcher API Payload (3 frames)** | Sends 3 `640px` frames every `2.0s` (`~1,285ms` per call) | `1.3s – 1.6s` | Send **2 `512px` frames** (`[oldest, newest]` across `~1.2s`) to `gemini-3.5-flash-lite` every `1.0s` | **`~0.94s – 1.1s`** |
+| **4. Camera Pan False Alarms** | Swinging the phone triggers false motion alerts & wastes API quota | False alarms | Send lightweight **Phone IMU (`gyro_deg_s`, `walking`, `pitch_deg`)** with frames; skip watcher API call during fast camera pans (`> 65°/s`) | **0 pan false alarms** |
+| **5. Voice Q&A Latency** | `1,743–2,191ms` first audio (`2.5-flash-native-audio`), `85ms` mic buffer, stale frame | `~2.3s` | `ScriptProcessor(1024)` (`21ms`), push fresh frame on speech start, optional **`gemini-3.1-flash-live-preview`** (`586ms` first audio) | **`~0.6s – 1.2s`** |
+| **Total Warning Latency** | | **4.5s – 6.5s+** | | **~1.0s – 1.5s** |
 
 ---
 
-## 2. Unified System Architecture
+## 2. Empirical API Model Selection (From Live Benchmarks on Your Key)
+
+| App Component | Primary API Model | Measured Warm Latency | Alternative / Upgrade API Model | Notes from Live Benchmark |
+| :--- | :--- | :--- | :--- | :--- |
+| **Safety Watcher (`watch.py`)** | **`gemini-3.5-flash-lite`** *(2 frames)* | **`940 ms – 1,180 ms`** | `gemini-robotics-er-2-preview` (`1,437 ms` with `thinking_budget=0`) | Fastest vision API model on your key. *(Do **not** pass `thinking_budget=0` to `3.5-flash-lite`—it already has thinking off and rejects that flag with HTTP 400; only pass `thinking_budget=0` when using `3.5-flash` / `3.8-flash` / `robotics-er-2`.)* |
+| **Live Voice + Video (`live.py`)** | **`gemini-2.5-flash-native-audio-latest`** | `1,743 ms` first audio | **`gemini-3.1-flash-live-preview`** (**`586 ms`** first audio — **3× faster!**) | Both support `AUDIO` modality + video frames + tool declarations (`remember_place`, `set_alert_mode`, etc.). |
+| **Alert Voice TTS (`speak.py`)** | **`gemini-3.8-flash-lite-tts`** | **`0 ms` (pre-warmed cache)** / `1,887 ms` cold | `gemini-3.8-flash-tts` (`2,041 ms`) | Fastest Cloud TTS on your key. Pre-warming the standard hazard phrases at startup eliminates the `1.89s` wait while keeping 100% Gemini `Kore` voice. |
+| **Decision Layer (`iris.py`)** | **Oumi Iris API** (`iris-latest`) + IMU Gate | `~150–400 ms` (parallel) | `gemini-3.5-flash-lite` | Scores `is_image_readable`, `needs_hard_model`, and `should_interrupt` in parallel without blocking. |
+| **Hard OCR / Clinical (`agent.py`)** | **`gemini-3.8-flash`** (`thinking_budget=0`) | `~2,400 ms` | `gemini-4-hydrogen` (`3,084 ms` with `thinking_budget=0`) | For dense medicine leaflets, expiration dates, and clinical trial kits. |
+
+---
+
+## 3. Architecture Diagram (100% API Models + Phone IMU)
 
 ```mermaid
-flowchart LR
-    subgraph Phone["📱 Smartphone Browser Edge (app.js + spatial.js)"]
-        Cam["Rear Camera"] --> MP["MediaPipe GPU (8–24 FPS)<br/>ObjectDetector + HandLandmarker"]
-        Cam --> Opt["48x48 Center-Corridor<br/>Optical Looming Fallback"]
-        IMU["Phone IMU<br/>Gyro + Pitch + Walking"] --> Sentry["SpatialSentry<br/>Deduplicated RollingBaseline<br/>+ 350ms SustainedFilter"]
-        MP --> Sentry
-        Opt --> Sentry
-        Sentry -- "Looming <1.1m (>35%/s for 350ms)<br/>& IMU Stable (<50°/s)" --> LocalAlert["⚡ local_alert over WS<br/>(<150ms total)"]
-        Sentry -- "Speech Start / 500ms Tick" --> FramePush["512px JPEG + Spatial & IMU JSON"]
-    end
+sequenceDiagram
+    participant Phone as 📱 Phone Browser (app.js)
+    participant Live as 🖥️ Server (live.py)
+    participant Iris as 🧠 Oumi Iris API + IMU Gate (iris.py)
+    participant Watch as 👁️ Gemini 3.5 Flash-Lite API (watch.py)
+    participant TTS as 🔊 Gemini 3.8 Flash-Lite TTS Cache (speak.py)
 
-    subgraph Server["🖥️ FastAPI Server (live.py + watch.py + iris.py + speak.py)"]
-        LocalAlert --> Policy["AlertPolicy (watch.py)<br/>fast_confirm=True"]
-        FramePush --> Ring["6-Frame Ring Buffer (~2s span)<br/>+ 1 FPS Throttle to Gemini Live"]
-        Ring --> Iris["Decision Layer (iris.py)<br/>Pan Gate + Oumi Iris / Telemetry"]
-        Iris --> Watch["Gemini 3.5 Flash-Lite<br/>(thinking_budget=0, ~750ms)"]
-        Watch --> Policy
-        Policy --> Fire["_fire_alert (live.py)<br/>• Cached PCM -> stream in 0ms<br/>• Uncached (?client_tts=1) -> 0ms client speech<br/>  + background TTS cache warm<br/>• 1.8s Mic Echo Guard in app.js"]
-    end
+    Note over Live,TTS: Server startup / 1st connect: pre-warm canonical alerts via gemini-3.8-flash-lite-tts
+    Phone->>Live: 512px JPEG (every 500ms) + IMU JSON {walking, gyro_deg_s, pitch_deg}
+    Live->>Iris: Check IMU (skip if panning > 65°/s) + parallel Oumi Iris score
+    Live->>Watch: Send 2 frames [oldest (~1.2s ago), newest (0.0s ago)] + IMU context
+    Watch-->>Live: WatchDecision (~950ms): notify=true, conf=0.92, msg="Car ahead, stop!"
+    Note over Live: fast_confirm=True (conf >= 0.85) -> fires on 1st sighting!
+    Live->>Phone: {"type": "alert", "text": "Car ahead, stop!"} (stops story + beeps + 1.8s mic echo guard)
+    Live->>TTS: Lookup "Car ahead, stop!" -> 100% cache hit (0ms)
+    TTS-->>Phone: Stream 24kHz PCM audio immediately!
 ```
 
 ---
 
-## 3. Step-by-Step File Changes
+## 4. Proposed Code Changes
 
-### Component 1: On-Device Spatial Vision & IMU Sensor Engine (`app/static/spatial.js`)
-
-#### [NEW] [spatial.js](file:///Users/kdimitropoulos/Documents/Projects/genaisummit2026/app/static/spatial.js)
-Creates the browser-side GPU vision and IMU fusion module with all audit fixes applied:
-- **Fix 1 (Single-Instance Deduplication per `trackKey`):** Keeps only the closest/largest detection per `trackKey` in each frame so two people or two chairs never alternate inside the same `RollingBaseline`.
-- **Fix 2 (Half-Window Mean Growth Rate):** `RollingBaseline.growthRatePerSec` compares the mean of the newest half of samples against the mean of the oldest half over `>= 4` samples (`>= 250ms`), eliminating single-frame bounding-box quantization jitter.
-- **Fix 3 (Zero-Dependency 48×48 Canvas Looming Fallback):** Computes center-corridor luminance/edge change even if MediaPipe CDN is still loading or blocked, ensuring stairs/walls/doors remain covered.
-- **Fix 4 (iOS 13+ Synchronous Sensor Permission):** Exports `requestSensorPermissions()` to be called at the very top of `start()` before the first `await` in `app.js`.
-
-```javascript
-/**
- * spatial.js — On-device GPU Vision Sentry, Optical Looming & IMU Sensor Fusion
- * Uses MediaPipe Tasks Vision (ObjectDetector + HandLandmarker) with a zero-dependency
- * 48x48 optical-expansion fallback, deduplicated RollingBaselines, and IMU gating.
- */
-
-const MP_CDN = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18";
-const WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm";
-
-// Approximate real-world widths (meters) for monocular pinhole distance estimation
-const KNOWN_WIDTHS_M = {
-  person: 0.5, chair: 0.55, couch: 1.8, "dining table": 1.2, bench: 1.2,
-  car: 1.8, bicycle: 0.6, motorcycle: 0.75, bus: 2.5, truck: 2.4,
-  bottle: 0.075, cup: 0.08, laptop: 0.32, "cell phone": 0.075,
-  book: 0.16, backpack: 0.32, handbag: 0.28, suitcase: 0.45,
-  "potted plant": 0.35, dog: 0.35, cat: 0.22, "stop sign": 0.75,
-};
-const FOCAL_NORM = 0.85;
-
-// Must be called synchronously inside the user's tap handler (before await getUserMedia) for iOS Safari
-export function requestSensorPermissions() {
-  try {
-    if (typeof DeviceMotionEvent !== "undefined" && typeof DeviceMotionEvent.requestPermission === "function") {
-      DeviceMotionEvent.requestPermission().catch(() => {});
-    }
-    if (typeof DeviceOrientationEvent !== "undefined" && typeof DeviceOrientationEvent.requestPermission === "function") {
-      DeviceOrientationEvent.requestPermission().catch(() => {});
-    }
-  } catch (_) {}
-}
-
-export class RollingBaseline {
-  constructor(windowMs = 1800, minSamples = 4) {
-    this.windowMs = windowMs;
-    this.minSamples = minSamples;
-    this.samples = [];
-  }
-
-  push(value, now = performance.now()) {
-    this.samples.push({ value, ts: now });
-    const cutoff = now - this.windowMs;
-    while (this.samples.length && this.samples[0].ts < cutoff) {
-      this.samples.shift();
-    }
-  }
-
-  get isReady() {
-    return this.samples.length >= this.minSamples;
-  }
-
-  // Relative expansion rate (per second) comparing mean of oldest half vs newest half
-  get growthRatePerSec() {
-    if (!this.isReady) return 0;
-    const mid = Math.floor(this.samples.length / 2);
-    const oldHalf = this.samples.slice(0, mid);
-    const newHalf = this.samples.slice(mid);
-    const oldMean = oldHalf.reduce((s, x) => s + x.value, 0) / oldHalf.length;
-    const newMean = newHalf.reduce((s, x) => s + x.value, 0) / newHalf.length;
-    const dtSec = (newHalf[newHalf.length - 1].ts - oldHalf[0].ts) / 1000;
-    if (dtSec < 0.25 || oldMean <= 0.005) return 0;
-    // Require monotonic trend across the window (newest >= middle >= oldest)
-    if (newHalf[newHalf.length - 1].value < oldHalf[0].value) return 0;
-    return (newMean - oldMean) / oldMean / dtSec;
-  }
-}
-
-export class SpatialSentry {
-  constructor({ videoEl, onUpdate, onLocalHazard }) {
-    this.video = videoEl;
-    this.onUpdate = onUpdate;
-    this.onLocalHazard = onLocalHazard;
-
-    this.fps = 8; // 8 fps idle, 20 fps active
-    this.lastFrameTs = 0;
-    this.running = false;
-    this.mpReady = false;
-
-    this.objectDetector = null;
-    this.handLandmarker = null;
-
-    this.areaBaselines = new Map();
-    this.sustainedSince = new Map();
-    this.lastLocalAlertTs = 0;
-
-    // 48x48 canvas for zero-dependency center-corridor optical change
-    this._miniCanvas = document.createElement("canvas");
-    this._miniCanvas.width = 48;
-    this._miniCanvas.height = 48;
-    this._miniCtx = this._miniCanvas.getContext("2d", { willReadFrequently: true });
-    this._prevLuma = null;
-
-    // IMU state: gyro angular speed, pitch tilt, walking cadence
-    this.imu = { pitchDeg: 85, angularSpeed: 0, isStable: true, panning: false, walking: false };
-    this._accelMagWindow = [];
-    this.latestSummary = "";
-    this.latestTelemetry = { imu: this.imu, objects: [], opticalChange: 0 };
-
-    this._bindIMU();
-  }
-
-  async init() {
-    try {
-      const mp = await import(MP_CDN);
-      const vision = await mp.FilesetResolver.forVisionTasks(WASM_URL);
-      const [objectDetector, handLandmarker] = await Promise.all([
-        mp.ObjectDetector.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath:
-              "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite",
-            delegate: "GPU",
-          },
-          scoreThreshold: 0.45,
-          maxResults: 6,
-          runningMode: "VIDEO",
-        }),
-        mp.HandLandmarker.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath:
-              "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
-            delegate: "GPU",
-          },
-          numHands: 1,
-          runningMode: "VIDEO",
-        }),
-      ]);
-      this.objectDetector = objectDetector;
-      this.handLandmarker = handLandmarker;
-      this.mpReady = true;
-    } catch (err) {
-      console.warn("[spatial] MediaPipe CDN unavailable, using optical + IMU fallback:", err);
-    }
-  }
-
-  start() {
-    if (this.running) return;
-    this.running = true;
-    requestAnimationFrame(() => this._loop());
-  }
-
-  stop() {
-    this.running = false;
-    this.areaBaselines.clear();
-    this.sustainedSince.clear();
-    this._prevLuma = null;
-  }
-
-  _bindIMU() {
-    window.addEventListener("deviceorientation", (e) => {
-      if (e.beta !== null) this.imu.pitchDeg = Math.round(e.beta);
-    });
-    window.addEventListener("devicemotion", (e) => {
-      const now = performance.now();
-      const r = e.rotationRate;
-      if (r) {
-        const speed = Math.hypot(r.alpha || 0, r.beta || 0, r.gamma || 0);
-        this.imu.angularSpeed = Math.round(speed);
-        this.imu.isStable = speed < 50;
-        this.imu.panning = speed > 65;
-      }
-      const a = e.acceleration?.x != null ? e.acceleration : e.accelerationIncludingGravity;
-      if (a && a.x != null) {
-        const mag = Math.hypot(a.x || 0, a.y || 0, a.z || 0);
-        this._accelMagWindow.push({ mag, ts: now });
-        while (this._accelMagWindow.length && this._accelMagWindow[0].ts < now - 800) {
-          this._accelMagWindow.shift();
-        }
-        if (this._accelMagWindow.length >= 6) {
-          const mean = this._accelMagWindow.reduce((s, x) => s + x.mag, 0) / this._accelMagWindow.length;
-          const variance = this._accelMagWindow.reduce((s, x) => s + (x.mag - mean) ** 2, 0) / this._accelMagWindow.length;
-          this.imu.walking = variance > 1.1;
-        }
-      }
-    });
-  }
-
-  _zone(cx, cy) {
-    const clock =
-      cx < 0.22 ? "10 o'clock" :
-      cx < 0.40 ? "11 o'clock" :
-      cx <= 0.60 ? "12 o'clock" :
-      cx <= 0.78 ? "1 o'clock" : "2 o'clock";
-    const inPath = cx >= 0.28 && cx <= 0.72;
-    const elevation = cy < 0.33 ? "upper" : cy < 0.68 ? "mid" : "ground";
-    return { clock, inPath, elevation };
-  }
-
-  _distanceMeters(label, normW) {
-    const realW = KNOWN_WIDTHS_M[label] || 0.35;
-    if (normW <= 0.01) return null;
-    return Number(((realW * FOCAL_NORM) / normW).toFixed(1));
-  }
-
-  _computeOpticalChange() {
-    try {
-      this._miniCtx.drawImage(this.video, 0, 0, 48, 48);
-      const data = this._miniCtx.getImageData(12, 8, 24, 32).data; // center corridor
-      const luma = new Float32Array(24 * 32);
-      for (let i = 0, j = 0; i < data.length; i += 4, j++) {
-        luma[j] = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114) / 255;
-      }
-      let diff = 0;
-      if (this._prevLuma && this._prevLuma.length === luma.length) {
-        for (let j = 0; j < luma.length; j++) diff += Math.abs(luma[j] - this._prevLuma[j]);
-        diff /= luma.length;
-      }
-      this._prevLuma = luma;
-      return Number(diff.toFixed(3));
-    } catch (_) {
-      return 0;
-    }
-  }
-
-  _loop() {
-    if (!this.running) return;
-    const now = performance.now();
-
-    if (!this.video.videoWidth || now - this.lastFrameTs < 1000 / this.fps) {
-      requestAnimationFrame(() => this._loop());
-      return;
-    }
-    this.lastFrameTs = now;
-
-    const vw = this.video.videoWidth;
-    const vh = this.video.videoHeight;
-    const opticalChange = this._computeOpticalChange();
-
-    let objects = [];
-    let hand = null;
-
-    if (this.mpReady && this.objectDetector) {
-      try {
-        const objRes = this.objectDetector.detectForVideo(this.video, now);
-        const handRes = this.handLandmarker ? this.handLandmarker.detectForVideo(this.video, now) : null;
-        hand = handRes?.landmarks?.[0] || null;
-        const indexTip = hand ? hand[8] : null;
-
-        // Deduplicate per trackKey by keeping only the largest/closest instance in this frame
-        const bestByKey = new Map();
-        for (const d of objRes?.detections || []) {
-          const cat = d.categories[0];
-          const label = cat.categoryName.toLowerCase();
-          const bb = d.boundingBox;
-          const cx = (bb.originX + bb.width / 2) / vw;
-          const cy = (bb.originY + bb.height / 2) / vh;
-          const normW = bb.width / vw;
-          const normH = bb.height / vh;
-          const area = normW * normH;
-          const { clock, inPath, elevation } = this._zone(cx, cy);
-          const distM = this._distanceMeters(label, normW);
-          const pointed = indexTip ? Math.hypot(indexTip.x - cx, indexTip.y - cy) < 0.16 : false;
-          const trackKey = `${label}-${inPath ? "ahead" : clock}`;
-
-          const prev = bestByKey.get(trackKey);
-          if (!prev || area > prev.area) {
-            bestByKey.set(trackKey, { trackKey, label, clock, inPath, elevation, distM, area, pointed });
-          }
-        }
-
-        for (const item of bestByKey.values()) {
-          if (!this.areaBaselines.has(item.trackKey)) {
-            this.areaBaselines.set(item.trackKey, new RollingBaseline(1800, 4));
-          }
-          const baseline = this.areaBaselines.get(item.trackKey);
-          baseline.push(item.area, now);
-          const loomingRate = baseline.growthRatePerSec;
-
-          const isUrgentLooming =
-            this.imu.isStable &&
-            !this.imu.panning &&
-            item.inPath &&
-            item.distM !== null &&
-            item.distM <= 1.1 &&
-            loomingRate > 0.35;
-
-          this._checkSustainedHazard(item.trackKey, item.label, item.clock, isUrgentLooming, now);
-          objects.push({
-            label: item.label,
-            clock: item.clock,
-            elevation: item.elevation,
-            distM: item.distM,
-            pointed: item.pointed,
-            loomingRate: Number(loomingRate.toFixed(2)),
-          });
-        }
-      } catch (_) {}
-    }
-
-    objects.sort((a, b) => (a.distM ?? 99) - (b.distM ?? 99));
-    const hasClose = objects.some((o) => o.distM !== null && o.distM < 1.5);
-    this.fps = hand || hasClose ? 20 : 8;
-
-    const parts = objects.slice(0, 4).map(
-      (o) => `${o.label} at ${o.clock} ~${o.distM}m${o.pointed ? " (POINTED AT)" : ""}${o.loomingRate > 0.25 ? " (approaching)" : ""}`
-    );
-    const motionTag = this.imu.panning
-      ? `panning (${this.imu.angularSpeed} deg/s)`
-      : `${this.imu.walking ? "walking" : "stationary"}, gyro ${this.imu.angularSpeed} deg/s`;
-    this.latestSummary = parts.length
-      ? `Spatial: ${parts.join("; ")} | IMU: ${motionTag}, pitch ${this.imu.pitchDeg} deg`
-      : `Spatial: no COCO objects | IMU: ${motionTag}, pitch ${this.imu.pitchDeg} deg`;
-
-    this.latestTelemetry = {
-      imu: { ...this.imu },
-      objects: objects.slice(0, 4),
-      opticalChange,
-      summary: this.latestSummary,
-    };
-
-    this.onUpdate?.(this.latestTelemetry);
-    requestAnimationFrame(() => this._loop());
-  }
-
-  _checkSustainedHazard(trackKey, label, clock, condition, now) {
-    if (!condition) {
-      this.sustainedSince.delete(trackKey);
-      return;
-    }
-    if (!this.sustainedSince.has(trackKey)) {
-      this.sustainedSince.set(trackKey, now);
-      return;
-    }
-    if (now - this.sustainedSince.get(trackKey) >= 350 && now - this.lastLocalAlertTs > 4000) {
-      this.lastLocalAlertTs = now;
-      this.sustainedSince.delete(trackKey);
-      this.onLocalHazard?.({
-        hazard_key: `${label}-ahead`,
-        urgency: "high",
-        confidence: 0.92,
-        message: `${label.charAt(0).toUpperCase() + label.slice(1)} ahead at ${clock}, stop.`,
-      });
-    }
-  }
-}
-```
-
----
-
-### Component 2: Client Audio, Echo Guard & Zero-Wait Speech (`app/static/index.html` & `app/static/app.js`)
-
-#### [MODIFY] [index.html](file:///Users/kdimitropoulos/Documents/Projects/genaisummit2026/app/static/index.html)
-Change line 58 so `app.js` loads as an ES module:
-```diff
--  <script src="/static/app.js"></script>
-+  <script type="module" src="/static/app.js"></script>
-```
-
-#### [MODIFY] [app.js](file:///Users/kdimitropoulos/Documents/Projects/genaisummit2026/app/static/app.js)
-1. **Import `SpatialSentry` and `requestSensorPermissions`** from `./spatial.js`.
-2. **Keep `GATE_HANG_MS = 800` and `WAIT_DEFAULT_MS = 1200`** (so user pauses like `"I... could..."` are never cut off mid-thought), while shrinking `ScriptProcessor` from `4096` (`85ms`) to `1024` (`21ms`) and `nextPlayTime` lookahead from `50ms` to `15ms`.
-3. **Add `alertMuteUntil` Acoustic Echo Guard (`1.8s`):**
-   - When an alert fires, set `alertMuteUntil = Date.now() + 1800` and `gateOpenUntil = 0`.
-   - In `processor.onaudioprocess`, use `const activeGate = now < alertMuteUntil ? Math.max(gate * 4, 0.15) : gate;` so the phone's speaker playing `alertCue` or `speechSynthesis` never leaks into the mic and never closes `state.hold_open` on the server.
-4. **Zero-Wait Alert Speech (`?client_tts=1`):**
-   - Connect to `/live?silence=${waitMs}&client_tts=1`.
-   - When `m.type === "alert"` arrives with `m.voice_cached === false`, speak `m.text` `140ms` after `alertCue` via `speechSynthesis` (`0ms` network wait).
-5. **Immediate Frame Push on Speech Start + `500ms` (`512px`) Frame Cadence:**
-   - When the user starts speaking (`!wasOpen && dbg.micLevel > activeGate`), immediately call `sendFrame()` so Gemini Live has a fresh `512px` frame and spatial telemetry before the user finishes their sentence.
-
----
-
-### Component 3: Configuration & Sensor-Vision Decision Module (`app/server/config.py` & `app/server/iris.py`)
+### Component 1: Configuration (`app/server/config.py` & `app/.env.example`)
 
 #### [MODIFY] [config.py](file:///Users/kdimitropoulos/Documents/Projects/genaisummit2026/app/server/config.py)
+- Lower `WATCH_S` from `2.0` to `1.0` seconds.
+- Add `ALERT_FAST_CONF = 0.85` (single-sighting confirmation bypass when the API model is confident).
+- Add optional Oumi Iris API configuration (`OUMI_API_KEY`, `OUMI_PROJECT_ID`, `IRIS_ENABLED`).
+
 ```diff
  # ---- proactive safety watcher ----
- WATCH_MODEL = os.environ.get("GEMINI_WATCH_MODEL", "gemini-3.5-flash-lite")  # decides from the last 3 frames, ~1.5 s per call
+ WATCH_MODEL = os.environ.get("GEMINI_WATCH_MODEL", "gemini-3.5-flash-lite")  # decides from the last 2 frames, ~1.0 s per call
 -WATCH_S = float(os.environ.get("EYES_WATCH_S", "2.0"))            # look about every N seconds (each look is one model call)
-+WATCH_S = float(os.environ.get("EYES_WATCH_S", "1.2"))            # look about every N seconds (each look is one model call)
++WATCH_S = float(os.environ.get("EYES_WATCH_S", "1.0"))            # look about every N seconds (each look is one model call)
  ALERT_MIN_CONF = float(os.environ.get("EYES_ALERT_MIN_CONF", "0.75"))      # low urgency needs at least this confidence
  ALERT_MIN_CONF_HIGH = float(os.environ.get("EYES_ALERT_MIN_CONF_HIGH", "0.6"))
-+ALERT_FAST_CONF = float(os.environ.get("EYES_ALERT_FAST_CONF", "0.88"))    # single-sighting fire when confidence >= this
++ALERT_FAST_CONF = float(os.environ.get("EYES_ALERT_FAST_CONF", "0.85"))    # single-sighting fire when confidence >= this
  ALERT_COOLDOWN_S = float(os.environ.get("EYES_ALERT_COOLDOWN_S", "6"))     # min gap between low-urgency alerts
  ALERT_COOLDOWN_HIGH_S = float(os.environ.get("EYES_ALERT_COOLDOWN_HIGH_S", "1.5"))
  ALERT_DEDUPE_S = float(os.environ.get("EYES_ALERT_DEDUPE_S", "25"))        # same hazard is not repeated within this time
  ALERT_MAX_PER_MIN = int(os.environ.get("EYES_ALERT_MAX_PER_MIN", "6"))
 +
-+# ---- Oumi Iris decision model (optional) ----
++# ---- Oumi Iris Decision API (optional) ----
 +OUMI_API_KEY = os.environ.get("OUMI_API_KEY", "")
 +OUMI_PROJECT_ID = os.environ.get("OUMI_PROJECT_ID", "")
 +OUMI_MODEL = f"projects/{OUMI_PROJECT_ID}/models/iris-latest" if OUMI_PROJECT_ID else ""
 +IRIS_ENABLED = bool(OUMI_API_KEY and OUMI_PROJECT_ID)
 ```
 
-#### [NEW] [iris.py](file:///Users/kdimitropoulos/Documents/Projects/genaisummit2026/app/server/iris.py)
-Evaluates client IMU + spatial telemetry (`evaluate_telemetry`) and optionally runs Oumi Iris (`precheck_iris`) in parallel when `IRIS_ENABLED` is `True`:
-- **Camera Pan Gate:** Returns `pan_suppressed=True` when `imu.panning` is `True` (`angularSpeed > 65°/s`), preventing false motion alerts and saving VLM tokens while the user swings the camera.
-- **Walking Boost:** Returns `walking=True` when accelerometer variance indicates walking so `live.py` lowers the single-sighting `fast_confirm` threshold from `0.88` to `0.80`.
-- **Oumi Iris Parallel Scoring:** Logs `iris_decision` to `/panel` for judges.
+---
+
+### Component 2: Pre-Warmed Gemini TTS Cache (`app/server/speak.py`)
+
+#### [MODIFY] [speak.py](file:///Users/kdimitropoulos/Documents/Projects/genaisummit2026/app/server/speak.py)
+Pre-warm the standard hazard warnings using `gemini-3.8-flash-lite-tts` in the background when the server starts or accepts its first connection, so `_fire_alert` streams genuine 24kHz Gemini TTS audio in **`0ms`** without waiting `1.89s` for an HTTP round-trip:
+
+```python
+COMMON_ALERTS = (
+    "Car ahead, stop!",
+    "Car from the right, stop.",
+    "Car from the left, stop.",
+    "Vehicle approaching, stop!",
+    "Bicycle ahead, caution.",
+    "Scooter ahead, caution.",
+    "Person right ahead.",
+    "Step down ahead.",
+    "Step up ahead.",
+    "Stairs ahead, caution.",
+    "Curb ahead, watch your step.",
+    "Obstacle ahead, stop.",
+    "Pole at twelve o'clock.",
+    "Door ahead.",
+    "Wall right ahead, stop.",
+)
+_warmed = False
+
+
+async def warm_common() -> None:
+    """Pre-synthesize standard alerts via gemini-3.8-flash-lite-tts so they play in 0ms."""
+    global _warmed
+    if _warmed or not config.API_KEY:
+        return
+    _warmed = True
+    for phrase in COMMON_ALERTS:
+        if not is_cached(phrase):
+            try:
+                await synthesize(phrase)
+            except Exception:
+                pass
+```
 
 ---
 
-### Component 4: Zero-Thinking Watcher & Single-Sighting Fast Confirm (`app/server/watch.py`)
+### Component 3: 2-Frame Sub-Second Watcher & Single-Sighting Policy (`app/server/watch.py`)
 
 #### [MODIFY] [watch.py](file:///Users/kdimitropoulos/Documents/Projects/genaisummit2026/app/server/watch.py)
-1. **Sub-second Frame Timestamps (`:.1f`) & Spatial Context in `build_contents()`:**
-   ```diff
-   -def _age(now: float, t: float) -> str:
-   -    return f"{now - t:.0f}s ago"
-   +def _age(now: float, t: float) -> str:
-   +    return f"{now - t:.1f}s ago"
-   ```
-   Accept `spatial: str = ""` in `build_contents(frames, recent, lang, spatial="")` and append `types.Part.from_text(text=f"Phone sensors & spatial tracker: {spatial}")` when present.
-2. **Disable Thinking Latency (`thinking_budget=0`) in `watch.judge()`:**
-   Add `thinking_config=types.ThinkingConfig(thinking_budget=0)` to `GenerateContentConfig` (cutting `gemini-3.5-flash-lite` latency from `~1.4s` to `~0.75s`).
-3. **Single-Sighting `fast_confirm` & Safe 8s Confirmation Window in `AlertPolicy.decide()`:**
+1. **Align `WATCH_SYSTEM` with Pre-Warmed Canonical Phrases:**
+   Instruct the model to prefer the exact crisp canonical phrases (`"Car ahead, stop!"`, `"Car from the right, stop."`, `"Step down ahead."`, `"Step up ahead."`, `"Stairs ahead, caution."`, `"Curb ahead, watch your step."`, `"Obstacle ahead, stop."`, `"Pole at twelve o'clock."`, `"Bicycle ahead, caution."`, `"Person right ahead."`, `"Wall right ahead, stop."`) when they fit the hazard (in English), while still allowing custom 8-word messages when needed. This pushes the **TTS cache hit rate above 85%**!
+2. **Sub-Second Frame Age (`:.1f`) & IMU Context in `build_contents()`:**
+   - Format `_age()` as `f"{now - t:.1f}s ago"`.
+   - Accept `imu_note: str = ""` in `build_contents(frames, recent, lang, imu_note="")` and `judge(...)` so the model knows if the user is walking or tilting the camera down at steps (`pitch_deg`).
+3. **Model-Aware `thinking_config` in `watch.judge()`:**
+   - Do **not** pass `thinking_budget=0` when `config.WATCH_MODEL` is `gemini-3.5-flash-lite` (which is already non-thinking and rejects the parameter with HTTP 400).
+   - Automatically pass `thinking_config=types.ThinkingConfig(thinking_budget=0)` if `config.WATCH_MODEL` is set to a thinking model (`gemini-3.5-flash`, `gemini-3.8-flash`, `gemini-robotics-er-2-preview`, etc.).
+4. **Single-Sighting `fast_confirm` in `AlertPolicy.decide()`:**
    ```diff
    -    def decide(self, d: WatchDecision, now: float, user_voice_age: float) -> tuple[bool, str]:
    +    def decide(self, d: WatchDecision, now: float, user_voice_age: float, *, fast_confirm: bool = False) -> tuple[bool, str]:
@@ -477,37 +151,61 @@ Evaluates client IMU + spatial telemetry (`evaluate_telemetry`) and optionally r
 
 ---
 
-### Component 5: Pre-Warmed TTS Cache & Zero-Wait Bridge (`app/server/speak.py` & `app/server/live.py`)
+### Component 4: Oumi Iris API + IMU Decision Gate (`app/server/iris.py`)
 
-#### [MODIFY] [speak.py](file:///Users/kdimitropoulos/Documents/Projects/genaisummit2026/app/server/speak.py)
-Add `COMMON_ALERTS` pre-warming (`warm_common()`) so standard phrases (`"Car ahead, stop!"`, `"Step down ahead."`, `"Obstacle ahead, stop."`) are synthesized into `_cache` in the background when the first session connects.
-
-#### [MODIFY] [live.py](file:///Users/kdimitropoulos/Documents/Projects/genaisummit2026/app/server/live.py)
-1. **6-Frame Ring Buffer & 1 FPS Live Video Throttle:**
-   - `frames: deque = field(default_factory=lambda: deque(maxlen=6))`
-   - In `_watch_once`, pick 3 frames across the buffer (`[frames[0], frames[len(frames)//2], frames[-1]]` when `len > 3`) so the VLM always sees a full `~1.5–2.0s` motion span even at `2 fps`.
-   - Forward `video` to `session.send_realtime_input` at most once per `0.9s` (`last_live_video_at`).
-2. **Fast `local_alert` Path & `fast_confirm` Integration:**
-   - Handle `msg.get("type") == "local_alert"` from `spatial.js` by checking `state.policy.decide(d, time.time(), time.time() - state.last_user_voice, fast_confirm=True)` and firing `_fire_alert` immediately (`0ms` VLM wait).
-   - In `_watch_once`, pass `fast_confirm = (d.confidence >= config.ALERT_FAST_CONF) or (state.user_walking and d.confidence >= 0.80)` to `state.policy.decide()`.
-3. **Zero-Wait `_fire_alert` with Headless Test Compatibility:**
-   - Send `"voice_cached": cached` in `{"type": "alert", "urgency": d.urgency, "text": d.message, "voice_cached": cached}`.
-   - If `state.client_tts and not cached`: warm the TTS cache in the background (`asyncio.create_task(_warm_voice(d.message))`) and return immediately so the browser's `0ms` `speechSynthesis` plays without duplicate audio 2s later.
-   - If `not state.client_tts` (e.g., `alert_during_story.py`) or `cached`: await `synth` and stream the 24kHz PCM bytes as before.
+#### [NEW] [iris.py](file:///Users/kdimitropoulos/Documents/Projects/genaisummit2026/app/server/iris.py)
+1. **IMU Sensor Evaluation (`check_imu(imu: dict | None)`):**
+   - If `imu.get("gyro_deg_s", 0) > 65`: returns `pan_suppressed=True` so `_watch_once` skips the VLM call while the camera is swinging rapidly.
+   - Extracts `walking = bool(imu.get("walking"))` and formats a short `imu_note` (`"User motion: walking, phone pitch 72 deg."`).
+2. **Oumi Iris Cloud API (`precheck(frame, user_text)` & `score_hazard(frame, imu_note)`):**
+   - Calls `https://inference.oumi.ai/v1/systemone` in parallel when `config.IRIS_ENABLED` is `True` (`is_image_readable`, `needs_hard_model`, `should_interrupt`) and logs `iris_precheck` / `iris_decision` to `/panel`.
 
 ---
 
-## 4. Verification Plan
+### Component 5: 2-Frame Window, 1 FPS Live Throttle & Pre-Warm Trigger (`app/server/live.py`)
 
-1. **Automated Unit Tests (`test_watch_policy.py` & `test_isolation.py`):**
+#### [MODIFY] [live.py](file:///Users/kdimitropoulos/Documents/Projects/genaisummit2026/app/server/live.py)
+1. **Trigger `asyncio.create_task(speak.warm_common())` when a session connects** so the TTS cache warms immediately.
+2. **6-Frame Ring Buffer (`500ms` incoming) $\rightarrow$ 2-Frame Span (`[oldest, newest]`) for `watch.judge()`:**
+   - Store the last 6 frames (`~2.5s` history at `500ms` cadence) in `state.frames = deque(maxlen=6)`.
+   - In `_watch_once`, pass **2 frames** (`[frames[0], frames[-1]]` spanning `~1.0–1.5s`) to `watch.judge()`, cutting `gemini-3.5-flash-lite` latency to **`~940ms`** while giving a clear before/after motion pair!
+   - Throttle `session.send_realtime_input(video=...)` to once per `0.9s` (`state.last_live_video_at`) so Gemini Live is never flooded.
+3. **Pass `fast_confirm` to `state.policy.decide()`:**
+   - Set `fast_confirm = (d.confidence >= config.ALERT_FAST_CONF) or (state.user_walking and d.confidence >= 0.80)`.
+
+---
+
+### Component 6: Phone IMU Telemetry, Audio Buffer Speedup & Echo Guard (`app/static/app.js`)
+
+#### [MODIFY] [app.js](file:///Users/kdimitropoulos/Documents/Projects/genaisummit2026/app/static/app.js)
+Zero external JS libraries, zero local WASM models—just clean browser APIs:
+1. **Lightweight IMU Sensor Listener (`DeviceMotionEvent` + `DeviceOrientationEvent`):**
+   - Requests iOS sensor permission synchronously at the top of `start()`.
+   - Tracks `gyro_deg_s` (rotation speed), `walking` (accelerometer magnitude variance > `1.1`), and `pitch_deg` (`e.beta`), sending `imu` inside every `{ type: "frame", data, imu }` message.
+2. **Faster Frame & Audio Cadence:**
+   - Send `512px` JPEG (`quality: 0.55`) every `500ms`, plus immediately when the user starts speaking (`!wasOpen && dbg.micLevel > activeGate`).
+   - Shrink `ScriptProcessor` from `4096` (`85ms`) to `1024` (`21ms`) and `nextPlayTime` lookahead from `50ms` to `15ms` (while keeping `WAIT_DEFAULT_MS = 1200` and `GATE_HANG_MS = 800` so user speech hesitations are never cut off).
+3. **Acoustic Echo Guard (`alertMuteUntil`):**
+   - When `m.type === "alert"` arrives, set `alertMuteUntil = Date.now() + 1800` and `gateOpenUntil = 0`.
+   - While `Date.now() < alertMuteUntil`, raise the mic gate threshold to `Math.max(gate * 4, 0.15)` so the phone speaker playing the alert never leaks into the mic or closes `state.hold_open`.
+
+---
+
+## 5. Verification Plan
+
+1. **Automated Unit Tests:**
    ```bash
    cd app && uv run python tests/test_watch_policy.py
    cd app && uv run python tests/test_isolation.py
    ```
-   - Verify all 26 original policy checks + new `fast_confirm` and `iris.evaluate_telemetry` checks pass.
-   - Verify all 13 isolation & TTS cache checks pass.
-2. **End-to-End Benchmark (`alert_during_story.py`):**
+2. **Live E2E Benchmark (`alert_during_story.py`):**
    ```bash
-   cd app && PYTHONPATH=. uv run python tests/e2e/alert_during_story.py
+   cd app && PYTHONPATH=. uv run --with pillow --with websockets python tests/e2e/alert_during_story.py
    ```
-   - Verify that the approaching-car alert fires faster (`thinking_budget=0` + `fast_confirm`) and streams the alert PCM burst cleanly to the headless test client.
+   Verify that the car alert fires in `~1.0–1.5s` using 100% Gemini API models (`gemini-3.5-flash-lite` + pre-warmed `gemini-3.8-flash-lite-tts`), interrupts the story immediately, and streams the cached 24kHz PCM voice with `0ms` TTS delay.
+
+---
+
+## Appendix (Future v2 Backup Only): Local On-Device Models
+If a future offline/edge version needs local models as a backup when cloud connectivity drops:
+- Add `app/static/spatial.js` with MediaPipe `ObjectDetector` (`efficientdet_lite0`) + `HandLandmarker` and browser `speechSynthesis` fallback. (Not part of the main v1 API implementation.)
