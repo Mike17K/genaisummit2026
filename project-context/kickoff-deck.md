@@ -1,17 +1,69 @@
-# Gen AI Summit Hackathon — Kickoff deck (Quintessential)
+# Gen AI Summit Hackathon — Kickoff Deck & Event Context
 
-Source: https://hackathon.polymath42.com/deck/kickoff#/quintessential/1 (28 slides, extracted 2026-11-14)
-Event: Athens, 14–16 Nov 2026. Presented by Quintessential (sponsor, mentors, judges).
+Sources:
+- Main Kickoff Deck: `https://hackathon.polymath42.com/deck/kickoff` (18 slides)
+- Embedded Quintessential Sub-Deck: `https://hackathon.polymath42.com/kickoff/quintessential/index.html` (28 slides)
+- Credits & Judge Notes: `https://hackathon.polymath42.com/credits.md`, `https://hackathon.polymath42.com/agenda.md?role=judge`
+
+Event: Athens LifeTech Park (Spata) & SNFCC, 14–16 Nov 2026. Co-organised by GenAI Summit (powered by 100mentors & Wiserwork) × Panathēnea (Abed Hamami).
 
 ## Key takeaways
 - **Theme:** "Agents are moving out of the demo and into the job." What is the tedious, multi-step job nobody wants to do twice, and can an agent do all of it end to end?
-- **Judging:** Usefulness, Craft, Aura points. Quintessential's lens: "would it survive real users?"
+- **Judging:** Usefulness, Craft, Aura points. Quintessential's lens: "would it survive real users?" (Also includes an AI-assisted review of submissions at 18:00 Sunday passed to judges, plus a judge voting web app).
 - **Scope rule:** One user. One job, end to end. One wow moment. Everything not on the path to the wow moment gets faked, hard-coded or cut.
 - **Pitch:** 3 minutes. Straight to a live demo of the wow moment.
-- **Prizes:** 1st €5,000 · 2nd €2,500 · 3rd €1,000.
-- **Schedule:** 8 semifinalists pitch Sun 19:00, then 4 finalists pitch Mon 18:00 on the Summit stage at SNFCC.
+- **Main Prizes (sponsored by Quintessential):** 1st €5,000 · 2nd €2,500 · 3rd €1,000 (€8,500 cash total).
+- **Schedule:** 8 semifinalists pitch Sun 19:00 at Athens LifeTech Park, then 4 finalists pitch Mon 18:00 on the Summit stage (Book Castle) at SNFCC.
 
-## Slides
+---
+
+## Part A — Main Kickoff Deck (`hackathon.polymath42.com/deck/kickoff`)
+
+### Tracks & Track Partners (Usually also Track Judges)
+1. **Voice & Enterprise Agents** — with **Wonderful** (`wonderful.ai`)
+2. **Biotech & AI** — with our hosts, **Athens LifeTech Park (ALTP)** (`athenslifetechpark.com`)
+3. **Content & Digital Art** — with **fal** (`fal.ai`) — **US$1,500 in fal credits** for the fal track
+4. **Open Track** — Bring your own idea. **Hardware gets extra points.**
+
+### AI Credits & Sponsor Prizes (`hackathon.polymath42.com/credits`)
+- **Google AI:** AI inference (AI Studio, Gemini, etc.) — Available to **Everyone**.
+- **Wonderful:** TBA — **Selected teams only** (sign up via QR on `/credits`).
+- **Oumi (`oumi.ai`):** Free early access to **Iris** (Oumi's decision model) for **Everyone**.
+  - **Top 3 Teams using Iris:** **US$1,000 (1st), US$500 (2nd), US$250 (3rd)** in credits.
+  - **Overnight West Coast Message / Seed Program:** *"Teams that have raised a seed round, or raise one later, can also qualify for our startup program. It includes €15K in services and €10K in credits and mentorship from our team. Reach out to `labs@oumi.ai` if interested."*
+- **fal (`fal.ai`):** **US$50 per builder** (Everyone) + **US$1.5k in fal credits** for the fal track.
+- **boxd (`boxd.sh`):** **€50** in credits (Everyone).
+- **treg (`treg.to`):** **US$20 per builder** (Everyone) + **US$500 (1st), US$250 (2nd), US$100 (3rd)** in treg credits for the top three teams.
+- **Wiserwork (`wiserwork.ai`):** Sponsors free access to Monday's **GenAI Summit** for all hackathon participants who stay to the end.
+
+### Partner Tiers ("Made possible by")
+- **Lead / Title Sponsor (€8.5k prize pool + main judges & mentors):** Quintessential
+- **Pair Tier:** Wonderful, Google
+- **Top Tier:** Big Pi Ventures, Oumi, fal, Wiserwork, boxd, Athens LifeTech Park
+- **Supporters:** Prosperty, Firecrawl, Cloud Office, treg, Endeavor, Always Online, SHAKE talent up (Hackathon Hiring Partner), Crowdcruit
+
+### The 6 Hackathon Rules
+1. **Teams of 1–5:** Team formation starts right after kickoff.
+2. **Build it here:** Bring ideas, tools and boilerplate. Projects substantially built before the start may be disqualified.
+3. **Use what helps:** Open-source code, public APIs and partner tools are fine. Follow licences and credit what you didn't build.
+4. **You own it:** You own what you build. Organisers may show your project, demo, video and team names on the site and promotional material.
+5. **Respect the venue:** No alcohol (research facility rule). No harassment or abuse of any kind.
+6. **Cameras around:** Weekend is photographed and filmed; tell an organiser if you'd rather not appear.
+
+### Before the Code Freeze (Sunday 18:00)
+Must submit:
+1. **Your repo**
+2. **A demo video**
+3. **Project details**
+
+### Logistics
+- **Venue:** Athens LifeTech Park, Block 49, 31st Street, Foinikas, 190 04 Spata (Hacking on 2nd floor).
+- **Wi-Fi:** Network `ALTP Guest`, Password `ALTPGUEST!`
+- **Discord:** `https://discord.gg/gqU8FW45qf`
+
+---
+
+## Part B — Embedded Quintessential Sub-Deck (`/kickoff/quintessential/index.html`)
 
 ### 1 — Title
 Gen AI Summit Hackathon · Athens · 14–16 November 2026. "Build something that shouldn't exist yet." 36 hours on the agentic frontier. A few slides on who we are, then ideas for what to make.

@@ -1,0 +1,374 @@
+# boxd
+
+> Composable computers for devs and agents. Real hardware-isolated Linux VMs in the cloud: compose one, then spin up as many as you need.
+
+boxd gives developers and AI agents their own persistent Linux machines, reachable over SSH and HTTPS.
+
+You use boxd through the `boxd` CLI (`--json` gives machine-readable output), the Python SDK (`pip install boxd`) and the TypeScript SDK (`npm install @boxd-sh/sdk`), SSH into any machine, each machine's own HTTPS URL, and the web console at https://app.boxd.sh. A person signs in once in the browser; scripts, CI and servers use an API key.
+
+## Quick start
+
+### 1. Install the CLI
+
+```
+curl -fsSL https://boxd.sh/downloads/install.sh | sh -s -- --yes
+```
+
+On Windows, in PowerShell:
+
+```
+& ([scriptblock]::Create((irm https://boxd.sh/downloads/install.ps1))) -Yes
+```
+
+`--yes` (`-Yes` on Windows) also installs the boxd agent skills (Claude Code, Codex, Cursor, Copilot, Gemini CLI, OpenCode), the PATH line and, outside Windows, shell completions. Without it, the installer asks in a terminal, and installs only the binary when there is no terminal to ask on.
+
+The PATH line only reaches new shells. In the shell you are in, run `export PATH="$HOME/.local/bin:$PATH"` first, or call `~/.local/bin/boxd`. On Windows the installer adds `~\.local\bin` to your user PATH, which reaches new terminals and the PowerShell that ran it.
+
+### 2. Sign in: your user does this
+
+Signing in is a person's step. If you are an AI agent, ask your user to run this in their own terminal:
+
+```
+boxd auth login
+```
+
+It opens a browser (or prints a link) where they sign in with GitHub or Google; a new account is created the same way. A new organization also needs a payment method before its first machine: right after sign-in they are asked to connect one (nothing is charged, and the free credits arrive with it). The command gives up after 5 minutes without a sign-in, and waits up to 10 more for the payment step. Wait until your user says it's done before running other boxd commands: any boxd command that needs an account starts this same sign-in.
+
+Don't start it yourself unless your user asks you to or can't reach a terminal on this computer. In that case, start it and give them the link it prints, saying what it is for. Run it in the background with its output in a file, because it waits for them. `setsid` keeps it alive in agent tools that stop a command's background processes when the command returns (macOS has no `setsid`; leave it out there):
+
+```
+setsid nohup boxd auth login > /tmp/boxd-login.log 2>&1 < /dev/null &
+sleep 3; cat /tmp/boxd-login.log
+```
+
+Leave it running and don't start a second one: the link signs in only the command that printed it. Without a person to sign in, use an API key (below).
+
+### 3. Create a machine and use it
+
+```
+boxd machine new my-app
+boxd machine exec my-app -- uname -a
+ssh my-app.boxd
+```
+
+Machine names are unique across all of boxd (each one is also `<name>.boxd.sh`), so `my-app` may already be taken: pick a name nobody else is likely to use, or leave it out and boxd generates one and prints it.
+
+## Programmatic access with an API key
+
+For CI, scripts, servers and agents that run without a browser, use an API key instead of signing in on that computer. A key acts as you, inside one organization.
+
+### Create a key
+
+A person creates it once, either in the console at https://app.boxd.sh/keys or with the CLI on a computer where they are signed in:
+
+```
+boxd auth keys create my-ci
+boxd auth keys create my-ci --expires-in-secs 2592000   # expires in 30 days
+```
+
+The key (`bxd_...`) is shown only once, so store it right away, for example as a CI secret. `--json` prints it as `{"api_key": ...}`. A key works in the organization you are in when you create it; `--org <name>` picks another.
+
+### Use it from the CLI: BOXD_TOKEN
+
+```
+export BOXD_TOKEN=bxd_...
+boxd machine new my-app
+boxd machine exec my-app -- uname -a
+boxd machine cp ./build.tar.gz my-app:build.tar.gz
+```
+
+`--token <key>` does the same for one command. The CLI does not read `BOXD_API_KEY`: with no key in `BOXD_TOKEN`, it starts the browser sign-in instead and waits for it, which in CI means a 5-minute hang. In GitHub Actions, store the key as a secret and map it for the CLI:
+
+```
+env:
+  BOXD_TOKEN: ${{ secrets.BOXD_API_KEY }}
+```
+
+### Use it from the SDKs: BOXD_API_KEY
+
+The Python and TypeScript SDKs read the key from `BOXD_API_KEY` (or take it as `api_key=` / `apiKey`). They accept it in `BOXD_TOKEN` too, which wins if both are set, so a job that uses both the CLI and an SDK can set just `BOXD_TOKEN`.
+
+```
+pip install boxd              # Python
+npm install @boxd-sh/sdk      # TypeScript
+export BOXD_API_KEY=bxd_...   # from https://app.boxd.sh/keys or `boxd auth keys create`
+```
+
+If you are writing this code for someone who has no key yet, tell them where to create one: https://app.boxd.sh/keys, or `boxd auth keys create` on a computer where they are signed in.
+
+```python
+from boxd import Boxd
+
+boxd = Boxd()  # reads BOXD_API_KEY
+machine = boxd.machines.create("my-app")
+boxd.machines.wait_until_ready(machine.id)
+print(boxd.machines.exec(machine.id, "uname -a").stdout)
+```
+
+### What a key can't do
+
+`ssh <name>.boxd` needs `boxd auth login` on that computer: only an interactive sign-in links an SSH key, so with an API key the CLI writes no SSH alias. Use `boxd machine exec` and `boxd machine cp` instead. List keys with `boxd auth keys list` and delete one with `boxd auth keys remove <name>`.
+
+## Docs and tools
+
+- Docs index: https://docs.boxd.sh/llms.txt (every docs page is also served as Markdown, for example https://docs.boxd.sh/quickstart.md)
+- CLI: https://docs.boxd.sh/cli/installation.md and the command reference at https://docs.boxd.sh/cli/commands.md. `boxd <command> --help` lists a command's flags (`--token` is a global one it doesn't show), and most commands give machine-readable output with `--json` (`boxd auth login` doesn't).
+- Python SDK (`pip install boxd`): https://docs.boxd.sh/reference/python-sdk.md
+- TypeScript SDK (`npm install @boxd-sh/sdk`): https://docs.boxd.sh/reference/typescript-sdk.md
+- Agent skills: installed by the installer with `--yes`, into ~/.claude/skills (Claude Code) and ~/.agents/skills (the others)
+- A boxd command failed when it should have worked: `boxd feedback "<what you tried and expected>" --error "<the error>"` reports it to the boxd team
+
+## Links
+
+- Website: https://boxd.sh
+- Pricing: https://boxd.sh/pricing
+- Use cases: https://boxd.sh/#use-cases
+- Integrations: https://boxd.sh/integrations
+- Blog: https://boxd.sh/blog
+- Contact: https://boxd.sh/contact
+- Full LLM context: https://boxd.sh/llms-full.txt
+- Markdown: add ".md" to any blog, compare or integration page URL (for example https://boxd.sh/blog/sandboxes.md). Docs pages work the same way on docs.boxd.sh.
+
+## Use cases
+
+- https://boxd.sh/use-cases/development-workspaces — Install your app on a boxd machine once. You and every teammate start from that copy.
+- https://boxd.sh/use-cases/coding-agents — Claude Code, Codex and OpenCode come installed and set up for boxd. They keep working after you close your laptop.
+- https://boxd.sh/use-cases/preview-environments — A running copy of your app for each PR, posted on the PR and deleted when it closes.
+- https://boxd.sh/use-cases/ci-runners — Every green run on main is saved as a snapshot: code, dependencies, build caches, Docker layers. Each job restores its own copy in seconds.
+- https://boxd.sh/use-cases/ci-runners/benchmarks — The CI of 10 open-source projects on GitHub-hosted runners, Blacksmith, Vercel CI and boxd, every machine 2 vCPU. boxd is 6× faster than one GitHub-hosted job, 5× faster than one Blacksmith job and 7× faster than one Vercel CI task.
+
+## Compare
+
+How boxd compares with other agent sandboxes. Each page opens with an at-a-glance table (where boxd is ahead, where the other product is), then when to pick which, then a sourced, dated feature matrix. Every /compare/ page is also served as Markdown at index.md next to it.
+
+- https://boxd.sh/compare — boxd against E2B, Daytona, Modal, Vercel Sandbox, Blaxel and Cloudflare Sandbox: full VMs, a composable kit, apps that answer from sleep, agents built in, and only active vCPU billed. Sourced and dated, with measured numbers.
+- https://boxd.sh/compare/e2b (Markdown: https://boxd.sh/compare/e2b.md) — E2B runs short-lived sandboxes from an SDK, with a time limit on every run. A boxd machine is a full computer that stays, wakes on a request with your app still running, and comes with coding agents installed. It bills only active vCPU, where E2B bills every vCPU it provisions.
+- https://boxd.sh/compare/daytona (Markdown: https://boxd.sh/compare/daytona.md) — A Daytona sandbox is a container unless you pick its VM class. Every boxd machine is a full VM with its own kernel, starts at 2 vCPU and 8 GiB, and keeps your app running while it sleeps. It bills only active vCPU, where Daytona bills the vCPUs a sandbox reserves.
+- https://boxd.sh/compare/modal (Markdown: https://boxd.sh/compare/modal.md) — Modal sandboxes are short-lived, end after 24 hours at most, and can't be stopped and started again. A boxd machine stays until you delete it and sleeps with your app running. It bills only active vCPU, where a Modal sandbox pays for at least the cores it requests.
+- https://boxd.sh/compare/vercel-sandbox (Markdown: https://boxd.sh/compare/vercel-sandbox.md) — Vercel Sandbox runs sessions of up to 24 hours and brings back the disk, not the running processes. A boxd machine keeps its memory while it sleeps, so your app is still running when a request wakes it. Both bill only active CPU, and boxd's rate is well under half of Vercel's.
+- https://boxd.sh/compare/blaxel (Markdown: https://boxd.sh/compare/blaxel.md) — Blaxel sandboxes suspend within seconds and resume fast, with the filesystem held in memory. A boxd machine is a full computer with a 100 GB disk, plain SSH and coding agents installed, and it bills active vCPU and memory in use rather than allocated memory.
+- https://boxd.sh/compare/cloudflare-sandbox (Markdown: https://boxd.sh/compare/cloudflare-sandbox.md) — Cloudflare Sandbox gives your Worker a container on the edge, with a disk that's wiped when it stops. A boxd machine is a persistent VM with its own disk, SSH and URL, that you can use without writing a Worker. Both bill only active vCPU, at a lower rate on boxd, and boxd bills memory in use rather than provisioned.
+- https://boxd.sh/blog/boxd-vs-exe-dev (Markdown: https://boxd.sh/blog/boxd-vs-exe-dev.md) — boxd and exe.dev both give you a persistent Linux VM over SSH. Where each is better: regions, self-hosting, pausing with memory, SDKs and egress control.
+- https://boxd.sh/blog/boxd-vs-sprites (Markdown: https://boxd.sh/blog/boxd-vs-sprites.md) — Sprites and boxd agree on the architecture: persistent microVMs are the right primitive for AI agents. Where the two implementations diverge, honestly.
+
+Measured on boxd's production cluster (Frankfurt), 2026-10-29, from a client in the same datacenter:
+- A hibernated machine answered an HTTPS request with its app still running in 156 ms median (104–213 ms, n=10).
+- A new machine created from a snapshot answered its first HTTPS request 1.19 s after the create command (median, 1.14–1.24 s, n=10).
+- CPU: 12.6 runs/s on the Node.js web tooling test at 4 vCPU (StarSling's open sandbox benchmark; other providers: https://github.com/starslingdev/hpc-sandbox-benchmarks/blob/main/LEADERBOARD.md).
+- Method: https://boxd.sh/compare/#how-we-measured
+
+## Integrations
+
+Apps a boxd machine can call through the `run` CLI and the `@boxd/run` TypeScript SDK, both installed on every machine. Connect an account once with `run auth <name>`, then `run <name> <command>` from the shell or the typed SDK from a script. The catalog: https://boxd.sh/integrations/ (Markdown: https://boxd.sh/integrations/index.md). Every page is also served as Markdown at index.md next to it, with every command and its required flags. The `run` CLI's reference: https://docs.boxd.sh/cli/run; connecting accounts: https://docs.boxd.sh/guides/integrations/connections; scripts: https://docs.boxd.sh/guides/automations/scripts.
+
+- https://boxd.sh/integrations/airtable (Markdown: https://boxd.sh/integrations/airtable/index.md) — Give Claude Code, Codex and your scripts Airtable without an MCP server or an API key: connect it once, then run airtable on any boxd machine. 26 commands, 6 triggers.
+- https://boxd.sh/integrations/amplitude (Markdown: https://boxd.sh/integrations/amplitude/index.md) — Give Claude Code, Codex and your scripts Amplitude without an MCP server: connect it once, then run amplitude on any boxd machine. 54 commands.
+- https://boxd.sh/integrations/apollo (Markdown: https://boxd.sh/integrations/apollo/index.md) — Give Claude Code, Codex and your scripts Apollo without an MCP server: connect it once, then run apollo on any boxd machine. 48 commands.
+- https://boxd.sh/integrations/asana (Markdown: https://boxd.sh/integrations/asana/index.md) — Give Claude Code, Codex and your scripts Asana without an MCP server or an API key: connect it once, then run asana on any boxd machine. 152 commands, 6 triggers.
+- https://boxd.sh/integrations/attio (Markdown: https://boxd.sh/integrations/attio/index.md) — Give Claude Code, Codex and your scripts Attio without an MCP server or an API key: connect it once, then run attio on any boxd machine. 100 commands.
+- https://boxd.sh/integrations/bitbucket (Markdown: https://boxd.sh/integrations/bitbucket/index.md) — Give Claude Code, Codex and your scripts Bitbucket without an MCP server or an API key: connect it once, then run bitbucket on any boxd machine. 110 commands.
+- https://boxd.sh/integrations/box (Markdown: https://boxd.sh/integrations/box/index.md) — Give Claude Code, Codex and your scripts Box without an MCP server or an API key: connect it once, then run box on any boxd machine. 286 commands, 20 triggers.
+- https://boxd.sh/integrations/cal (Markdown: https://boxd.sh/integrations/cal/index.md) — Give Claude Code, Codex and your scripts Cal.com without an MCP server or an API key: connect it once, then run cal on any boxd machine. 175 commands.
+- https://boxd.sh/integrations/calendly (Markdown: https://boxd.sh/integrations/calendly/index.md) — Give Claude Code, Codex and your scripts Calendly without an MCP server or an API key: connect it once, then run calendly on any boxd machine. 56 commands.
+- https://boxd.sh/integrations/canva (Markdown: https://boxd.sh/integrations/canva/index.md) — Give Claude Code, Codex and your scripts Canva without an MCP server or an API key: connect it once, then run canva on any boxd machine. 48 commands.
+- https://boxd.sh/integrations/claude (Markdown: https://boxd.sh/integrations/claude/index.md) — Sign in once and Claude Code is signed in on your private machines. Claude Code is built into boxd: connect it once in the console or with boxd manage integrations.
+- https://boxd.sh/integrations/clickup (Markdown: https://boxd.sh/integrations/clickup/index.md) — Give Claude Code, Codex and your scripts ClickUp without an MCP server or an API key: connect it once, then run clickup on any boxd machine. 164 commands, 21 triggers.
+- https://boxd.sh/integrations/cloudflare (Markdown: https://boxd.sh/integrations/cloudflare/index.md) — Give Claude Code, Codex and your scripts Cloudflare without an MCP server: connect it once, then run cloudflare on any boxd machine. 20 commands.
+- https://boxd.sh/integrations/codex (Markdown: https://boxd.sh/integrations/codex/index.md) — Sign in once with ChatGPT and Codex is signed in on your private machines. Codex is built into boxd: connect it once in the console or with boxd manage integrations.
+- https://boxd.sh/integrations/confluence (Markdown: https://boxd.sh/integrations/confluence/index.md) — Give Claude Code, Codex and your scripts Confluence without an MCP server or an API key: connect it once, then run confluence on any boxd machine. 69 commands, 23 triggers.
+- https://boxd.sh/integrations/contentful (Markdown: https://boxd.sh/integrations/contentful/index.md) — Give Claude Code, Codex and your scripts Contentful without an MCP server or an API key: connect it once, then run contentful on any boxd machine. 124 commands.
+- https://boxd.sh/integrations/crisp (Markdown: https://boxd.sh/integrations/crisp/index.md) — Give Claude Code, Codex and your scripts Crisp without an MCP server: connect it once, then run crisp on any boxd machine. 12 commands.
+- https://boxd.sh/integrations/dart (Markdown: https://boxd.sh/integrations/dart/index.md) — Give Claude Code, Codex and your scripts Dart without an MCP server or an API key: connect it once, then run dart on any boxd machine. 18 commands.
+- https://boxd.sh/integrations/databricks (Markdown: https://boxd.sh/integrations/databricks/index.md) — Give Claude Code, Codex and your scripts Databricks without an MCP server: connect it once, then run databricks on any boxd machine. 427 commands.
+- https://boxd.sh/integrations/datadog (Markdown: https://boxd.sh/integrations/datadog/index.md) — Give Claude Code, Codex and your scripts Datadog without an MCP server: connect it once, then run datadog on any boxd machine. 65 commands.
+- https://boxd.sh/integrations/digital-ocean (Markdown: https://boxd.sh/integrations/digital-ocean/index.md) — Give Claude Code, Codex and your scripts DigitalOcean without an MCP server or an API key: connect it once, then run digital-ocean on any boxd machine. 48 commands.
+- https://boxd.sh/integrations/discord (Markdown: https://boxd.sh/integrations/discord/index.md) — Give Claude Code, Codex and your scripts Discord without an MCP server or an API key: connect it once, then run discord on any boxd machine. 28 commands, 1 trigger.
+- https://boxd.sh/integrations/discordbot (Markdown: https://boxd.sh/integrations/discordbot/index.md) — Give Claude Code, Codex and your scripts Discord Bot without an MCP server or an API key: connect it once, then run discordbot on any boxd machine. 165 commands.
+- https://boxd.sh/integrations/docusign (Markdown: https://boxd.sh/integrations/docusign/index.md) — Give Claude Code, Codex and your scripts DocuSign without an MCP server or an API key: connect it once, then run docusign on any boxd machine. 338 commands.
+- https://boxd.sh/integrations/dropbox (Markdown: https://boxd.sh/integrations/dropbox/index.md) — Give Claude Code, Codex and your scripts Dropbox without an MCP server or an API key: connect it once, then run dropbox on any boxd machine. 177 commands.
+- https://boxd.sh/integrations/dropbox-sign (Markdown: https://boxd.sh/integrations/dropbox-sign/index.md) — Give Claude Code, Codex and your scripts Dropbox Sign without an MCP server: connect it once, then run dropbox-sign on any boxd machine. 56 commands.
+- https://boxd.sh/integrations/dub (Markdown: https://boxd.sh/integrations/dub/index.md) — Give Claude Code, Codex and your scripts Dub without an MCP server or an API key: connect it once, then run dub on any boxd machine. 17 commands.
+- https://boxd.sh/integrations/dynamics365 (Markdown: https://boxd.sh/integrations/dynamics365/index.md) — Give Claude Code, Codex and your scripts Dynamics 365 without an MCP server or an API key: connect it once, then run dynamics365 on any boxd machine. 16 commands.
+- https://boxd.sh/integrations/eventbrite (Markdown: https://boxd.sh/integrations/eventbrite/index.md) — Give Claude Code, Codex and your scripts Eventbrite without an MCP server or an API key: connect it once, then run eventbrite on any boxd machine. 95 commands.
+- https://boxd.sh/integrations/exa (Markdown: https://boxd.sh/integrations/exa/index.md) — Give Claude Code, Codex and your scripts Exa without an MCP server: connect it once, then run exa on any boxd machine. 18 commands.
+- https://boxd.sh/integrations/excel (Markdown: https://boxd.sh/integrations/excel/index.md) — Give Claude Code, Codex and your scripts Excel without an MCP server or an API key: connect it once, then run excel on any boxd machine. 54 commands.
+- https://boxd.sh/integrations/facebook (Markdown: https://boxd.sh/integrations/facebook/index.md) — Give Claude Code, Codex and your scripts Facebook without an MCP server or an API key: connect it once, then run facebook on any boxd machine. 43 commands.
+- https://boxd.sh/integrations/figma (Markdown: https://boxd.sh/integrations/figma/index.md) — Give Claude Code, Codex and your scripts Figma without an MCP server or an API key: connect it once, then run figma on any boxd machine. 53 commands.
+- https://boxd.sh/integrations/firebase (Markdown: https://boxd.sh/integrations/firebase/index.md) — Give Claude Code, Codex and your scripts Firebase without an MCP server: connect it once, then run firebase on any boxd machine. 8 commands.
+- https://boxd.sh/integrations/fly (Markdown: https://boxd.sh/integrations/fly/index.md) — Give Claude Code, Codex and your scripts Fly.io without an MCP server: connect it once, then run fly on any boxd machine. 45 commands.
+- https://boxd.sh/integrations/freshbooks (Markdown: https://boxd.sh/integrations/freshbooks/index.md) — Give Claude Code, Codex and your scripts FreshBooks without an MCP server or an API key: connect it once, then run freshbooks on any boxd machine. 10 commands.
+- https://boxd.sh/integrations/freshdesk (Markdown: https://boxd.sh/integrations/freshdesk/index.md) — Give Claude Code, Codex and your scripts Freshdesk without an MCP server: connect it once, then run freshdesk on any boxd machine. 178 commands.
+- https://boxd.sh/integrations/git (Markdown: https://boxd.sh/integrations/git/index.md) — Sign in with GitHub once, and git and gh work on your private machines. Git is built into boxd: connect it once in the console or with boxd manage integrations.
+- https://boxd.sh/integrations/github (Markdown: https://boxd.sh/integrations/github/index.md) — Give Claude Code, Codex and your scripts GitHub without an MCP server or an API key: connect it once, then run github on any boxd machine. 890 commands, 46 triggers.
+- https://boxd.sh/integrations/github-app (Markdown: https://boxd.sh/integrations/github-app/index.md) — Your organization's GitHub. Git and gh on shared machines, and automations on any machine. GitHub App is built into boxd: connect it once in the console or with boxd manage integrations.
+- https://boxd.sh/integrations/gitlab (Markdown: https://boxd.sh/integrations/gitlab/index.md) — Give Claude Code, Codex and your scripts GitLab without an MCP server or an API key: connect it once, then run gitlab on any boxd machine. 116 commands.
+- https://boxd.sh/integrations/gmail (Markdown: https://boxd.sh/integrations/gmail/index.md) — Give Claude Code, Codex and your scripts Gmail without an MCP server or an API key: connect it once, then run gmail on any boxd machine. 63 commands, 2 triggers.
+- https://boxd.sh/integrations/gong (Markdown: https://boxd.sh/integrations/gong/index.md) — Give Claude Code, Codex and your scripts Gong without an MCP server or an API key: connect it once, then run gong on any boxd machine. 58 commands.
+- https://boxd.sh/integrations/googleads (Markdown: https://boxd.sh/integrations/googleads/index.md) — Give Claude Code, Codex and your scripts Google Ads without an MCP server or an API key: connect it once, then run googleads on any boxd machine. 22 commands.
+- https://boxd.sh/integrations/google-analytics (Markdown: https://boxd.sh/integrations/google-analytics/index.md) — Give Claude Code, Codex and your scripts Google Analytics without an MCP server or an API key: connect it once, then run google-analytics on any boxd machine. 69 commands.
+- https://boxd.sh/integrations/googlebigquery (Markdown: https://boxd.sh/integrations/googlebigquery/index.md) — Give Claude Code, Codex and your scripts Google BigQuery without an MCP server or an API key: connect it once, then run googlebigquery on any boxd machine. 63 commands.
+- https://boxd.sh/integrations/googlecalendar (Markdown: https://boxd.sh/integrations/googlecalendar/index.md) — Give Claude Code, Codex and your scripts Google Calendar without an MCP server or an API key: connect it once, then run googlecalendar on any boxd machine. 49 commands, 7 triggers.
+- https://boxd.sh/integrations/google-classroom (Markdown: https://boxd.sh/integrations/google-classroom/index.md) — Give Claude Code, Codex and your scripts Google Classroom without an MCP server or an API key: connect it once, then run google-classroom on any boxd machine. 62 commands.
+- https://boxd.sh/integrations/googledocs (Markdown: https://boxd.sh/integrations/googledocs/index.md) — Give Claude Code, Codex and your scripts Google Docs without an MCP server or an API key: connect it once, then run googledocs on any boxd machine. 43 commands, 10 triggers.
+- https://boxd.sh/integrations/googledrive (Markdown: https://boxd.sh/integrations/googledrive/index.md) — Give Claude Code, Codex and your scripts Google Drive without an MCP server or an API key: connect it once, then run googledrive on any boxd machine. 90 commands, 7 triggers.
+- https://boxd.sh/integrations/google-maps (Markdown: https://boxd.sh/integrations/google-maps/index.md) — Give Claude Code, Codex and your scripts Google Maps without an MCP server or an API key: connect it once, then run google-maps on any boxd machine. 23 commands.
+- https://boxd.sh/integrations/googlemeet (Markdown: https://boxd.sh/integrations/googlemeet/index.md) — Give Claude Code, Codex and your scripts Google Meet without an MCP server or an API key: connect it once, then run googlemeet on any boxd machine. 15 commands.
+- https://boxd.sh/integrations/googlephotos (Markdown: https://boxd.sh/integrations/googlephotos/index.md) — Give Claude Code, Codex and your scripts Google Photos without an MCP server or an API key: connect it once, then run googlephotos on any boxd machine. 14 commands.
+- https://boxd.sh/integrations/google-search-console (Markdown: https://boxd.sh/integrations/google-search-console/index.md) — Give Claude Code, Codex and your scripts Google Search Console without an MCP server or an API key: connect it once, then run google-search-console on any boxd machine. 9 commands.
+- https://boxd.sh/integrations/googlesheets (Markdown: https://boxd.sh/integrations/googlesheets/index.md) — Give Claude Code, Codex and your scripts Google Sheets without an MCP server or an API key: connect it once, then run googlesheets on any boxd machine. 53 commands, 16 triggers.
+- https://boxd.sh/integrations/googleslides (Markdown: https://boxd.sh/integrations/googleslides/index.md) — Give Claude Code, Codex and your scripts Google Slides without an MCP server or an API key: connect it once, then run googleslides on any boxd machine. 8 commands, 1 trigger.
+- https://boxd.sh/integrations/googletasks (Markdown: https://boxd.sh/integrations/googletasks/index.md) — Give Claude Code, Codex and your scripts Google Tasks without an MCP server or an API key: connect it once, then run googletasks on any boxd machine. 18 commands, 5 triggers.
+- https://boxd.sh/integrations/googlesuper (Markdown: https://boxd.sh/integrations/googlesuper/index.md) — Give Claude Code, Codex and your scripts Google Workspace without an MCP server or an API key: connect it once, then run googlesuper on any boxd machine. 467 commands, 48 triggers.
+- https://boxd.sh/integrations/gorgias (Markdown: https://boxd.sh/integrations/gorgias/index.md) — Give Claude Code, Codex and your scripts Gorgias without an MCP server or an API key: connect it once, then run gorgias on any boxd machine. 32 commands.
+- https://boxd.sh/integrations/grafana (Markdown: https://boxd.sh/integrations/grafana/index.md) — Give Claude Code, Codex and your scripts Grafana without an MCP server: connect it once, then run grafana on any boxd machine. 11 commands.
+- https://boxd.sh/integrations/granola (Markdown: https://boxd.sh/integrations/granola/index.md) — Give Claude Code, Codex and your scripts Granola without an MCP server or an API key: connect it once, then run granola on any boxd machine. 6 commands.
+- https://boxd.sh/integrations/greenhouse (Markdown: https://boxd.sh/integrations/greenhouse/index.md) — Give Claude Code, Codex and your scripts Greenhouse without an MCP server or an API key: connect it once, then run greenhouse on any boxd machine. 134 commands.
+- https://boxd.sh/integrations/harvest (Markdown: https://boxd.sh/integrations/harvest/index.md) — Give Claude Code, Codex and your scripts Harvest without an MCP server or an API key: connect it once, then run harvest on any boxd machine. 57 commands.
+- https://boxd.sh/integrations/help-scout (Markdown: https://boxd.sh/integrations/help-scout/index.md) — Give Claude Code, Codex and your scripts Help Scout without an MCP server or an API key: connect it once, then run help-scout on any boxd machine. 129 commands.
+- https://boxd.sh/integrations/hubspot (Markdown: https://boxd.sh/integrations/hubspot/index.md) — Give Claude Code, Codex and your scripts HubSpot without an MCP server or an API key: connect it once, then run hubspot on any boxd machine. 245 commands, 2 triggers.
+- https://boxd.sh/integrations/hugging-face (Markdown: https://boxd.sh/integrations/hugging-face/index.md) — Give Claude Code, Codex and your scripts Hugging Face without an MCP server or an API key: connect it once, then run hugging-face on any boxd machine. 135 commands.
+- https://boxd.sh/integrations/instagram (Markdown: https://boxd.sh/integrations/instagram/index.md) — Give Claude Code, Codex and your scripts Instagram without an MCP server or an API key: connect it once, then run instagram on any boxd machine. 36 commands.
+- https://boxd.sh/integrations/intercom (Markdown: https://boxd.sh/integrations/intercom/index.md) — Give Claude Code, Codex and your scripts Intercom without an MCP server or an API key: connect it once, then run intercom on any boxd machine. 131 commands.
+- https://boxd.sh/integrations/jigsawstack (Markdown: https://boxd.sh/integrations/jigsawstack/index.md) — Give Claude Code, Codex and your scripts JigsawStack without an MCP server: connect it once, then run jigsawstack on any boxd machine. 23 commands.
+- https://boxd.sh/integrations/jira (Markdown: https://boxd.sh/integrations/jira/index.md) — Give Claude Code, Codex and your scripts Jira without an MCP server or an API key: connect it once, then run jira on any boxd machine. 100 commands, 3 triggers.
+- https://boxd.sh/integrations/kit (Markdown: https://boxd.sh/integrations/kit/index.md) — Give Claude Code, Codex and your scripts Kit without an MCP server or an API key: connect it once, then run kit on any boxd machine. 42 commands.
+- https://boxd.sh/integrations/klaviyo (Markdown: https://boxd.sh/integrations/klaviyo/index.md) — Give Claude Code, Codex and your scripts Klaviyo without an MCP server: connect it once, then run klaviyo on any boxd machine. 225 commands.
+- https://boxd.sh/integrations/linear (Markdown: https://boxd.sh/integrations/linear/index.md) — Give Claude Code, Codex and your scripts Linear without an MCP server or an API key: connect it once, then run linear on any boxd machine. 47 commands, 12 triggers.
+- https://boxd.sh/integrations/linkedin (Markdown: https://boxd.sh/integrations/linkedin/index.md) — Give Claude Code, Codex and your scripts LinkedIn without an MCP server or an API key: connect it once, then run linkedin on any boxd machine. 22 commands.
+- https://boxd.sh/integrations/mailchimp (Markdown: https://boxd.sh/integrations/mailchimp/index.md) — Give Claude Code, Codex and your scripts Mailchimp without an MCP server or an API key: connect it once, then run mailchimp on any boxd machine. 275 commands, 4 triggers.
+- https://boxd.sh/integrations/microsoft-teams (Markdown: https://boxd.sh/integrations/microsoft-teams/index.md) — Give Claude Code, Codex and your scripts Microsoft Teams without an MCP server or an API key: connect it once, then run microsoft-teams on any boxd machine. 169 commands.
+- https://boxd.sh/integrations/miro (Markdown: https://boxd.sh/integrations/miro/index.md) — Give Claude Code, Codex and your scripts Miro without an MCP server or an API key: connect it once, then run miro on any boxd machine. 81 commands.
+- https://boxd.sh/integrations/mixpanel (Markdown: https://boxd.sh/integrations/mixpanel/index.md) — Give Claude Code, Codex and your scripts Mixpanel without an MCP server: connect it once, then run mixpanel on any boxd machine. 50 commands.
+- https://boxd.sh/integrations/monday (Markdown: https://boxd.sh/integrations/monday/index.md) — Give Claude Code, Codex and your scripts Monday without an MCP server or an API key: connect it once, then run monday on any boxd machine. 125 commands.
+- https://boxd.sh/integrations/mural (Markdown: https://boxd.sh/integrations/mural/index.md) — Give Claude Code, Codex and your scripts Mural without an MCP server or an API key: connect it once, then run mural on any boxd machine. 22 commands.
+- https://boxd.sh/integrations/neon (Markdown: https://boxd.sh/integrations/neon/index.md) — Give Claude Code, Codex and your scripts Neon without an MCP server: connect it once, then run neon on any boxd machine. 110 commands.
+- https://boxd.sh/integrations/notion (Markdown: https://boxd.sh/integrations/notion/index.md) — Give Claude Code, Codex and your scripts Notion without an MCP server or an API key: connect it once, then run notion on any boxd machine. 56 commands, 8 triggers.
+- https://boxd.sh/integrations/omnisend (Markdown: https://boxd.sh/integrations/omnisend/index.md) — Give Claude Code, Codex and your scripts Omnisend without an MCP server or an API key: connect it once, then run omnisend on any boxd machine. 43 commands.
+- https://boxd.sh/integrations/one-drive (Markdown: https://boxd.sh/integrations/one-drive/index.md) — Give Claude Code, Codex and your scripts OneDrive without an MCP server or an API key: connect it once, then run one-drive on any boxd machine. 83 commands, 9 triggers.
+- https://boxd.sh/integrations/openai (Markdown: https://boxd.sh/integrations/openai/index.md) — Give Claude Code, Codex and your scripts OpenAI without an MCP server: connect it once, then run openai on any boxd machine. 126 commands.
+- https://boxd.sh/integrations/outlook (Markdown: https://boxd.sh/integrations/outlook/index.md) — Give Claude Code, Codex and your scripts Outlook without an MCP server or an API key: connect it once, then run outlook on any boxd machine. 300 commands, 5 triggers.
+- https://boxd.sh/integrations/pagerduty (Markdown: https://boxd.sh/integrations/pagerduty/index.md) — Give Claude Code, Codex and your scripts PagerDuty without an MCP server or an API key: connect it once, then run pagerduty on any boxd machine. 368 commands.
+- https://boxd.sh/integrations/pandadoc (Markdown: https://boxd.sh/integrations/pandadoc/index.md) — Give Claude Code, Codex and your scripts PandaDoc without an MCP server: connect it once, then run pandadoc on any boxd machine. 14 commands.
+- https://boxd.sh/integrations/paypal (Markdown: https://boxd.sh/integrations/paypal/index.md) — Give Claude Code, Codex and your scripts Paypal without an MCP server or an API key: connect it once, then run paypal on any boxd machine. 78 commands.
+- https://boxd.sh/integrations/perplexityai (Markdown: https://boxd.sh/integrations/perplexityai/index.md) — Give Claude Code, Codex and your scripts Perplexity AI without an MCP server: connect it once, then run perplexityai on any boxd machine. 9 commands.
+- https://boxd.sh/integrations/pipedrive (Markdown: https://boxd.sh/integrations/pipedrive/index.md) — Give Claude Code, Codex and your scripts Pipedrive without an MCP server: connect it once, then run pipedrive on any boxd machine. 379 commands, 3 triggers.
+- https://boxd.sh/integrations/plain (Markdown: https://boxd.sh/integrations/plain/index.md) — Give Claude Code, Codex and your scripts Plain without an MCP server: connect it once, then run plain on any boxd machine. 23 commands, 11 triggers.
+- https://boxd.sh/integrations/posthog (Markdown: https://boxd.sh/integrations/posthog/index.md) — Give Claude Code, Codex and your scripts PostHog without an MCP server: connect it once, then run posthog on any boxd machine. 507 commands.
+- https://boxd.sh/integrations/prisma (Markdown: https://boxd.sh/integrations/prisma/index.md) — Give Claude Code, Codex and your scripts Prisma without an MCP server or an API key: connect it once, then run prisma on any boxd machine. 22 commands.
+- https://boxd.sh/integrations/productboard (Markdown: https://boxd.sh/integrations/productboard/index.md) — Give Claude Code, Codex and your scripts Productboard without an MCP server or an API key: connect it once, then run productboard on any boxd machine. 99 commands.
+- https://boxd.sh/integrations/quickbooks (Markdown: https://boxd.sh/integrations/quickbooks/index.md) — Give Claude Code, Codex and your scripts QuickBooks without an MCP server or an API key: connect it once, then run quickbooks on any boxd machine. 114 commands.
+- https://boxd.sh/integrations/railway (Markdown: https://boxd.sh/integrations/railway/index.md) — Give Claude Code, Codex and your scripts Railway without an MCP server: connect it once, then run railway on any boxd machine. 18 commands.
+- https://boxd.sh/integrations/reddit (Markdown: https://boxd.sh/integrations/reddit/index.md) — Give Claude Code, Codex and your scripts Reddit without an MCP server or an API key: connect it once, then run reddit on any boxd machine. 23 commands.
+- https://boxd.sh/integrations/reddit-ads (Markdown: https://boxd.sh/integrations/reddit-ads/index.md) — Give Claude Code, Codex and your scripts Reddit Ads without an MCP server or an API key: connect it once, then run reddit-ads on any boxd machine. 83 commands.
+- https://boxd.sh/integrations/resend (Markdown: https://boxd.sh/integrations/resend/index.md) — Give Claude Code, Codex and your scripts Resend without an MCP server: connect it once, then run resend on any boxd machine. 62 commands.
+- https://boxd.sh/integrations/roam (Markdown: https://boxd.sh/integrations/roam/index.md) — Give Claude Code, Codex and your scripts Roam without an MCP server or an API key: connect it once, then run roam on any boxd machine. 39 commands.
+- https://boxd.sh/integrations/salesforce (Markdown: https://boxd.sh/integrations/salesforce/index.md) — Give Claude Code, Codex and your scripts Salesforce without an MCP server or an API key: connect it once, then run salesforce on any boxd machine. 200 commands, 7 triggers.
+- https://boxd.sh/integrations/segment (Markdown: https://boxd.sh/integrations/segment/index.md) — Give Claude Code, Codex and your scripts Segment without an MCP server: connect it once, then run segment on any boxd machine. 17 commands.
+- https://boxd.sh/integrations/sendgrid (Markdown: https://boxd.sh/integrations/sendgrid/index.md) — Give Claude Code, Codex and your scripts SendGrid without an MCP server: connect it once, then run sendgrid on any boxd machine. 360 commands.
+- https://boxd.sh/integrations/sentry (Markdown: https://boxd.sh/integrations/sentry/index.md) — Give Claude Code, Codex and your scripts Sentry without an MCP server or an API key: connect it once, then run sentry on any boxd machine. 211 commands.
+- https://boxd.sh/integrations/share-point (Markdown: https://boxd.sh/integrations/share-point/index.md) — Give Claude Code, Codex and your scripts SharePoint without an MCP server or an API key: connect it once, then run share-point on any boxd machine. 98 commands.
+- https://boxd.sh/integrations/shopify (Markdown: https://boxd.sh/integrations/shopify/index.md) — Give Claude Code, Codex and your scripts Shopify without an MCP server: connect it once, then run shopify on any boxd machine. 399 commands.
+- https://boxd.sh/integrations/slack (Markdown: https://boxd.sh/integrations/slack/index.md) — Give Claude Code, Codex and your scripts Slack without an MCP server or an API key: connect it once, then run slack on any boxd machine. 166 commands, 9 triggers.
+- https://boxd.sh/integrations/slackbot (Markdown: https://boxd.sh/integrations/slackbot/index.md) — Give Claude Code, Codex and your scripts Slack (Bot) without an MCP server or an API key: connect it once, then run slackbot on any boxd machine. 100 commands, 9 triggers.
+- https://boxd.sh/integrations/snowflake (Markdown: https://boxd.sh/integrations/snowflake/index.md) — Give Claude Code, Codex and your scripts Snowflake without an MCP server or an API key: connect it once, then run snowflake on any boxd machine. 17 commands.
+- https://boxd.sh/integrations/spotify (Markdown: https://boxd.sh/integrations/spotify/index.md) — Give Claude Code, Codex and your scripts Spotify without an MCP server or an API key: connect it once, then run spotify on any boxd machine. 88 commands, 3 triggers.
+- https://boxd.sh/integrations/square (Markdown: https://boxd.sh/integrations/square/index.md) — Give Claude Code, Codex and your scripts Square without an MCP server or an API key: connect it once, then run square on any boxd machine. 122 commands.
+- https://boxd.sh/integrations/stack-exchange (Markdown: https://boxd.sh/integrations/stack-exchange/index.md) — Give Claude Code, Codex and your scripts Stack Exchange without an MCP server or an API key: connect it once, then run stack-exchange on any boxd machine. 121 commands.
+- https://boxd.sh/integrations/stripe (Markdown: https://boxd.sh/integrations/stripe/index.md) — Give Claude Code, Codex and your scripts Stripe without an MCP server or an API key: connect it once, then run stripe on any boxd machine. 432 commands, 7 triggers.
+- https://boxd.sh/integrations/supabase (Markdown: https://boxd.sh/integrations/supabase/index.md) — Give Claude Code, Codex and your scripts Supabase without an MCP server or an API key: connect it once, then run supabase on any boxd machine. 129 commands.
+- https://boxd.sh/integrations/telegram (Markdown: https://boxd.sh/integrations/telegram/index.md) — Give Claude Code, Codex and your scripts Telegram without an MCP server: connect it once, then run telegram on any boxd machine. 18 commands.
+- https://boxd.sh/integrations/ticktick (Markdown: https://boxd.sh/integrations/ticktick/index.md) — Give Claude Code, Codex and your scripts TickTick without an MCP server or an API key: connect it once, then run ticktick on any boxd machine. 14 commands.
+- https://boxd.sh/integrations/timely (Markdown: https://boxd.sh/integrations/timely/index.md) — Give Claude Code, Codex and your scripts Timely without an MCP server or an API key: connect it once, then run timely on any boxd machine. 41 commands.
+- https://boxd.sh/integrations/todoist (Markdown: https://boxd.sh/integrations/todoist/index.md) — Give Claude Code, Codex and your scripts Todoist without an MCP server or an API key: connect it once, then run todoist on any boxd machine. 84 commands, 1 trigger.
+- https://boxd.sh/integrations/trello (Markdown: https://boxd.sh/integrations/trello/index.md) — Give Claude Code, Codex and your scripts Trello without an MCP server or an API key: connect it once, then run trello on any boxd machine. 329 commands, 5 triggers.
+- https://boxd.sh/integrations/twitter (Markdown: https://boxd.sh/integrations/twitter/index.md) — Give Claude Code, Codex and your scripts Twitter without an MCP server or an API key: connect it once, then run twitter on any boxd machine. 79 commands.
+- https://boxd.sh/integrations/typeform (Markdown: https://boxd.sh/integrations/typeform/index.md) — Give Claude Code, Codex and your scripts Typeform without an MCP server or an API key: connect it once, then run typeform on any boxd machine. 35 commands, 1 trigger.
+- https://boxd.sh/integrations/vercel (Markdown: https://boxd.sh/integrations/vercel/index.md) — Give Claude Code, Codex and your scripts Vercel without an MCP server: connect it once, then run vercel on any boxd machine. 146 commands.
+- https://boxd.sh/integrations/wakatime (Markdown: https://boxd.sh/integrations/wakatime/index.md) — Give Claude Code, Codex and your scripts WakaTime without an MCP server or an API key: connect it once, then run wakatime on any boxd machine. 17 commands.
+- https://boxd.sh/integrations/webex (Markdown: https://boxd.sh/integrations/webex/index.md) — Give Claude Code, Codex and your scripts Webex without an MCP server or an API key: connect it once, then run webex on any boxd machine. 26 commands.
+- https://boxd.sh/integrations/whatsapp (Markdown: https://boxd.sh/integrations/whatsapp/index.md) — Give Claude Code, Codex and your scripts WhatsApp without an MCP server or an API key: connect it once, then run whatsapp on any boxd machine. 57 commands, 1 trigger.
+- https://boxd.sh/integrations/wrike (Markdown: https://boxd.sh/integrations/wrike/index.md) — Give Claude Code, Codex and your scripts Wrike without an MCP server or an API key: connect it once, then run wrike on any boxd machine. 144 commands.
+- https://boxd.sh/integrations/youtube (Markdown: https://boxd.sh/integrations/youtube/index.md) — Give Claude Code, Codex and your scripts YouTube without an MCP server or an API key: connect it once, then run youtube on any boxd machine. 51 commands, 4 triggers.
+- https://boxd.sh/integrations/zendesk (Markdown: https://boxd.sh/integrations/zendesk/index.md) — Give Claude Code, Codex and your scripts Zendesk without an MCP server or an API key: connect it once, then run zendesk on any boxd machine. 452 commands, 2 triggers.
+- https://boxd.sh/integrations/zeplin (Markdown: https://boxd.sh/integrations/zeplin/index.md) — Give Claude Code, Codex and your scripts Zeplin without an MCP server or an API key: connect it once, then run zeplin on any boxd machine. 24 commands.
+- https://boxd.sh/integrations/zoho (Markdown: https://boxd.sh/integrations/zoho/index.md) — Give Claude Code, Codex and your scripts Zoho without an MCP server or an API key: connect it once, then run zoho on any boxd machine. 57 commands.
+- https://boxd.sh/integrations/zoho-books (Markdown: https://boxd.sh/integrations/zoho-books/index.md) — Give Claude Code, Codex and your scripts Zoho Books without an MCP server or an API key: connect it once, then run zoho-books on any boxd machine. 265 commands.
+- https://boxd.sh/integrations/zoom (Markdown: https://boxd.sh/integrations/zoom/index.md) — Give Claude Code, Codex and your scripts Zoom without an MCP server or an API key: connect it once, then run zoom on any boxd machine. 100 commands, 11 triggers.
+
+## Blog & manifesto
+
+- https://boxd.sh/blog/anthropic-computer-use-on-a-remote-vm (Markdown: https://boxd.sh/blog/anthropic-computer-use-on-a-remote-vm.md) — Run a computer use agent on a desktop of its own: isolated, with outbound traffic limited to the sites it needs. Four options, how to choose, and setup steps.
+- https://boxd.sh/blog/cloud-dev-environment-complete-guide (Markdown: https://boxd.sh/blog/cloud-dev-environment-complete-guide.md) — A cloud dev environment runs your workspace on a cloud machine instead of your laptop. Codespaces, Coder, Ona and persistent VMs like boxd, compared.
+- https://boxd.sh/blog/billions-of-machines (Markdown: https://boxd.sh/blog/billions-of-machines.md) — 99.9% of code will soon be written and maintained by agents. What those agents need from a machine, derived one requirement at a time.
+- https://boxd.sh/blog/boxd-vs-exe-dev (Markdown: https://boxd.sh/blog/boxd-vs-exe-dev.md) — boxd and exe.dev both give you a persistent Linux VM over SSH. Where each is better: regions, self-hosting, pausing with memory, SDKs and egress control.
+- https://boxd.sh/blog/boxd-vs-sprites (Markdown: https://boxd.sh/blog/boxd-vs-sprites.md) — Sprites and boxd agree on the architecture: persistent microVMs are the right primitive for AI agents. Where the two implementations diverge, honestly.
+- https://boxd.sh/blog/development-workspaces (Markdown: https://boxd.sh/blog/development-workspaces.md) — A development environment made of machines: one you work on, a fork of it for every task in flight, an address on each, and a snapshot the whole team starts from.
+- https://boxd.sh/blog/preview-environments (Markdown: https://boxd.sh/blog/preview-environments.md) — Every pull request gets its own machine, created from a snapshot of your app, live at its own URL, and reclaimed when the branch closes.
+- https://boxd.sh/blog/coding-agents (Markdown: https://boxd.sh/blog/coding-agents.md) — Claude Code, Codex and OpenCode ship on every machine, already logged in and already told how the platform works.
+- https://boxd.sh/blog/personal-assistants (Markdown: https://boxd.sh/blog/personal-assistants.md) — An always-on machine with tools, memory and a messaging gateway, so your assistant keeps working after you close your laptop.
+- https://boxd.sh/blog/sandboxes (Markdown: https://boxd.sh/blog/sandboxes.md) — Run untrusted code behind a real KVM boundary, and dial the isolation up to airtight when the workload needs it.
+- https://boxd.sh/blog/agentic-saas (Markdown: https://boxd.sh/blog/agentic-saas.md) — Create and manage a machine per user through the SDK, without operating a fleet by hand.
+- https://boxd.sh/blog/reproducible-rl-environments (Markdown: https://boxd.sh/blog/reproducible-rl-environments.md) — Give every rollout a byte-identical warm start, forked in milliseconds, so your numbers measure the policy and not the setup.
+- https://boxd.sh/blog/agent-swarm-intelligence (Markdown: https://boxd.sh/blog/agent-swarm-intelligence.md) — Run many agents at once, each on its own machine, and collect one answer instead of a pile of half-finished branches.
+- https://boxd.sh/blog/oss-integrations (Markdown: https://boxd.sh/blog/oss-integrations.md) — The open source agent frameworks that already run on boxd machines, and what they use underneath.
+- https://boxd.sh/blog/every-clone-wakes-up-confused (Markdown: https://boxd.sh/blog/every-clone-wakes-up-confused.md) — A cloned VM resumes holding its parent's clock calibration, LAPIC state, network config and entropy pool. How an injected NMI, a pvclock MSR rewrite, an APIC_TMICT poke and a signal to PID 1 put it right.
+- https://boxd.sh/blog/fork-for-somebody-elses-process (Markdown: https://boxd.sh/blog/fork-for-somebody-elses-process.md) — Why fork() and userfaultfd both fail at cloning a running microVM, and the Linux system call we added instead: one VMA imported from a paused process with fork-style CoW, THP included.
+- https://boxd.sh/blog/a-secret-the-machine-never-has (Markdown: https://boxd.sh/blog/a-secret-the-machine-never-has.md) — The guest gets an unguessable 37-byte dummy; the real credential is substituted into the request at the network boundary. TLS interception, per-host verdicts, and the two bugs that only appear in production.
+- https://boxd.sh/blog/machines-inside-your-own-network (Markdown: https://boxd.sh/blog/machines-inside-your-own-network.md) — Serve a whole organization's machines over its own Tailscale network. Same hostnames, same TLS certificates, reachable only from inside the tailnet. How the boxd edge joins a tailnet in-process, why the listener is the tenant, and what changes for the team.
+- https://boxd.sh/blog/moyai (Markdown: https://boxd.sh/blog/moyai.md) — How Moyai, the AI agent reliability and failure monitoring company, runs agent benchmarks with Harbor on boxd: 279,577 machines created, each a full Linux VM with Docker that boots in a median of 5 milliseconds.
+- https://boxd.sh/blog/saga-legal (Markdown: https://boxd.sh/blog/saga-legal.md) — How Saga Legal replaced one shared staging server with a boxd preview environment per pull request: about 380 pull requests a month, legal sign-off in 30 to 90 minutes instead of a day or more, set up in one day with no app changes.
+- https://boxd.sh/blog/we-raised-2m-to-kill-localhost (Markdown: https://boxd.sh/blog/we-raised-2m-to-kill-localhost.md) — boxd has raised €2 million in pre-seed funding led by BlueYard Capital, with Antler, OVNI, s20, Script Capital and angels who have built developer infrastructure. Why every developer should get unlimited remote environments in milliseconds, and what we are building next.
+- https://boxd.sh/blog/composability-explained (Markdown: https://boxd.sh/blog/composability-explained.md) — Why boxd is open to builders of every size, and how every part of a machine is a setting you change on its own: settings at the org, team and machine level, specs that compose, forks and snapshots that keep the spec, the same calls from outside and inside a machine, and machines that reach each other.
+- https://boxd.sh/blog/my-kernel-snitches (Markdown: https://boxd.sh/blog/my-kernel-snitches.md) — Automatic port detection in a microVM, from the inside out: a listen() trigger patched into net/socket.c, an 8-byte message over a legacy PIO port, and a design where the guest can lie without it mattering.
+- https://boxd.sh/blog/automations-that-sleep (Markdown: https://boxd.sh/blog/automations-that-sleep.md) — Where an automation should run, and why its trigger has to live outside the machine: schedules and events held by the platform, a machine that hibernates between runs and wakes in milliseconds, no environment rebuilt, and nothing to deploy.
+- https://boxd.sh/blog/boxd-101 (Markdown: https://boxd.sh/blog/boxd-101.md) — A machine in milliseconds, ten agents in parallel on forks of it, resume with memory intact, and a bill that stops while it waits.
+- https://boxd.sh/blog/agent-sandbox (Markdown: https://boxd.sh/blog/agent-sandbox.md) — An agent sandbox limits what your AI agent's code can reach. How containers, gVisor and microVMs differ, and which fits your agent.
+- https://boxd.sh/blog/sandbox-environment (Markdown: https://boxd.sh/blog/sandbox-environment.md) — A sandbox environment is an isolated place to run software. The three kinds, how they differ from test and staging, and which one you need.
+- https://boxd.sh/blog/self-hosted-ai-agents (Markdown: https://boxd.sh/blog/self-hosted-ai-agents.md) — Run AI agents entirely on infrastructure you control: serve an open-weight model, give each agent its own VM, and keep prompts and code in house.
+- https://boxd.sh/blog/sovereign-ai-infrastructure (Markdown: https://boxd.sh/blog/sovereign-ai-infrastructure.md) — Sovereign AI keeps data, models and compute under your control and law. What that means for the machines your AI agents run on, and how to choose.
+- https://boxd.sh/blog/self-hosted-actions-runner (Markdown: https://boxd.sh/blog/self-hosted-actions-runner.md) — Run self-hosted GitHub Actions runners that start warm: snapshot a machine with your caches, then start a fresh one-job runner from it for every job.
+
+## Key features
+
+- Persistent state: Files, packages, databases, running processes — all survive disconnects, reboots, and time. Your agent stops at 2am, picks up at 9am.
+- Instant forking: Fork a full machine — memory, disk, processes — in under 200ms. Branch to explore approaches in parallel, keep the winner.
+- Scriptable interface: Drive everything from the `boxd` CLI, with `--json` on every command for scripts and agents. No dashboard, no heavyweight SDK.
+- Always on: Machines keep running after you disconnect. Long builds, background jobs, agent tasks all continue.
+- Automatic HTTPS URLs: Every machine gets a public URL automatically. Certificates and DNS handled.
+- KVM isolation: Every machine runs its own kernel — real hardware-level isolation, not containers. Safe for untrusted, agent-generated code.
+- Pause to zero: Machines sleep when idle and pay only for their disk while they're off. Resume in sub-millisecond.
+- Self-hostable: Run boxd on your own infrastructure, any KVM-capable server. EU hosting by default. No vendor lock-in.
+
+## Specs
+
+- Ubuntu 24.04 (full, unminimized, with man pages and systemd)
+- 2 vCPU, 8 GiB RAM, 100 GiB disk per machine (default size)
+- Cold boot: <10ms
+- Resume from sleep: instant (sub-millisecond)
+- Fork time: <200ms
+
+## Standby and hibernation
+
+- A machine goes to standby or hibernates after its timeout passes with no network traffic in either direction, so a process that calls out every few minutes keeps it awake. CPU work, disk work and local timers don't count, and the machine's own DNS, NTP and DHCP traffic is ignored. With `idle.ignore-outbound` on, only connections opened to the machine count.
+- A hibernated machine wakes only on a new connection through boxd (HTTPS or SSH, including over the org's tailnet, or `boxd machine exec`), not on a raw exposed port and not on its own cron jobs.
+- `boxd machine get my-app` shows the timeouts; 0 (shown as `off`) means it never sleeps.
+
+## Pricing
+
+- Credit-based, billed in euros or US dollars (an organization's currency is set when it is created). You only pay for active vCPU, not for the vCPUs a machine reserves: on average only 10% of a machine's reserved vCPU is active. RAM bills on memory in use and disk on what you have written to, never on provisioned size. Metered every second, settled every 15 minutes, no minimum charge per machine.
+- vCPU: EUR 0.039 / USD 0.047 per vCPU-hour, on active vCPU only (not the vCPUs the machine reserves): a 2 vCPU machine that is active 10% of an hour pays for 0.2 vCPU-hours.
+- RAM: EUR 0.012 / USD 0.014 per GiB-hour, on memory actually resident (not the provisioned 8 GiB), while running or in standby.
+- Disk: EUR 0.00008 / USD 0.000096 per GiB-hour, on disk written to (not the provisioned 100 GiB), in every state. Hibernated machines pay for disk only.
+- A default machine (2 vCPU / 8 GiB) is about EUR 0.17 / USD 0.21 per hour with every vCPU active and full memory while it runs, and about EUR 0.03 / USD 0.04 per hour with 0.2 vCPU active and holding 2 GiB with 20 GiB written to disk.
+- Every account is an organization: shared machines, one credit balance, 100 machines included.
+- EUR 30 / USD 30 free credits for new accounts, granted when a payment method is added.
+- Custom: bigger machines, higher quotas, volume pricing, or self-host/BYOC on your own hardware. For companies of any size. Contact us.
+
+## Architecture
+
+Our own custom VMM, in Rust, built on KVM. No Docker, no external dependencies. Raft consensus for coordination. Hosted in Frankfurt and New York.
+
+## Contact
+
+- Email: contact@boxd.sh
+- Book a call: https://boxd.sh/contact
