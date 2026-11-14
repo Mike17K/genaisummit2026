@@ -41,3 +41,7 @@ ALERT_MAX_PER_MIN = int(os.environ.get("EYES_ALERT_MAX_PER_MIN", "6"))
 
 # Alerts are spoken by a TTS model (exact words, no instruction leakage), not by the Live model.
 TTS_MODEL = os.environ.get("GEMINI_TTS_MODEL", "gemini-3.8-flash-lite-tts")  # ~1.7-2.2 s for a short sentence, cached after
+
+# ---- many connections at once ----
+MAX_CONNECTIONS = int(os.environ.get("EYES_MAX_CONNECTIONS", "10"))          # more are told "busy"; protects the API quota
+MAX_PARALLEL_CALLS = int(os.environ.get("EYES_MAX_PARALLEL_CALLS", "6"))     # watcher and alert-voice calls running at once

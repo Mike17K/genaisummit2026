@@ -15,6 +15,7 @@ import base64
 import json
 import re
 import time
+import uuid
 from collections import deque
 from dataclasses import dataclass, field
 
@@ -41,6 +42,8 @@ Rules:
 
 _client: genai.Client | None = None
 
+_active_connections = 0                       # open /live connections right now
+_watch_slots: asyncio.Semaphore | None = None  # limits parallel watcher calls across all connections
 CLIENT_HANG_S = 0.8   # keep in step with GATE_HANG_MS in static/app.js
 GREEK = re.compile(r"[Ͱ-Ͽ]")
 
@@ -239,9 +242,16 @@ async def _watch_once(state: State, now: float) -> None:
     frames = [f for f in state.frames if now - f[0] < 6]
     if len(frames) < 2 or frames[-1][0] <= state.last_judged_frame:
         return  # nothing new to look at
+    global _watch_slots
+    if _watch_slots is None:
+        _watch_slots = asyncio.Semaphore(config.MAX_PARALLEL_CALLS)
+    if _watch_slots.locked():
+        trace.log("watch_skipped", reason="all model slots busy")   # never queue up: the next look uses a fresher frame
+        return
     state.last_judged_frame = frames[-1][0]
     t0 = time.time()
-    d, info = await watch.judge(frames, list(state.recent_alerts), state.lang)
+    async with _watch_slots:
+        d, info = await watch.judge(frames, list(state.recent_alerts), state.lang)
     ms = round((time.time() - t0) * 1000)
     fire, why = state.policy.decide(d, time.time(), time.time() - state.last_user_voice)
     outcome = "ALERT" if fire else ("silent" if not d.notify else "held: " + why)
@@ -260,14 +270,32 @@ async def _watch_once(state: State, now: float) -> None:
 
 async def run(socket: WebSocket) -> None:
     """Serve one browser connection with one Live session."""
+    global _active_connections
     await socket.accept()
+    conn_id = uuid.uuid4().hex[:6]
+    trace.set_conn(conn_id)          # every trace event in this connection (and its tasks) carries this id
+    tools.use_new_memory()           # this connection's own remembered places
+    if _active_connections >= config.MAX_CONNECTIONS:
+        trace.log("rejected_busy", active=_active_connections, limit=config.MAX_CONNECTIONS)
+        await socket.send_json({"type": "error", "text": "The assistant is busy right now. Please try again in a minute."})
+        await socket.close()
+        return
+    _active_connections += 1
+    try:
+        await _serve(socket, conn_id)
+    finally:
+        _active_connections -= 1
+        trace.log("live_disconnect", active=_active_connections)
+
+
+async def _serve(socket: WebSocket, conn_id: str) -> None:
     # The page can pass ?silence=<ms>; clamp it to a sane range.
     try:
         silence_ms = int(socket.query_params.get("silence", config.SILENCE_MS))
     except ValueError:
         silence_ms = config.SILENCE_MS
     silence_ms = max(300, min(4000, silence_ms))
-    trace.log("live_connect", silence_ms=silence_ms)
+    trace.log("live_connect", silence_ms=silence_ms, active=_active_connections)
     if not config.API_KEY:
         await socket.send_json({"type": "error", "text": "The model is not connected yet."})
         await socket.close()
@@ -290,7 +318,7 @@ async def run(socket: WebSocket) -> None:
     try:
         async with _get_client().aio.live.connect(model=config.LIVE_MODEL, config=_live_config([set_alert_mode])) as session:
             state.session = session
-            await socket.send_json({"type": "ready"})
+            await socket.send_json({"type": "ready", "conn": conn_id})
             downstream = asyncio.create_task(_gemini_to_browser(state))
             watcher = asyncio.create_task(_watch_loop(state))
             mic_bytes = frames = 0
@@ -345,4 +373,3 @@ async def run(socket: WebSocket) -> None:
             await socket.send_json({"type": "error", "text": "Voice connection lost. Tap to restart."})
         except Exception:
             pass
-    trace.log("live_disconnect")

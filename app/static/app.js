@@ -45,7 +45,7 @@ const dbg = {
   micLevel: 0, micPeak: 0, sentKB: 0, sentFrames: 0, recvKB: 0, recvChunks: 0,
   lastHeard: "", lastReply: "", lastEvent: "", lastModelAudioAt: 0, lastSpeechAt: 0,
   error: "", startedAt: 0, log: [],
-  watch: "-", lastAlert: "-", alertMode: "normal", alerts: 0,
+  watch: "-", lastAlert: "-", alertMode: "normal", alerts: 0, conn: "-",
 };
 const hideDebug = new URLSearchParams(location.search).get("debug") === "0";
 if (hideDebug) debugEl.style.display = "none";
@@ -83,6 +83,7 @@ function renderDebug() {
       `<div id="meter"><div style="width:${Math.min(100, dbg.micLevel * 600)}%"></div></div>` +
       `level ${dbg.micLevel.toFixed(3)} peak ${dbg.micPeak.toFixed(3)} gate ${gate.toFixed(3)} ${talkingNow ? cls(true, "(sending your voice)") : cls(null, "(below gate: sending silence)")}`],
     ["audio ctx", cls(dbg.audioCtx === "running" ? true : dbg.audioCtx === "-" ? null : false, dbg.audioCtx)],
+    ["session id", esc(dbg.conn) + "  (filter the server trace with /panel?conn=" + esc(dbg.conn) + ")"],
     ["websocket", cls(wsState === "open" ? true : wsState === "-" ? null : wsState === "connecting" ? null : false, wsState) + (dbg.ws !== "-" ? "  " + esc(dbg.ws) : "")],
     ["gemini", cls(dbg.gemini === "ready" ? true : dbg.gemini === "-" ? null : false, esc(dbg.gemini))],
     ["received", `${dbg.recvKB.toFixed(0)} KB in ${dbg.recvChunks} chunks, last audio ${sinceAudio}`],
@@ -259,7 +260,7 @@ async function start() {
     const m = JSON.parse(e.data);
     dbg.lastEvent = m.type + (m.name ? ":" + m.name : "");
     if (m.type === "ready") {
-      dbg.gemini = "ready"; chime(); note("gemini session ready");
+      dbg.gemini = "ready"; dbg.conn = m.conn || "-"; chime(); note("gemini session ready, id " + dbg.conn);
       socket.send(JSON.stringify({ type: "mode", mode: dbg.alertMode }));
     }
     else if (m.type === "interrupted") { stopPlayback(); note("interrupted by you"); }

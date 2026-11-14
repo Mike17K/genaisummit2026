@@ -40,6 +40,14 @@ An alert stops whatever is playing, beeps and vibrates, then speaks the warning.
 Details and settings: `project-context/eyes-app-characteristics.md` section 5b. Tests: `uv run python tests/test_watch_policy.py`.
 Cost: about 100k tokens per minute while running; use `off` or raise `EYES_WATCH_S` to save credits.
 
+## Branding
+The VoxEye mark is in the page header and used as favicon / home-screen icon (`static/logo.png`, `favicon.ico`, `icon-192.png`, `apple-touch-icon.png`), cropped from `context/VoxEye_logo.png`.
+
+## Several people at once
+Each connection has its own session, memory, alert state and id; the trace can be filtered per connection
+(`/panel?conn=<id>`). Limits: `EYES_MAX_CONNECTIONS` (10) open connections, `EYES_MAX_PARALLEL_CALLS` (6) model calls at once.
+Tests: see `tests/README.md`.
+
 ## On-screen debug (phone)
 The page shows a state badge (idle, starting, connecting, listening, hearing, thinking, speaking, error) and a debug
 panel: camera and mic status with permission errors, a live mic level meter, KB and frames sent, KB received, websocket

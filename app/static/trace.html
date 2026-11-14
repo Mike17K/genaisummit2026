@@ -3,7 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Eyes trace</title>
+  <title>VoxEye trace</title>
+  <meta name="theme-color" content="#1f1c2f">
+  <link rel="icon" href="/favicon.ico" sizes="48x48 32x32 16x16">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <style>
     body { margin: 0; background: #0d1117; color: #e6edf3; font: 14px ui-monospace, monospace; }
     h1 { font-size: 1rem; margin: 0; padding: .75rem 1rem; border-bottom: 1px solid #30363d; }
@@ -14,19 +17,19 @@
   </style>
 </head>
 <body>
-  <h1>Eyes: live trace <span class="meta" id="count"></span></h1>
+  <h1><img src="/static/logo.png" width="22" height="22" alt="" style="vertical-align:middle;border-radius:5px;margin-right:.5rem">VoxEye: live trace <span class="meta" id="count"></span> <span class="meta">(click a connection id to filter; <a href="/panel" style="color:inherit">show all</a>)</span></h1>
   <table><tbody id="rows"></tbody></table>
   <script>
     const rows = document.getElementById("rows");
     const fmt = (e) => {
-      const { t, kind, ...rest } = e;
+      const { t, kind, conn, ...rest } = e;
       const main = rest.text ?? rest.tool ?? rest.error ?? "";
       const meta = Object.entries(rest).filter(([k]) => k !== "text").map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : v}`).join("  ");
-      return `<tr class="${kind}"><td class="meta">${new Date(t * 1000).toLocaleTimeString()}</td><td>${kind}</td><td>${main === null ? "(silent)" : String(main).replace(/</g, "&lt;")}</td><td class="meta">${meta.replace(/</g, "&lt;")}</td></tr>`;
+      return `<tr class="${kind}"><td class="meta">${new Date(t * 1000).toLocaleTimeString()}</td><td class="meta"><a href="?conn=${conn}" style="color:inherit">${conn}</a></td><td>${kind}</td><td>${main === null ? "(silent)" : String(main).replace(/</g, "&lt;")}</td><td class="meta">${meta.replace(/</g, "&lt;")}</td></tr>`;
     };
     async function tick() {
       try {
-        const events = await (await fetch("/trace")).json();
+        const events = await (await fetch("/trace" + location.search)).json();
         rows.innerHTML = events.slice().reverse().map(fmt).join("");
         document.getElementById("count").textContent = `(${events.length} events)`;
       } catch (_) {}

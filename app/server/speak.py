@@ -16,6 +16,7 @@ from . import config, trace
 _client: genai.Client | None = None
 _cache: "OrderedDict[str, bytes]" = OrderedDict()
 _inflight: dict[str, asyncio.Future] = {}
+_slots: asyncio.Semaphore | None = None   # limits parallel TTS calls across all connections
 CACHE_SIZE = 64
 OUT_RATE = 24000
 
@@ -40,7 +41,17 @@ def _to_pcm16(data: bytes, mime: str) -> bytes:
 
 
 async def _synthesize(text: str) -> bytes:
-    response = await _get_client().aio.models.generate_content(
+    global _slots
+    if _slots is None:
+        _slots = asyncio.Semaphore(config.MAX_PARALLEL_CALLS)
+    async with _slots:
+        response = await _call(text)
+    blob = response.candidates[0].content.parts[0].inline_data
+    return _to_pcm16(blob.data, blob.mime_type or "")
+
+
+async def _call(text: str):
+    return await _get_client().aio.models.generate_content(
         model=config.TTS_MODEL,
         contents=text,
         config=types.GenerateContentConfig(
@@ -50,8 +61,6 @@ async def _synthesize(text: str) -> bytes:
             ),
         ),
     )
-    blob = response.candidates[0].content.parts[0].inline_data
-    return _to_pcm16(blob.data, blob.mime_type or "")
 
 
 async def synthesize(text: str) -> bytes:

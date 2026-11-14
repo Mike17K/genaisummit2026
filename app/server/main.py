@@ -7,16 +7,28 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import agent, live, trace
+import uuid
+
+from . import agent, live, tools, trace
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
 
-app = FastAPI(title="Eyes")
+app = FastAPI(title="VoxEye")
 
 
 @app.get("/")
 async def index() -> FileResponse:
     return FileResponse(STATIC / "index.html")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon() -> FileResponse:
+    return FileResponse(STATIC / "favicon.ico", media_type="image/x-icon")
+
+
+@app.get("/apple-touch-icon.png", include_in_schema=False)
+async def apple_touch_icon() -> FileResponse:
+    return FileResponse(STATIC / "apple-touch-icon.png", media_type="image/png")
 
 
 @app.get("/panel")
@@ -26,8 +38,9 @@ async def panel() -> FileResponse:
 
 
 @app.get("/trace")
-async def get_trace() -> list[dict]:
-    return trace.recent()
+async def get_trace(conn: str | None = None, n: int = 100) -> list[dict]:
+    """Recent events. Pass ?conn=<id> (shown in each event and in the page's debug panel) to see one connection."""
+    return trace.recent(max(1, min(n, 1000)), conn)
 
 
 @app.websocket("/live")
@@ -38,6 +51,8 @@ async def live_ws(socket: WebSocket) -> None:
 @app.websocket("/ws")
 async def ws(socket: WebSocket) -> None:
     await socket.accept()
+    trace.set_conn(uuid.uuid4().hex[:6])
+    tools.use_new_memory()
     trace.log("connect")
     session = agent.Session()
     current: asyncio.Task | None = None

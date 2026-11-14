@@ -83,6 +83,7 @@ events (heard, reply, ...)    <--JSON over WS--     trace log (/trace, /panel)
 - Short chimes: ready (880 Hz), stop (440 Hz), error (330 Hz).
 
 ### 5.4 Interface
+- **Branding (VoxEye):** the logo's shield-and-aperture mark sits at the left of the header, which uses the logo's own navy (`#1f1c2f`); the tab title is "VoxEye". Favicon (`/favicon.ico` with 16, 32 and 48 px, plus a 192 px PNG) and the iOS home-screen icon (`/apple-touch-icon.png`) are cropped from `context/VoxEye_logo.png` (original kept, 5 MB; the app only loads files of about 8 to 46 KB from `app/static/`). The browser's theme colour matches the logo navy. The trace page uses the same icon.
 - One full-screen button (start and stop), large target, high contrast; blue idle, green running, red on error.
 - A status line at the top with a coloured **state badge** and a short sentence.
 - Marked up for assistive technology: button has a label and pressed state; transcripts and debug text are hidden from screen readers so they do not talk over the app.
@@ -137,6 +138,25 @@ Typical timing in tests: about 2 s from the hazard appearing to the alert decisi
 - Button on the page cycles **alerts: normal / urgent only / off** (remembered). The user can also say "only warn me about serious things" or "be quiet" (tool `set_alert_mode`).
 - `/panel` and the debug panel show every check (silent, held back with the reason, or ALERT) with confidence, key and time.
 
+## 5c. Several people at once (multiple connections)
+
+Many phones can use one server at the same time without affecting each other. Each connection gets its own Gemini Live session, its own state and its own id (6 characters, shown on the phone's debug panel and in every trace event).
+
+| What | How it is kept apart |
+|---|---|
+| Remembered places | Per connection (a context variable set at the start of each connection). Before this fix it was one shared dictionary, so one user's places were visible to everyone. Places live in RAM only and disappear when that connection closes. |
+| Camera frames, alert policy, alert history, alert mode, "user is talking" flags, language | Per connection (`State` object; no shared mutable defaults). One person's alert cooldown or mode never affects another. |
+| Voice (Live session) and noise gate | One Live session per connection; the gate and wait settings live in each browser. |
+| Trace | One shared ring buffer (last 1000 events), but every event carries `conn`. `/trace?conn=<id>` and `/panel?conn=<id>` (click an id) show one connection. |
+| Alert voice cache | Shared on purpose: it maps alert text to audio only, so identical alerts share one TTS call. Failed calls are not cached. |
+| Gemini clients | Shared (safe to use concurrently). |
+
+**Protecting the quota.** Limits apply across all connections: at most `EYES_MAX_CONNECTIONS` (10) open connections; further ones are told "The assistant is busy right now. Please try again in a minute." and closed. At most `EYES_MAX_PARALLEL_CALLS` (6) watcher and alert-voice model calls run at once; a watcher look that finds all slots busy is skipped (never queued), because the next look has a fresher frame. Remember each connection costs about 100,000 tokens a minute for the watcher alone, so ten phones is about a million tokens a minute.
+
+**Tested:** 22 offline isolation checks (memory, trace tags, state objects, TTS cache sharing and failure) and a live test with 4 phones at once against the real API (12 checks): a car alert reached only the phone that saw the car; one phone saved "blue door" by voice and recalled it while another phone, calling the same tool at the same time, was told it had nothing saved; every watcher kept running; no errors; each connection's trace filtered cleanly. Connection cap: 3rd connection rejected with "busy", a freed slot accepted a new one (5 checks).
+
+**Not tested / limits:** more than 4 simultaneous real sessions; whether Google limits concurrent Live sessions per key (unknown, the cap is a guess); one uvicorn process only (several workers would each count their own connections); no login, so anyone with the link can connect until the cap is reached.
+
 ## 6. Server features (`app/server/`)
 
 | File | Role |
@@ -164,7 +184,7 @@ Typical timing in tests: about 2 s from the hazard appearing to the alert decisi
 - Server to browser: binary = PCM16 mono 24 kHz speech (model speech and spoken alerts); JSON events `ready`, `heard` (what the user said), `reply` (what the assistant said), `tool` (name and arguments), `interrupted`, `alert` (urgency and text: stop playing, beep, vibrate), `watch` (each look), `suppressed` (an alert held back, with the reason), `mode`, `speak_text` (fallback if the alert voice fails), `go_away`, `error`.
 
 ## 7. Observability (show the work)
-- `/panel` live table of events (heard, tool calls, replies, errors) refreshed every second; `/trace` returns the same as JSON.
+- `/panel` live table of events (heard, tool calls, replies, errors) refreshed every second; `/trace` returns the same as JSON; add `?conn=<id>` to filter one connection.
 - Events recorded: `watch` (every look: silent, held back with the reason, or ALERT, with confidence, key, ms and tokens), `alert`, `alert_spoken`, `alert_mode`, `user_turn` (start and end), `live_connect`, `first_mic_audio`, `first_frame`, `first_audio` (with latency in ms), `heard`, `reply`, `tool`, `interrupted`, `go_away`, `error`, `live_input_totals` (KB of microphone audio and frames received), `live_disconnect`. The text path also logs token counts.
 - The input counters answer "did the phone's audio and camera actually reach the server?".
 
@@ -191,6 +211,8 @@ All tool calls are logged and shown in the trace.
 | `EYES_ALERT_COOLDOWN_S` / `_HIGH_S` | `6` / `1.5` | Minimum gap between alerts. |
 | `EYES_ALERT_DEDUPE_S` | `25` | Same hazard is not repeated within this time. |
 | `EYES_ALERT_MAX_PER_MIN` | `6` | Rate limit (double for high urgency). |
+| `EYES_MAX_CONNECTIONS` | `10` | Open voice connections allowed at once; more are told the assistant is busy. |
+| `EYES_MAX_PARALLEL_CALLS` | `6` | Watcher and alert-voice model calls running at once across all connections. |
 
 URL options on the page: `?gate=0.05` (noise gate level), `?silence=1500` (wait after you stop talking, in ms) and `?debug=0` (hide debug panel). The page also has **gate −/+** and **wait −/+** buttons (wait in steps of 200 ms, saved in the browser, applied the next time you tap Start).
 
@@ -219,7 +241,7 @@ Each look sends 3 images and costs about 3,800 input tokens. At one look every ~
 - **iPhone Safari** is the strictest about audio and may need extra handling; Chrome on Android is the primary target.
 - **Session length:** audio plus video sessions are normally limited to about 2 minutes; compression is enabled but long sessions are untested. Connections can drop outdoors; the page shows the close code and asks for a tap.
 - **Browser audio nodes:** `ScriptProcessor` is deprecated but widely supported; a later cleanup can move to `AudioWorklet`.
-- Memory of places is in RAM only.
+- Memory of places is in RAM only and private to one connection (lost when it closes).
 - Gate too high can cut quiet speech.
 - Camera frames are 1 per second, so fast motion can be missed.
 - The larger "hard reading" model is configured but not used.
