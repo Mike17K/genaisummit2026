@@ -157,6 +157,15 @@ The camera normally sends **1 image per second** and the watcher looks about **e
 - Button on the page cycles **alerts: normal / urgent only / off** (remembered). The user can also say "only warn me about serious things" or "be quiet" (tool `set_alert_mode`).
 - `/panel` and the debug panel show every check (silent, held back with the reason, or ALERT) with confidence, key and time.
 
+## 5b-2. Fast warnings (branch `fast-warnings`; not on master yet)
+See [fast-warnings-evaluation.md](fast-warnings-evaluation.md) for the evaluation of the plan and the full results. Summary:
+- **On-device detector:** the phone runs a MediaPipe object detector and measures how fast things in the walking path grow (median-based growth, 350 ms sustain, at most one alert per 4 s). An approaching vehicle, bike or person is warned about with no network and no cloud model; the server still applies its cooldown, de-duplication and rate limit.
+- **Phone motion sensors:** gyro and accelerometer. A camera swinging faster than 65 deg/s pauses the on-device alerts and the watcher's looks; a user known to be standing still is not told about fixed obstacles (urgent hazards are never held back); unknown movement is never treated as standing still.
+- **Instant voice:** 30 common alert phrases (English and Greek) are made once in the background and the watcher is told to reuse them, so most alerts play instantly; an urgent alert whose voice is not ready is spoken by the phone at once while the better voice is made for next time.
+- **Confident single sighting:** a low-urgency hazard at confidence 0.88 or more (0.80 while walking) is announced on the first look.
+- **Fresh frame at speech start** goes to the voice model immediately; **echo guard** raises the gate for 1.8 s after an alert; the watcher uses `thinking_level=LOW` (the plan's `thinking_budget=0` is rejected by the model).
+- **Tests:** 187 offline checks, a real-browser detector run, a 17-check server run, and the older end-to-end suites as regression. Not tested on a phone.
+
 ## 5c. Several people at once (multiple connections)
 
 Many phones can use one server at the same time without affecting each other. Each connection gets its own Gemini Live session, its own state and its own id (6 characters, shown on the phone's debug panel and in every trace event).

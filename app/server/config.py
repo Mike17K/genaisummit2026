@@ -62,3 +62,11 @@ SPACING_S = {"normal": 1.0, "elevated": 0.7, "high": 0.5}           # gap betwee
 ATTENTION_HOLD_S = {"elevated": 5.0, "high": 8.0}                    # stay at a level at least this long after last needed
 ATTENTION_MAX_S = float(os.environ.get("EYES_ATTENTION_MAX_S", "30"))        # cost guard: longest stretch above normal
 ATTENTION_COOLDOWN_S = float(os.environ.get("EYES_ATTENTION_COOLDOWN_S", "12"))  # then forced back to normal for this long
+
+# ---- fast warnings (phone sensors, on-device alerts, instant voice) ----
+WATCH_THINKING = os.environ.get("GEMINI_WATCH_THINKING", "LOW")   # thinking_level for the watcher (MINIMAL, LOW, MEDIUM, HIGH or empty).
+# thinking_budget=0 is rejected (HTTP 400) by gemini-3.5-flash-lite; if the model refuses any setting we retry without one.
+ALERT_FAST_CONF = float(os.environ.get("EYES_ALERT_FAST_CONF", "0.88"))            # a low-urgency hazard seen once is announced if at least this sure
+ALERT_FAST_CONF_MOVING = float(os.environ.get("EYES_ALERT_FAST_CONF_MOVING", "0.80"))  # same, when the user is walking
+PAN_DEG_S = float(os.environ.get("EYES_PAN_DEG_S", "65"))        # camera turning faster than this (deg/s): skip looks, motion is not real
+SENSOR_MAX_AGE_S = 1.5                                            # phone sensor readings older than this are ignored

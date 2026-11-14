@@ -46,6 +46,12 @@ Cost: about 100k tokens per minute while running (up to about 285k while raised)
 ## Branding
 The VoxEye mark is in the page header and used as favicon / home-screen icon (`static/logo.png`, `favicon.ico`, `icon-192.png`, `apple-touch-icon.png`), cropped from `context/VoxEye_logo.png`.
 
+## Fast warnings (branch `fast-warnings`)
+Evaluation of the plan and what was built: `project-context/fast-warnings-evaluation.md`. In short: an on-device detector
+(`static/spatial.js`, `static/looming.js`) warns about approaching vehicles, bikes and people without the cloud; phone motion
+sensors stop false alarms from a swinging camera and from a stationary user; 30 common alert voices are made ahead of time
+and an uncached urgent alert is spoken by the phone at once; a confident hazard is announced on the first sighting.
+
 ## Several people at once
 Each connection has its own session, memory, alert state and id; the trace can be filtered per connection
 (`/panel?conn=<id>`). Limits: `EYES_MAX_CONNECTIONS` (10) open connections, `EYES_MAX_PARALLEL_CALLS` (6) model calls at once.

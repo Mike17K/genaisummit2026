@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from server.watch import AlertPolicy, WatchDecision, same_hazard  # noqa: E402
 
 
-def d(notify=True, urgency="low", conf=0.9, key="car-right", msg="Car from the right."):
+def d(notify=True, urgency="low", conf=0.8, key="car-right", msg="Car from the right."):
     return WatchDecision(notify=notify, urgency=urgency, confidence=conf, hazard_key=key, message=msg)
 
 

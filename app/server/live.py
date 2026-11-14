@@ -23,7 +23,7 @@ from fastapi import WebSocket
 from google import genai
 from google.genai import types
 
-from . import config, speak, tools, trace, turns, watch
+from . import config, phrases, speak, tools, trace, turns, watch
 
 LIVE_SYSTEM = """You are Eyes, a voice assistant for a blind or low-vision person. They cannot see anything, they only hear you.
 You receive their voice and a camera picture about once per second.
@@ -99,6 +99,9 @@ class State:
     lang: str = "English"
     last_judged_frame: float = 0.0
     extra_funcs: dict = field(default_factory=dict)  # tools that need this connection's state
+    imu: dict | None = None           # latest phone motion sensors reported by the page (gyro, walking, pitch)
+    imu_at: float = 0.0
+    client_tts: bool = True           # the page can speak an uncached urgent alert itself, with no wait
 
     async def send(self, payload: dict) -> None:
         await self.socket.send_json(payload)
@@ -175,19 +178,25 @@ async def _gemini_to_browser(state: State) -> None:
                 await socket.send_json({"type": "go_away"})
 
 
-async def _fire_alert(state: State, d: watch.WatchDecision) -> None:
-    """Cut whatever is being said, then speak the alert (TTS) in its place."""
+async def _fire_alert(state: State, d: watch.WatchDecision, source: str = "watch") -> None:
+    """Cut whatever is being said, then speak the alert in its place.
+
+    Voice: if it is already made (cached) it is streamed at once. If it is not, an urgent alert is spoken by the PHONE
+    immediately (no network wait) while the better voice is made in the background for next time; other alerts wait
+    for the better voice."""
     now = time.time()
     state.policy.record(d, now)
     state.recent_alerts.append((now, d.hazard_key, d.message))
     was_speaking = state.model_speaking
     cached = speak.is_cached(d.message)
+    client_voice = state.client_tts and d.urgency == "high" and not cached
     trace.log("alert", urgency=d.urgency, key=d.hazard_key, text=d.message, confidence=d.confidence,
-              cut_speech=was_speaking, voice_cached=cached)
-    # Start making the spoken version right away; it is prepared while the cut happens.
+              cut_speech=was_speaking, voice_cached=cached, client_voice=client_voice, source=source)
+    # Make the better voice now (it plays this time if nobody spoke it yet, and is cached for next time).
     synth = asyncio.create_task(speak.synthesize(d.message))
-    # 1) tell the page now: it stops playing, buzzes and beeps
-    await state.send({"type": "alert", "urgency": d.urgency, "text": d.message})
+    # 1) tell the page now: it stops playing, buzzes and beeps (and speaks, if it was asked to)
+    await state.send({"type": "alert", "urgency": d.urgency, "text": d.message, "voice_cached": cached,
+                      "client_voice": client_voice, "source": source})
     # 2) silence the Live model if it is talking. A manual activity signal is a hard barge-in; a plain message would only
     #    queue behind the current speech. Old audio still in flight is thrown away until the interrupt arrives.
     if was_speaking and not state.turn.active:
@@ -204,6 +213,9 @@ async def _fire_alert(state: State, d: watch.WatchDecision) -> None:
         turn_complete=False,
     )
     # 4) speak the alert
+    if client_voice:
+        trace.log("alert_spoken", ms=round((time.time() - now) * 1000), by="phone")
+        return    # the phone is already speaking it; the better voice finishes in the background and is cached
     try:
         pcm = await asyncio.wait_for(synth, 8)
     except Exception as exc:
@@ -212,7 +224,44 @@ async def _fire_alert(state: State, d: watch.WatchDecision) -> None:
         return
     for i in range(0, len(pcm), 9600):
         await state.socket.send_bytes(pcm[i:i + 9600])
-    trace.log("alert_spoken", ms=round((time.time() - now) * 1000), audio_s=round(len(pcm) / 48000, 1))
+    trace.log("alert_spoken", ms=round((time.time() - now) * 1000), audio_s=round(len(pcm) / 48000, 1), by="server")
+
+
+def _spawn(coro) -> asyncio.Task:
+    """Run a background task, and record in the trace if it fails (an unretrieved task error is otherwise invisible)."""
+    task = asyncio.create_task(coro)
+
+    def _done(t: asyncio.Task) -> None:
+        if not t.cancelled() and t.exception() is not None:
+            trace.log("task_error", error=f"{type(t.exception()).__name__}: {t.exception()}"[:300])
+
+    task.add_done_callback(_done)
+    return task
+
+
+async def _local_alert(state: State, msg: dict) -> None:
+    """An alert raised by the phone's own on-device detector (an object in the path is getting rapidly closer)."""
+    label = str(msg.get("label", "object"))[:30]
+    key, text = phrases.local_alert(label, state.lang)
+    now = time.time()
+    try:
+        confidence = max(0.0, min(1.0, float(msg.get("confidence", 0.92))))
+    except (TypeError, ValueError):
+        confidence = 0.92
+    d = watch.WatchDecision(notify=True, urgency="high", confidence=confidence, hazard_key=key, message=text,
+                            reason="on-device looming", attention="high", hazard_type="moving")
+    imu = state.imu if state.imu and now - state.imu_at <= config.SENSOR_MAX_AGE_S else None
+    if imu and imu.get("panning"):
+        trace.log("local_alert", label=label, outcome="held: camera panning", key=key)
+        return
+    fire, why = state.policy.decide(d, now, now - state.turn.last_voice, fast_confirm=True,
+                                    user_moving=watch.user_moving(imu))
+    trace.log("local_alert", label=label, outcome="ALERT" if fire else "held: " + why, key=key,
+              growth=msg.get("growth"), dist_m=msg.get("distM"), confidence=confidence)
+    if fire:
+        if state.attention.update("high", now, alerted=True):
+            await _announce_rate(state, "on-device alert")
+        await _fire_alert(state, d, source="local")
 
 
 async def _announce_rate(state: State, why: str) -> None:
@@ -256,12 +305,18 @@ async def _watch_once(state: State, now: float) -> None:
     if _watch_slots.locked():
         trace.log("watch_skipped", reason="all model slots busy")   # never queue up: the next look uses a fresher frame
         return
+    # Phone motion sensors: while the camera is swinging, apparent motion is not real, so do not look (saves a model call too).
+    imu = state.imu if state.imu and now - state.imu_at <= config.SENSOR_MAX_AGE_S else None
+    if imu and imu.get("panning"):
+        trace.log("watch_skipped", reason="camera panning", deg_s=imu.get("angularSpeed"))
+        return
+    user_moving = watch.user_moving(imu)
     state.last_judged_frame = frames[-1][0]
     t0 = time.time()
     async with _watch_slots:
-        d, info = await watch.judge(frames, list(state.recent_alerts), state.lang)
+        d, info = await watch.judge(frames, list(state.recent_alerts), state.lang, watch.sensors_text(imu))
     ms = round((time.time() - t0) * 1000)
-    fire, why = state.policy.decide(d, time.time(), time.time() - state.turn.last_voice)
+    fire, why = state.policy.decide(d, time.time(), time.time() - state.turn.last_voice, user_moving=user_moving)
     outcome = "ALERT" if fire else ("silent" if not d.notify else "held: " + why)
     # Adaptive attention: the model's own sense of how closely to watch, plus our own signals (an alert just fired,
     # or a suspected hazard is being held back). This raises the camera rate and the look rate, then eases back.
@@ -269,7 +324,8 @@ async def _watch_once(state: State, now: float) -> None:
     changed = state.attention.update(d.attention, time.time(), alerted=fire, held=held)
     trace.log("watch", outcome=outcome, notify=d.notify, urgency=d.urgency, confidence=d.confidence,
               key=d.hazard_key, message=d.message or None, reason=d.reason[:100], ms=ms,
-              attention=d.attention, level=state.attention.level, fps=state.attention.fps, **info)
+              attention=d.attention, level=state.attention.level, fps=state.attention.fps,
+              hazard_type=d.hazard_type, moving=user_moving, **info)
     await state.send({"type": "watch", "outcome": outcome, "urgency": d.urgency, "confidence": d.confidence,
                       "key": d.hazard_key, "ms": ms, "attention": state.attention.level})
     if changed:
@@ -317,6 +373,8 @@ async def _serve(socket: WebSocket, conn_id: str) -> None:
         return
 
     state = State(socket=socket)
+    state.client_tts = socket.query_params.get("client_tts", "1") != "0"
+    asyncio.create_task(speak.warm_common())   # common alert voices, made once per server run, in the background
     # The page tags its audio as voice or quiet, so the wait is counted from the true end of your voice.
     state.turn = turns.TurnTracker(end_wait=silence_ms / 1000)
 
@@ -366,9 +424,16 @@ async def _serve(socket: WebSocket, conn_id: str) -> None:
                             frames += 1
                             now_f = time.time()
                             state.frames.append((now_f, jpeg))   # the watcher can use every frame
-                            if now_f - state.last_live_frame >= 0.95:   # the Live model only needs about 1 per second
+                            if isinstance(msg.get("imu"), dict):
+                                state.imu, state.imu_at = msg["imu"], now_f
+                            # The Live model only needs about 1 per second, except a fresh picture at the moment you start talking.
+                            if msg.get("fresh") and now_f - state.last_live_frame < 0.95:
+                                trace.log("fresh_frame")   # sent early on purpose: you just started talking
+                            if msg.get("fresh") or now_f - state.last_live_frame >= 0.95:
                                 state.last_live_frame = now_f
                                 await session.send_realtime_input(video=types.Blob(data=jpeg, mime_type="image/jpeg"))
+                        elif kind == "local_alert":
+                            _spawn(_local_alert(state, msg))   # never block the audio loop
                         elif kind == "mode" and msg.get("mode") in watch.AlertPolicy.MODES:
                             state.policy.mode = msg["mode"]
                             trace.log("alert_mode", mode=msg["mode"], by="button")

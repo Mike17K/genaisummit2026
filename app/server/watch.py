@@ -13,7 +13,7 @@ from typing import Literal
 from google.genai import types
 from pydantic import BaseModel
 
-from . import agent, config
+from . import agent, config, phrases
 
 
 class WatchDecision(BaseModel):
@@ -24,6 +24,7 @@ class WatchDecision(BaseModel):
     message: str = ""
     reason: str = ""
     attention: Literal["normal", "elevated", "high"] = "normal"
+    hazard_type: Literal["moving", "static"] = "static"
 
 
 WATCH_SYSTEM = """You are the silent safety watcher for a blind person who is walking or standing somewhere. A phone camera on them gives you the last 3 frames, oldest first, about one second apart. You only decide whether to interrupt them. Silence is the normal answer.
@@ -39,8 +40,10 @@ Do NOT interrupt for: ordinary scenery, things far away or off to the side that 
 urgency: "high" only if impact or a fall is likely within about 3 seconds (vehicle closing in, drop-off or step right ahead, something about to hit them). Otherwise "low".
 confidence: 0.0 to 1.0, how sure you are that this is real and relevant.
 hazard_key: 2 or 3 lowercase words joined by hyphens, object then direction, e.g. car-right, step-down, pole-ahead. Use the same key for the same hazard across checks.
-message: at most 8 words, spoken aloud, minimal, with a clock position or direction and distance when you can tell. Examples: "Car from the right, stop." "Step down, two steps ahead." "Pole at twelve o'clock." Write it in the language requested below. Do not describe the scene.
+message: at most 8 words, spoken aloud, minimal, with a clock position or direction and distance when you can tell. Examples: "Car from the right, stop." "Step down, two steps ahead." "Pole at twelve o'clock." Write it in the language requested below. Do not describe the scene. When one of the "preferred phrases" given below fits, use those exact words (they are spoken instantly).
+The message also gets the phone's motion sensors when available: if the camera is panning fast, apparent motion is NOT real; if the user is stationary, static obstacles are not a danger until they move toward them.
 reason: one short sentence for the log.
+hazard_type: "moving" if the hazard itself is moving (vehicle, bike, person, animal); "static" if it is a fixed obstacle (step, pole, wall, door).
 attention: how closely to keep watching. It only controls how often you receive new images (it never speaks to the user).
   "normal": nothing relevant is going on.
   "elevated": something could become a danger soon even though no warning is needed yet: an object or person moving toward them, a road, crossing or driveway nearby, stairs or a drop coming up, a crowded or fast-changing scene, or you are unsure.
@@ -52,7 +55,7 @@ def _age(now: float, t: float) -> str:
     return f"{now - t:.0f}s ago"
 
 
-def build_contents(frames: list[tuple[float, bytes]], recent: list[tuple[float, str, str]], lang: str) -> list:
+def build_contents(frames: list[tuple[float, bytes]], recent: list[tuple[float, str, str]], lang: str, sensors: str = "") -> list:
     now = time.time()
     parts: list = []
     labels = ["oldest", "middle", "newest"]
@@ -65,21 +68,43 @@ def build_contents(frames: list[tuple[float, bytes]], recent: list[tuple[float, 
         parts.append(types.Part.from_text(text=f"Already announced recently (do not repeat unless it got clearly worse): {listed}"))
     else:
         parts.append(types.Part.from_text(text="Nothing announced recently."))
+    if sensors:
+        parts.append(types.Part.from_text(text=f"Phone sensors: {sensors}"))
+    parts.append(types.Part.from_text(text=f"Preferred phrases (use word for word when one fits): {phrases.prefer_list(lang)}"))
     parts.append(types.Part.from_text(text=f"Language for the message: {lang}. Decide now."))
     return [types.Content(role="user", parts=parts)]
 
 
-async def judge(frames: list[tuple[float, bytes]], recent: list[tuple[float, str, str]], lang: str) -> tuple[WatchDecision, dict]:
-    response = await agent._get_client().aio.models.generate_content(
-        model=config.WATCH_MODEL,
-        contents=build_contents(frames, recent, lang),
-        config=types.GenerateContentConfig(
-            system_instruction=WATCH_SYSTEM,
-            response_mime_type="application/json",
-            response_schema=WatchDecision,
-            temperature=0.1,
-        ),
+_thinking_ok = True      # turns False if the model rejects the thinking setting once; then it is not tried again
+
+
+def _thinking_config():
+    level = (config.WATCH_THINKING or "").strip().upper()
+    if not level or not _thinking_ok:
+        return None
+    return types.ThinkingConfig(thinking_level=getattr(types.ThinkingLevel, level))
+
+
+def _generation_config(thinking) -> types.GenerateContentConfig:
+    kwargs = {"thinking_config": thinking} if thinking else {}
+    return types.GenerateContentConfig(
+        system_instruction=WATCH_SYSTEM, response_mime_type="application/json",
+        response_schema=WatchDecision, temperature=0.1, **kwargs,
     )
+
+
+async def judge(frames: list[tuple[float, bytes]], recent: list[tuple[float, str, str]], lang: str, sensors: str = "") -> tuple[WatchDecision, dict]:
+    global _thinking_ok
+    contents = build_contents(frames, recent, lang, sensors)
+    client = agent._get_client()
+    thinking = _thinking_config()
+    try:
+        response = await client.aio.models.generate_content(model=config.WATCH_MODEL, contents=contents, config=_generation_config(thinking))
+    except Exception as exc:
+        if thinking is None or "INVALID_ARGUMENT" not in str(exc):
+            raise
+        _thinking_ok = False   # this model does not accept the setting: use its default from now on
+        response = await client.aio.models.generate_content(model=config.WATCH_MODEL, contents=contents, config=_generation_config(None))
     decision = response.parsed if isinstance(getattr(response, "parsed", None), WatchDecision) else WatchDecision.model_validate_json(response.text)
     decision.message = re.sub(r"\s+", " ", decision.message.replace('"', "")).strip()[:90]
     decision.hazard_key = re.sub(r"[^a-z0-9\- ]", "", decision.hazard_key.lower()).strip().replace(" ", "-")[:40]
@@ -88,6 +113,28 @@ async def judge(frames: list[tuple[float, bytes]], recent: list[tuple[float, str
         "prompt_tokens": getattr(usage, "prompt_token_count", None),
         "output_tokens": getattr(usage, "candidates_token_count", None),
     }
+
+
+def sensors_text(imu: dict | None) -> str:
+    """One line for the watcher from the phone's motion sensors (None when not available)."""
+    if not imu:
+        return ""
+    speed = imu.get("angularSpeed")
+    walking = imu.get("walking")
+    if imu.get("panning"):
+        state = "panning fast"
+    elif walking is True:
+        state = "walking"
+    elif walking is False:
+        state = "stationary"
+    else:
+        state = "movement unknown"          # no accelerometer reading: never claim the user is standing still
+    bits = [f"user {state}"] if state != "movement unknown" else ["movement unknown"]
+    if speed is not None:
+        bits.append(f"gyro {speed} deg/s")
+    if imu.get("pitchDeg") is not None:
+        bits.append(f"phone pitch {imu['pitchDeg']} deg")
+    return ", ".join(bits)
 
 
 _SYNONYMS = {
@@ -206,8 +253,12 @@ class AlertPolicy:
     def _recently_seen(self, key: str, now: float, within: float) -> bool:
         return any(same_hazard(k, key) and now - t <= within for t, k in self.sightings)
 
-    def decide(self, d: WatchDecision, now: float, user_voice_age: float) -> tuple[bool, str]:
-        """Return (speak, reason). Call `record` when speaking."""
+    def decide(self, d: WatchDecision, now: float, user_voice_age: float, *, fast_confirm: bool = False,
+               user_moving: bool | None = None) -> tuple[bool, str]:
+        """Return (speak, reason). Call `record` when speaking.
+
+        fast_confirm: skip the two-look confirmation (set for alerts from the phone's own detector).
+        user_moving: from the phone's sensors; True walking, False stationary, None unknown."""
         if self.mode == "off":
             return False, "mode_off"
         if not d.notify or not d.message:
@@ -219,10 +270,17 @@ class AlertPolicy:
             self._see(d, now)
             return False, "low_confidence"
 
-        # Low-urgency hazards must be seen on two checks in a row before they are announced.
-        seen_before = self._recently_seen(d.hazard_key, now, within=config.WATCH_S * 3 + 2)
+        # A fixed obstacle is not a danger to someone standing still (only the phone's sensors can tell us that).
+        if not high and user_moving is False and d.hazard_type == "static":
+            self._see(d, now)
+            return False, "user_stationary"
+
+        # Low-urgency hazards must be seen on two checks in a row before they are announced, unless the model is very sure
+        # (a lower bar while the user is walking) or the phone's own detector raised it.
+        seen_before = self._recently_seen(d.hazard_key, now, within=max(8.0, config.WATCH_S * 3 + 2))
         self._see(d, now)
-        if not high and not seen_before:
+        sure = d.confidence >= (config.ALERT_FAST_CONF_MOVING if user_moving else config.ALERT_FAST_CONF)
+        if not high and not seen_before and not (fast_confirm or sure):
             return False, "needs_confirmation"
 
         # Do not repeat the same hazard unless it just became urgent.
@@ -249,3 +307,11 @@ class AlertPolicy:
         self.last_alert_at = now
         self.alert_times.append(now)
         self.alerted = [(t, k, u) for t, k, u in self.alerted if now - t < 120] + [(now, d.hazard_key, d.urgency)]
+
+
+def user_moving(imu: dict | None) -> bool | None:
+    """True walking, False stationary, None unknown (no sensor, or no accelerometer reading yet)."""
+    if not imu:
+        return None
+    walking = imu.get("walking")
+    return walking if isinstance(walking, bool) else None

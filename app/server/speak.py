@@ -5,19 +5,20 @@ Results are cached, so a repeated alert plays instantly.
 """
 import asyncio
 import io
+import time
 import wave
 from collections import OrderedDict
 
 from google import genai
 from google.genai import types
 
-from . import config, trace
+from . import config, phrases, trace
 
 _client: genai.Client | None = None
 _cache: "OrderedDict[str, bytes]" = OrderedDict()
 _inflight: dict[str, asyncio.Future] = {}
 _slots: asyncio.Semaphore | None = None   # limits parallel TTS calls across all connections
-CACHE_SIZE = 64
+CACHE_SIZE = 128
 OUT_RATE = 24000
 
 
@@ -90,3 +91,25 @@ async def synthesize(text: str) -> bytes:
 
 def is_cached(text: str) -> bool:
     return text.strip().lower() in _cache
+
+
+_warmed = False
+
+
+async def warm_common() -> None:
+    """Make the voice of every common alert phrase ahead of time, once per server run, in the background."""
+    global _warmed
+    if _warmed:
+        return
+    _warmed = True
+    started = time.time()
+    todo = [t for t in phrases.all_phrases() if not is_cached(t)]
+
+    async def one(text: str) -> None:
+        try:
+            await synthesize(text)
+        except Exception as exc:
+            trace.log("tts_warm_failed", text=text, error=f"{type(exc).__name__}: {exc}"[:120])
+
+    await asyncio.gather(*[one(t) for t in todo])
+    trace.log("tts_warm", phrases=len(todo), ms=round((time.time() - started) * 1000))
