@@ -23,7 +23,7 @@ class Phone:
         self.ws = await websockets.connect(f"ws://localhost:{PORT}/live", max_size=None)
         self.conn = json.loads(await self.ws.recv())["conn"]
         self.tasks = [asyncio.create_task(self._rx()), asyncio.create_task(self._frames())]
-        await asyncio.sleep(1.5); return self
+        await asyncio.sleep(0.4); return self
     async def __aexit__(self, *a):
         for t in self.tasks: t.cancel()
         await self.ws.close()
@@ -46,7 +46,7 @@ def global_trace(): return json.load(urllib.request.urlopen(f"http://localhost:{
 async def main():
     async with Phone() as p:
         print("\n=== F1: on-device alert, voice not ready yet (the voice bank is still being made)")
-        t, n0 = await p.local_alert("car")
+        t, n0 = await p.local_alert("dog")   # its phrase is made in the second wave of the warm-up, so it is not ready yet
         await asyncio.sleep(1.2)
         a = p.alerts(t)
         check("the alert arrives", len(a) == 1, a)
@@ -54,7 +54,7 @@ async def main():
             e = a[0]
             print(f"   alert event {round((e['t'] - t) * 1000)} ms after the message was sent: {e['text']!r} source={e['source']} cached={e['voice_cached']} phone_voice={e['client_voice']}")
             check("it is marked as coming from the phone's own detector", e["source"] == "local")
-            check("it uses the planned phrase", e["text"] == "Vehicle ahead, stop!", e["text"])
+            check("it uses the planned phrase", e["text"] == "Animal ahead, careful.", e["text"])
             check("it arrives within 300 ms", e["t"] - t < 0.3, round((e["t"] - t) * 1000))
             check("an uncached urgent alert is spoken by the phone", e["client_voice"] is True and e["voice_cached"] is False, e)
         await asyncio.sleep(2.5)

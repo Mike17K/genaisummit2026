@@ -34,6 +34,9 @@ const imu = new Looming.ImuState();
 window.addEventListener("devicemotion", (e) => imu.handleMotion(e, performance.now()));
 window.addEventListener("deviceorientation", (e) => imu.handleOrientation(e));
 let spatial = null;
+// The on-device detector is optional (add ?ondevice=1 to the address): it uses the phone's CPU/GPU and downloads a few MB, and the cloud
+// watcher is the main path. Turn it on to try faster warnings for approaching vehicles, bikes and people.
+const ON_DEVICE = new URLSearchParams(location.search).get("ondevice") === "1";
 let alertMuteUntil = 0;   // for a moment after an alert the gate is much higher, so the alert's own beep and voice cannot leak into the mic
 
 // iPhones ask for motion-sensor permission, and only inside a tap handler before any await.
@@ -79,7 +82,7 @@ const dbg = {
   micLevel: 0, micPeak: 0, sentKB: 0, sentFrames: 0, recvKB: 0, recvChunks: 0,
   lastHeard: "", lastReply: "", lastEvent: "", lastModelAudioAt: 0, lastSpeechAt: 0,
   error: "", startedAt: 0, log: [],
-  watch: "-", lastAlert: "-", alertMode: "normal", alerts: 0, conn: "-", fps: 1, attention: "normal", frameStamps: [], voiceOpen: false, effGate: 0,
+  watch: "-", lastAlert: "-", alertMode: "normal", alerts: 0, conn: "-", fps: 2, attention: "normal", frameStamps: [], voiceOpen: false, effGate: 0,
 };
 const hideDebug = new URLSearchParams(location.search).get("debug") === "0";
 if (hideDebug) debugEl.style.display = "none";
@@ -124,7 +127,7 @@ function renderDebug() {
     ["received", `${dbg.recvKB.toFixed(0)} KB in ${dbg.recvChunks} chunks, last audio ${sinceAudio}`],
     ["you said", esc(dbg.lastHeard || "-")],
     ["eyes said", esc(dbg.lastReply || "-")],
-    ["on-device", esc(spatial ? spatial.summary() : "off")],
+    ["on-device", esc(spatial ? spatial.summary() : (ON_DEVICE ? "waiting to start" : "off (add ?ondevice=1 to the address to try it)"))],
     ["phone motion", esc(imu.panning ? "panning" : imu.walking === true ? "walking" : imu.walking === false ? "stationary" : "movement unknown") + `  gyro ${imu.angularSpeed} deg/s, pitch ${imu.pitchDeg ?? "?"}`],
     ["watcher", esc(dbg.watch) + "  (mode: " + esc(dbg.alertMode) + ")"],
     ["last alert", (dbg.alerts ? dbg.alerts + " so far. " : "") + esc(dbg.lastAlert)],
@@ -268,13 +271,35 @@ function setFrameRate(fps) {
   frameTimer = setInterval(sendFrame, 1000 / fps);
 }
 
+// A tiny 16x16 greyscale copy of each picture, to tell the server how much the scene changed (so it can skip looks when nothing moves).
+const motionCanvas = document.createElement("canvas");
+motionCanvas.width = motionCanvas.height = 16;
+const motionCtx = motionCanvas.getContext("2d", { willReadFrequently: true });
+let prevLuma = null;
+function frameMotion() {
+  try {
+    motionCtx.drawImage(cam, 0, 0, 16, 16);
+    const d = motionCtx.getImageData(0, 0, 16, 16).data;
+    const luma = new Float32Array(256);
+    for (let i = 0, j = 0; i < d.length; i += 4, j++) luma[j] = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114) / 255;
+    const m = Looming.lumaMotion(prevLuma, luma);
+    prevLuma = luma;
+    return m;
+  } catch (_) { return null; }
+}
+
+// Normal frames are 512 px wide (enough for the safety watcher, and lighter to send); the fresh frame taken when you start
+// talking is 640 px, since your question may be about reading something.
 function sendFrame(fresh = false) {
   if (!cam.videoWidth || !socket || socket.readyState !== 1) return;
-  canvas.width = 640;
-  canvas.height = Math.round(640 * cam.videoHeight / cam.videoWidth);
+  const w = fresh === true ? 640 : 512;
+  canvas.width = w;
+  canvas.height = Math.round(w * cam.videoHeight / cam.videoWidth);
   canvas.getContext("2d").drawImage(cam, 0, 0, canvas.width, canvas.height);
-  const data = canvas.toDataURL("image/jpeg", 0.6).split(",")[1];
+  const data = canvas.toDataURL("image/jpeg", fresh === true ? 0.6 : 0.55).split(",")[1];
+  const motion = frameMotion();
   const msg = { type: "frame", data, imu: imu.snapshot() };
+  if (motion !== null) msg.motion = Number(motion.toFixed(4));
   if (fresh === true) msg.fresh = true;   // a picture taken the moment you start talking: the voice model uses it at once
   socket.send(JSON.stringify(msg));
   dbg.sentFrames++;
@@ -362,9 +387,9 @@ async function start() {
   });
 
   startMic();
-  setFrameRate(1);
+  setFrameRate(2);   // the server announces its own rate right after connecting
   // The on-device detector loads in the background; everything else works without it.
-  if (typeof SpatialSentry === "function") spatial = new SpatialSentry({
+  if (ON_DEVICE && typeof SpatialSentry === "function") spatial = new SpatialSentry({
     video: cam, imu,
     onLocalAlert: (h) => { if (socket && socket.readyState === 1) socket.send(JSON.stringify({ type: "local_alert", ...h })); note(`on-device: ${h.label} approaching (growth ${h.growth}/s)`); },
   });

@@ -93,3 +93,49 @@ A variance threshold of 1.1 on acceleration magnitude is probably too high for a
 - `?client_tts=0` in the page address (or no speech support): the server always speaks alerts itself.
 - `GEMINI_WATCH_THINKING=` (empty): no thinking setting for the watcher.
 - On-device detector: it is created when the app starts; if the CDN is blocked it simply reports "unavailable". Remove the `spatial.js` line from `index.html` to disable it entirely (the page checks that it exists).
+
+
+---
+
+# Round 2: plan v3 ("API-models-first"), merged from master
+
+Master's plan was rewritten (commit `de6728d`): cloud models plus phone sensors, with local on-device models deferred to a later version. Merged into this branch and checked claim by claim on this API key.
+
+## 8. What was verified, and what changed as a result
+
+| Plan v3 claim | Measured here | Decision |
+|---|---|---|
+| `gemini-3.1-flash-live-preview` gives about 586 ms to first audio, 3x faster | Median **1.61 s** (0.7 to 3.4 s, wide spread) against 2.45 s for the model in use. Faster, but not 586 ms in the app's full setup | Not chosen |
+| (not in the plan) `gemini-3.8-live` | Median **0.84 s**, range 0.60 to 1.53 s, **12 of 12** answered; plain questions 0.80 s, tool requests 1.28 s; accurate transcription; tools, manual turn control, transcription, video and compression all accepted | **Now the default**, with an automatic fallback to the old model (`GEMINI_LIVE_FALLBACK_MODEL`) if it cannot be opened |
+| 2 frames at 512 px make the watcher about 0.94 s instead of about 1.3 s | 3 frames 640 px 1006 ms, 2 frames 640 px 1036 ms, **2 frames 512 px 1054 ms**, 3 frames 512 px 942 ms: no latency difference (about 1.0 s); detections identical (car 6/6, empty road 6/6). Two frames use **27% fewer tokens** (3,025 against 4,135); 512 px does not change tokens | 2 frames adopted for cost; 512 px used for upload size only; the fresh frame at speech start stays 640 px |
+| Watcher every 1.0 s (was 2.0 s) | Halves the average wait before a hazard is noticed (about 0.5 s). Alone it would cost about 46% more tokens | Adopted, with a **static-scene skip** (below) so a still scene costs less than before |
+| Single-sighting confirmation at 0.85 | Same logic as round 1 | Threshold changed from 0.88 to 0.85 |
+| `3.5-flash-lite` "already has thinking off" | Not true here: `thinking_level=LOW` made it 22% faster (946 ms against 1209 ms) | Kept `thinking_level=LOW` with fallback |
+| Pre-warm common phrases, align the watcher's wording, hit rate above 85% | 48 phrases (English and Greek) pre-made in about 13 s; across 15 looks of 5 drawn hazards (wall, pole, steps, person, bicycle) **15 of 15 used an exact pre-made phrase (100%)** | Adopted; the plan's extra phrases were added |
+| `ScriptProcessor(1024)` (21 ms audio chunks), 15 ms playback lookahead | Not built: saves about 60 ms, quadruples main-thread work and messages | Not adopted (an AudioWorklet is the better fix) |
+| Keep `WAIT_DEFAULT_MS = 1200` and `GATE_HANG_MS = 800` | Conflicts with the turn-taking work already on master (900 ms default, 500 ms tail tagged quiet) | Not adopted; the tagged tail removes the cost the plan wanted to avoid |
+| 6-frame ring buffer | Existing spacing-based selection over a 40-frame buffer already does it | Not needed |
+| Oumi Iris API (`iris.py`) | API not verifiable (no key, no public documentation found); IMU gating already exists | Not built |
+| Phone IMU: skip looks while panning | Already built in round 1 | Done |
+| Local MediaPipe models deferred | Already built in round 1 | Kept, but now **opt-in** (`?ondevice=1`), off by default |
+
+## 9. What was added in round 2
+- **Voice model `gemini-3.8-live`** (about 3x faster answers) with fallback; checked once per server run.
+- **Audible tracking:** the new model sends speech much faster than it plays (about 6 s of audio in a burst). The server now estimates when the phone will finish playing what it has sent, so barge-in logic is right during playback, and when you start talking over an answer the phone is told to stop it at once. Before, nothing stopped the buffered speech.
+- **Watcher:** 2 frames, look every 1.0 s (0.8 s elevated, 0.6 s high), camera 2 frames per second normally (3 and 4 when raised), fast confirmation at 0.85.
+- **Static-scene skip:** the phone sends a tiny motion score (16x16 greyscale difference) with each frame; the server skips looks while the picture is still, with a look at least every 4 s and never while attention is raised or after a look that found something. `EYES_STATIC_SKIP=0` turns it off. The 0.012 threshold is untuned on a real phone.
+- **Starting rate announced** at connect, so the page always matches the server's settings.
+- **48 pre-made phrases**, more of them aligned with what the watcher says.
+
+## 10. Round 2 results (without a phone)
+- **Offline:** policy 26, fast-warning logic 46, isolation 22, attention 31, turn-taking 23, mic gate 12, looming and motion score 42.
+- **Voice model:** end of your voice to first speech, median 1.77 s in the full pipeline test (old tail handling 2.39 s; before the model change: 3.1 to 3.8 s).
+- **Watcher cadence:** a still scene was looked at 4 times in 16 s (gaps 4.3 to 4.8 s; about 16 before); a car appearing after the still period was caught 1.8 to 2.1 s after the first changed frame (car still only about 20% of full size).
+- **Barge-in during playback:** a 0.2 s burst did not start a turn or stop the phone; 0.9 s of speech told the phone to stop 0.41 s after it began.
+- **Alerts:** an alert cut speech and its words played within 18 ms from the pre-made voice; with a not-yet-made voice the phone speaks it at once. The car alert fired 1.1 s after the first car frame in the story test.
+- **Regression:** four simultaneous phones 12 of 12; fast-warning server run 17 of 17; turn-taking 11 of 11.
+
+## 11. Limits added by round 2
+- `gemini-3.8-live` gives noticeably shorter answers (it declined to tell a story in one test, citing its role), and its speech style differs from the old model. Check the voice and wording on a phone.
+- Measured on a few turns of synthetic speech; real speech, noise and a cellular connection will add delay.
+- The static-scene skip depends on the phone's motion score; on a real camera, sensor noise or auto-exposure may keep the score above the threshold (less saving, same safety) or hold it below it for a slowly approaching object (the look every 4 s still happens).

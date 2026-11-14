@@ -157,6 +157,16 @@ The camera normally sends **1 image per second** and the watcher looks about **e
 - Button on the page cycles **alerts: normal / urgent only / off** (remembered). The user can also say "only warn me about serious things" or "be quiet" (tool `set_alert_mode`).
 - `/panel` and the debug panel show every check (silent, held back with the reason, or ALERT) with confidence, key and time.
 
+## 5b-3. Speed-ups from master's plan v3 (branch `fast-warnings`)
+Details and measurements: [fast-warnings-evaluation.md](fast-warnings-evaluation.md) sections 8 to 11.
+- **Voice model is now `gemini-3.8-live`** (`GEMINI_LIVE_MODEL`): median 0.84 s to first speech in the benchmark against 2.45 s for `gemini-2.5-flash-native-audio-latest`, which stays as the automatic fallback (`GEMINI_LIVE_FALLBACK_MODEL`). Answers are shorter; the model is chosen once per server run (trace event `live_model`).
+- **Audible tracking:** the server estimates how long the phone will keep playing the speech it has sent (the new model sends it much faster than real time). Barge-in debounce uses it, and if you talk over an answer the phone is told to stop it.
+- **Watcher:** shown 2 frames (about 1 s apart), looks every 1.0 s (0.8 s elevated, 0.6 s high); camera 2 frames per second normally; confident single sighting at 0.85.
+- **Static-scene skip:** the page sends a 16x16 greyscale motion score with each frame; looks are skipped while the picture is still (at least one every 4 s, never while attention is raised).
+- **Frames:** 512 px normally, 640 px for the fresh frame at speech start. The server announces the starting camera rate at connect.
+- **Phrase bank:** 48 phrases (English and Greek); 15 of 15 watcher alerts in a test used an exact pre-made phrase.
+- **On-device detector is opt-in:** add `?ondevice=1` to the address.
+
 ## 5b-2. Fast warnings (branch `fast-warnings`; not on master yet)
 See [fast-warnings-evaluation.md](fast-warnings-evaluation.md) for the evaluation of the plan and the full results. Summary:
 - **On-device detector:** the phone runs a MediaPipe object detector and measures how fast things in the walking path grow (median-based growth, 350 ms sustain, at most one alert per 4 s). An approaching vehicle, bike or person is warned about with no network and no cloud model; the server still applies its cooldown, de-duplication and rate limit.
@@ -227,7 +237,11 @@ All tool calls are logged and shown in the trace.
 | Variable | Default | Meaning |
 |---|---|---|
 | `GEMINI_API_KEY` | none | AI Studio key from the hackathon Google project. Without it the app says "The model is not connected yet". |
-| `GEMINI_LIVE_MODEL` | `gemini-2.5-flash-native-audio-latest` | Realtime voice model. |
+| `GEMINI_LIVE_MODEL` | `gemini-3.8-live` | Realtime voice model. |
+| `GEMINI_LIVE_FALLBACK_MODEL` | `gemini-2.5-flash-native-audio-latest` | Used if the preferred model cannot be opened. |
+| `EYES_WATCH_S` | `1.0` | Seconds between watcher looks at normal attention. |
+| `EYES_WATCH_FRAMES` | `2` | Frames shown to the watcher. |
+| `EYES_STATIC_SKIP` / `EYES_STATIC_MOTION` / `EYES_STATIC_MAX_SKIP_S` | `1` / `0.012` / `4` | Skip looks while the picture is still. |
 | `GEMINI_VOICE` | `Kore` | Assistant voice. |
 | `GEMINI_MODEL` | `gemini-3.5-flash-lite` | Text and vision model for the older path. |
 | `GEMINI_HARD_MODEL` | `gemini-3.8-flash` | Reserved, not used yet. |
@@ -239,8 +253,8 @@ All tool calls are logged and shown in the trace.
 | `EYES_ALERT_COOLDOWN_S` / `_HIGH_S` | `6` / `1.5` | Minimum gap between alerts. |
 | `EYES_ALERT_DEDUPE_S` | `25` | Same hazard is not repeated within this time. |
 | `EYES_ALERT_MAX_PER_MIN` | `6` | Rate limit (double for high urgency). |
-| `EYES_FPS_NORMAL` / `_ELEVATED` / `_HIGH` | `1` / `2.5` / `4` | Camera images per second at each attention level. |
-| `EYES_LOOK_ELEVATED_S` / `_HIGH_S` | `1.2` / `0.8` | Watcher look interval at elevated and high attention. |
+| `EYES_FPS_NORMAL` / `_ELEVATED` / `_HIGH` | `2` / `3` / `4` | Camera images per second at each attention level. |
+| `EYES_LOOK_ELEVATED_S` / `_HIGH_S` | `0.8` / `0.6` | Watcher look interval at elevated and high attention. |
 | `EYES_ATTENTION_MAX_S` / `_COOLDOWN_S` | `30` / `12` | Longest stretch above normal, then forced back to normal for this long. |
 | `EYES_MAX_CONNECTIONS` | `10` | Open voice connections allowed at once; more are told the assistant is busy. |
 | `EYES_MAX_PARALLEL_CALLS` | `6` | Watcher and alert-voice model calls running at once across all connections. |

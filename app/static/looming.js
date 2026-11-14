@@ -134,7 +134,16 @@
     }
   }
 
-  const api = { KNOWN_WIDTHS_M, DEFAULTS, distanceMeters, zone, RollingBaseline, ImuState, LoomingTracker };
+  // How much did the picture change? Mean absolute luminance difference (0..1) between two small greyscale versions of the
+  // picture (for example 16x16). The server uses it to skip watcher looks while nothing is changing.
+  function lumaMotion(prev, cur) {
+    if (!prev || !cur || prev.length !== cur.length || !cur.length) return null;
+    let d = 0;
+    for (let i = 0; i < cur.length; i++) d += Math.abs(cur[i] - prev[i]);
+    return d / cur.length;
+  }
+
+  const api = { KNOWN_WIDTHS_M, DEFAULTS, distanceMeters, zone, RollingBaseline, ImuState, LoomingTracker, lumaMotion };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else Object.assign(root, { Looming: api });
 })(typeof window !== "undefined" ? window : globalThis);

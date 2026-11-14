@@ -315,3 +315,19 @@ def user_moving(imu: dict | None) -> bool | None:
         return None
     walking = imu.get("walking")
     return walking if isinstance(walking, bool) else None
+
+
+def scene_is_static(motion_history, now: float, last_look_at: float, attention_level: str, last_look_silent: bool) -> bool:
+    """Should this look be skipped because nothing in the picture is changing? Pure logic, testable.
+
+    motion_history: list of (time, motion) from the phone (motion = mean luminance change between frames, 0..1).
+    Never skips while attention is raised, after a look that was not silent, with no recent motion data, or when the last
+    look was STATIC_MAX_SKIP_S or more ago."""
+    if not config.STATIC_SKIP or attention_level != "normal" or not last_look_silent:
+        return False
+    if now - last_look_at >= config.STATIC_MAX_SKIP_S:
+        return False
+    recent = [m for t, m in motion_history if now - t <= 2.0]
+    if len(recent) < 2:
+        return False
+    return max(recent) < config.STATIC_MOTION

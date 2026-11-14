@@ -54,6 +54,29 @@ def _get_client() -> genai.Client:
     return _client
 
 
+_live_model_cache: str | None = None
+
+
+async def _pick_live_model() -> str:
+    """The preferred Live model if it can be opened, else the fallback. Checked once per server run, then remembered."""
+    global _live_model_cache
+    if _live_model_cache:
+        return _live_model_cache
+    candidates = [config.LIVE_MODEL] + ([config.LIVE_FALLBACK_MODEL] if config.LIVE_FALLBACK_MODEL and config.LIVE_FALLBACK_MODEL != config.LIVE_MODEL else [])
+    last: Exception | None = None
+    for model in candidates:
+        try:
+            async with _get_client().aio.live.connect(model=model, config=_live_config([])):
+                pass
+            _live_model_cache = model
+            trace.log("live_model", model=model, fallback=model != config.LIVE_MODEL)
+            return model
+        except Exception as exc:
+            last = exc
+            trace.log("live_model_unavailable", model=model, error=f"{type(exc).__name__}: {exc}"[:200])
+    raise last or RuntimeError("no live model available")
+
+
 def _tool_declarations(extra: list) -> list[types.Tool]:
     api_client = _get_client()._api_client
     decls = [types.FunctionDeclaration.from_callable(client=api_client, callable=f) for f in [*tools.ALL, *extra]]
@@ -94,17 +117,30 @@ class State:
     recent_alerts: deque = field(default_factory=lambda: deque(maxlen=4))  # (time, key, message)
     turn: turns.TurnTracker = field(default_factory=turns.TurnTracker)   # when the user's turn starts and ends
     expect_interrupt: bool = False    # we interrupted the model ourselves for an alert; do not forward the resulting event
-    model_speaking: bool = False
+    model_speaking: bool = False       # the Live model is still generating speech
+    audible_until: float = 0.0         # when the phone is expected to finish playing what has been sent (fast models send faster than real time)
     drop_audio_since: float = 0.0     # >0 while old speech is being thrown away after an alert
     lang: str = "English"
     last_judged_frame: float = 0.0
     extra_funcs: dict = field(default_factory=dict)  # tools that need this connection's state
+    motion: deque = field(default_factory=lambda: deque(maxlen=12))   # (time, motion score) sent by the page with each frame
+    last_look_at: float = 0.0
+    last_look_silent: bool = True
     imu: dict | None = None           # latest phone motion sensors reported by the page (gyro, walking, pitch)
     imu_at: float = 0.0
     client_tts: bool = True           # the page can speak an uncached urgent alert itself, with no wait
 
     async def send(self, payload: dict) -> None:
         await self.socket.send_json(payload)
+
+    def audible(self, now: float) -> bool:
+        """Is the assistant (probably) still audible on the phone? Speech arrives faster than it plays, so this can stay true
+        for seconds after the model has finished generating."""
+        return now < self.audible_until
+
+    def sent_audio(self, nbytes: int, now: float) -> None:
+        """Account for PCM16 24 kHz mono sent to the phone (48000 bytes per second of speech)."""
+        self.audible_until = max(self.audible_until, now) + nbytes / 48000
 
 
 async def _gemini_to_browser(state: State) -> None:
@@ -137,12 +173,14 @@ async def _gemini_to_browser(state: State) -> None:
                         if not first_audio_logged and last_heard_at:
                             first_audio_logged = True
                             trace.log("first_audio", latency_ms=round((now - last_heard_at) * 1000))
+                        state.sent_audio(len(data), now)
                         await socket.send_bytes(data)
                 if sc.output_transcription and sc.output_transcription.text:
                     said += sc.output_transcription.text
                 if sc.interrupted:
                     trace.log("interrupted", by="alert" if state.expect_interrupt else "user")
                     state.model_speaking = False
+                    state.audible_until = 0.0
                     state.drop_audio_since = 0.0   # the old speech is over; what comes next is wanted
                     if state.expect_interrupt:
                         state.expect_interrupt = False  # the page already stopped playing when the alert was announced
@@ -159,7 +197,7 @@ async def _gemini_to_browser(state: State) -> None:
                             state.lang = "English"
                         await socket.send_json({"type": "heard", "text": heard.strip()})
                     if said.strip() or heard.strip():
-                        trace.log("reply", text=said.strip() or None, silent=not said.strip(), model=config.LIVE_MODEL)
+                        trace.log("reply", text=said.strip() or None, silent=not said.strip(), model=_live_model_cache or config.LIVE_MODEL)
                     await socket.send_json({"type": "reply", "text": said.strip()})
                     heard, said = "", ""
             if msg.tool_call:
@@ -222,6 +260,8 @@ async def _fire_alert(state: State, d: watch.WatchDecision, source: str = "watch
         trace.log("alert_voice_failed", error=f"{type(exc).__name__}: {exc}"[:150])
         await state.send({"type": "speak_text", "text": d.message})   # the page falls back to its own voice
         return
+    state.audible_until = 0.0            # the page already stopped what was playing when the alert was announced
+    state.sent_audio(len(pcm), time.time())
     for i in range(0, len(pcm), 9600):
         await state.socket.send_bytes(pcm[i:i + 9600])
     trace.log("alert_spoken", ms=round((time.time() - now) * 1000), audio_s=round(len(pcm) / 48000, 1), by="server")
@@ -296,7 +336,7 @@ async def _watch_once(state: State, now: float) -> None:
             state.attention = watch.Attention()
             await _announce_rate(state, "alerts off")
         return
-    frames = watch.select_frames(state.frames, state.attention.spacing, now)
+    frames = watch.select_frames(state.frames, state.attention.spacing, now, n=config.WATCH_FRAMES)
     if len(frames) < 2 or frames[-1][0] <= state.last_judged_frame:
         return  # nothing new to look at
     global _watch_slots
@@ -310,12 +350,16 @@ async def _watch_once(state: State, now: float) -> None:
     if imu and imu.get("panning"):
         trace.log("watch_skipped", reason="camera panning", deg_s=imu.get("angularSpeed"))
         return
+    if watch.scene_is_static(list(state.motion), now, state.last_look_at, state.attention.level, state.last_look_silent):
+        return    # nothing is changing; the next look is at most STATIC_MAX_SKIP_S away (not logged: this happens every second)
     user_moving = watch.user_moving(imu)
     state.last_judged_frame = frames[-1][0]
+    state.last_look_at = now
     t0 = time.time()
     async with _watch_slots:
         d, info = await watch.judge(frames, list(state.recent_alerts), state.lang, watch.sensors_text(imu))
     ms = round((time.time() - t0) * 1000)
+    state.last_look_silent = not d.notify
     fire, why = state.policy.decide(d, time.time(), time.time() - state.turn.last_voice, user_moving=user_moving)
     outcome = "ALERT" if fire else ("silent" if not d.notify else "held: " + why)
     # Adaptive attention: the model's own sense of how closely to watch, plus our own signals (an alert just fired,
@@ -389,9 +433,11 @@ async def _serve(socket: WebSocket, conn_id: str) -> None:
 
     state.extra_funcs = {"set_alert_mode": set_alert_mode}
     try:
-        async with _get_client().aio.live.connect(model=config.LIVE_MODEL, config=_live_config([set_alert_mode])) as session:
+        live_model = await _pick_live_model()
+        async with _get_client().aio.live.connect(model=live_model, config=_live_config([set_alert_mode])) as session:
             state.session = session
             await socket.send_json({"type": "ready", "conn": conn_id})
+            await _announce_rate(state, "start")
             downstream = asyncio.create_task(_gemini_to_browser(state))
             watcher = asyncio.create_task(_watch_loop(state))
             mic_bytes = frames = 0
@@ -405,9 +451,15 @@ async def _serve(socket: WebSocket, conn_id: str) -> None:
                         if mic_bytes == 0:
                             trace.log("first_mic_audio", bytes=len(chunk))
                         mic_bytes += len(chunk)
-                        for action in state.turn.feed(chunk, time.time(), state.model_speaking):
+                        now_c = time.time()
+                        for action in state.turn.feed(chunk, now_c, state.audible(now_c) or state.model_speaking):
                             if action[0] == "start":
-                                trace.log("user_turn", state="start", model_speaking=state.model_speaking)
+                                was_audible = state.audible(now_c)
+                                trace.log("user_turn", state="start", model_speaking=state.model_speaking, audible=was_audible)
+                                if was_audible:
+                                    # You are talking over the answer: stop it on the phone now (the model may have finished generating it)
+                                    state.audible_until = 0.0
+                                    await state.send({"type": "interrupted"})
                                 await session.send_realtime_input(activity_start=types.ActivityStart())
                             elif action[0] == "audio":
                                 await session.send_realtime_input(audio=types.Blob(data=action[1], mime_type="audio/pcm;rate=16000"))
@@ -426,6 +478,8 @@ async def _serve(socket: WebSocket, conn_id: str) -> None:
                             state.frames.append((now_f, jpeg))   # the watcher can use every frame
                             if isinstance(msg.get("imu"), dict):
                                 state.imu, state.imu_at = msg["imu"], now_f
+                            if isinstance(msg.get("motion"), (int, float)):
+                                state.motion.append((now_f, float(msg["motion"])))
                             # The Live model only needs about 1 per second, except a fresh picture at the moment you start talking.
                             if msg.get("fresh") and now_f - state.last_live_frame < 0.95:
                                 trace.log("fresh_frame")   # sent early on purpose: you just started talking

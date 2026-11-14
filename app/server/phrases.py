@@ -17,13 +17,17 @@ LOCAL = {
 # Phrases the watcher is encouraged to reuse word for word (so their voices are already made).
 WATCHER = {
     "English": [
-        "Car ahead, stop!", "Step down ahead.", "Step up ahead.", "Stairs ahead.", "Curb ahead, careful.",
-        "Wall ahead, stop.", "Pole ahead.", "Glass door ahead, stop.", "Door ahead.", "Hole ahead, stop.",
+        "Car ahead, stop!", "Car from the right, stop.", "Car from the left, stop.", "Vehicle approaching, stop!",
+        "Bicycle ahead, caution.", "Scooter ahead, caution.", "Person right ahead.",
+        "Step down ahead.", "Step up ahead.", "Stairs ahead.", "Stairs ahead, caution.", "Curb ahead, careful.", "Curb ahead, watch your step.",
+        "Wall ahead, stop.", "Wall right ahead, stop.", "Pole ahead.", "Pole at twelve o'clock.", "Glass door ahead, stop.", "Door ahead.", "Hole ahead, stop.",
     ],
     "Greek": [
-        "Αυτοκίνητο μπροστά, σταμάτα!", "Σκαλί προς τα κάτω μπροστά.", "Σκαλί προς τα πάνω μπροστά.", "Σκάλες μπροστά.",
-        "Πεζοδρόμιο μπροστά, προσοχή.", "Τοίχος μπροστά, σταμάτα.", "Κολόνα μπροστά.", "Γυάλινη πόρτα μπροστά, σταμάτα.",
-        "Πόρτα μπροστά.", "Λάκκος μπροστά, σταμάτα.",
+        "Αυτοκίνητο μπροστά, σταμάτα!", "Αυτοκίνητο από δεξιά, σταμάτα.", "Αυτοκίνητο από αριστερά, σταμάτα.", "Πλησιάζει όχημα, σταμάτα!",
+        "Ποδήλατο μπροστά, προσοχή.", "Πατίνι μπροστά, προσοχή.", "Άτομο ακριβώς μπροστά.",
+        "Σκαλί προς τα κάτω μπροστά.", "Σκαλί προς τα πάνω μπροστά.", "Σκάλες μπροστά.", "Σκάλες μπροστά, προσοχή.",
+        "Πεζοδρόμιο μπροστά, προσοχή.", "Τοίχος μπροστά, σταμάτα.", "Τοίχος ακριβώς μπροστά, σταμάτα.", "Κολόνα μπροστά.",
+        "Γυάλινη πόρτα μπροστά, σταμάτα.", "Πόρτα μπροστά.", "Λάκκος μπροστά, σταμάτα.",
     ],
 }
 

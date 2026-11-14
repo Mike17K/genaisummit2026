@@ -1,5 +1,5 @@
 // On-device looming logic. Run: node tests/test_looming.js   (Node is needed only for this test)
-const { RollingBaseline, ImuState, LoomingTracker, zone, distanceMeters } = require("../static/looming.js");
+const { RollingBaseline, ImuState, LoomingTracker, zone, distanceMeters, lumaMotion } = require("../static/looming.js");
 
 let pass = 0, fail = 0;
 function check(name, cond, detail = "") {
@@ -138,6 +138,17 @@ check("a tiny box gives no distance", distanceMeters("car", 0.005) === null);
   run(t, 10, approaching);
   t.reset();
   check("reset forgets everything", t.baselines.size === 0 && t.sustainedSince.size === 0);
+}
+
+// ---- scene motion score
+{
+  const a = new Float32Array(256).fill(0.5);
+  check("an identical picture has no motion", lumaMotion(a, new Float32Array(256).fill(0.5)) === 0);
+  const b = new Float32Array(256).fill(0.5); for (let i = 0; i < 128; i++) b[i] = 0.7;
+  check("half the picture 0.2 brighter is a motion score of 0.1", Math.abs(lumaMotion(a, b) - 0.1) < 1e-6, lumaMotion(a, b));
+  check("a different size or missing picture gives null, not a guess", lumaMotion(a, new Float32Array(100)) === null && lumaMotion(null, a) === null);
+  const noisy = new Float32Array(256); for (let i = 0; i < 256; i++) noisy[i] = 0.5 + (i % 2 ? 0.004 : -0.004);
+  check("camera noise (+-0.004) stays well under the 0.012 'still' threshold", lumaMotion(a, noisy) < 0.012, lumaMotion(a, noisy));
 }
 
 console.log(`\n${pass}/${pass + fail} passed`);

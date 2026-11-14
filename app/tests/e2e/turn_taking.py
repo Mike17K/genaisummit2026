@@ -72,6 +72,7 @@ class Phone:
     def trace(self):
         return json.load(urllib.request.urlopen(f"http://localhost:{PORT}/trace?conn={self.conn}&n=1000"))
     def count(self, typ): return sum(1 for e in self.events if e["type"] == typ)
+    def speech_s(self, since=0.0): return sum(n for t, n in self.audio if t >= since) / 48000
 
 async def s1():
     print("\n=== S1: a 0.6 s pause inside a sentence, page asking for a 300 ms wait")
@@ -91,27 +92,36 @@ async def s1():
         check("and it was answered with speech", len(p.audio) > 0)
 
 async def s2():
-    print("\n=== S2: noise burst vs sustained speech while the assistant is talking")
-    story = tts16k("Please tell me a long story about a lighthouse keeper, at least a minute.")
+    print("\n=== S2: noise burst vs sustained speech while the assistant is audible")
+    story = tts16k("Please count out loud from one to one hundred, slowly, one number at a time, and do not stop until you reach one hundred.")
     word = tts16k("Stop. Stop right now, please.")
     async with Phone() as p:
-        await p.voice(story); await p.quiet(3.5)
-        for _ in range(60):                          # wait until the story is really playing
-            if len(p.audio) > 30: break
-            await asyncio.sleep(0.2)
-        check("the assistant is speaking", len(p.audio) > 30)
-        n_before = len(p.audio); t_burst = p.T
-        await p.voice(word[:STEP * 2]); await p.quiet(1.0)        # 0.2 s burst
-        await asyncio.sleep(2.5)
+        await p.voice(story); await p.quiet(2.0)
+        for _ in range(100):                         # wait for the first speech
+            if p.audio: break
+            await asyncio.sleep(0.1)
+        check("the assistant starts speaking", bool(p.audio))
+        first_t = p.audio[0][0] if p.audio else p.T
+        await asyncio.sleep(1.2)                     # a fast model has sent most of its speech by now; the phone is still playing it
+        total = p.speech_s()
+        audible_end = first_t + total
+        print(f"   {total:.1f} s of speech received; the phone would be playing it until t+{audible_end - p.T:.1f} s")
+        check("there is enough speech left to play for the test", audible_end - p.T > 3.0, f"{audible_end - p.T:.1f} s left")
+        t_burst = p.T
+        await p.voice(word[:STEP * 2]); await p.quiet(0.8)        # 0.2 s burst
+        starts = [e for e in p.trace() if e["kind"] == "user_turn" and e["state"] == "start" and e["t"] >= time.time() - (p.T - t_burst) - 0.2]
         interrupted = [e for e in p.events if e["type"] == "interrupted" and e["t"] >= t_burst]
-        keep_going = len(p.audio) - n_before
-        check("a 0.2 s burst does NOT cut the assistant off", not interrupted and keep_going > 20, f"interrupted={bool(interrupted)} new chunks={keep_going}")
+        check("a 0.2 s burst does NOT start a turn or stop the phone's playback", not starts and not interrupted, f"turns={len(starts)} interrupted={len(interrupted)}")
         t_speech = p.T
+        remaining = audible_end - t_speech
+        check("the sustained speech still starts while the answer is audible", remaining > 0.4, f"{remaining:.1f} s left")
         await p.voice(word[:STEP * 9]); await p.quiet(0.5)         # 0.9 s sustained speech
-        await asyncio.sleep(3)
+        await asyncio.sleep(2.5)
         interrupted = [e for e in p.events if e["type"] == "interrupted" and e["t"] >= t_speech]
-        check("0.9 s of sustained speech DOES cut it off", bool(interrupted), "no interrupt")
-        if interrupted: print(f"   cut off {round(interrupted[0]['t'] - t_speech, 2)} s after the speech began")
+        check("0.9 s of sustained speech DOES stop the phone's playback", bool(interrupted), "no interrupted message was sent to the phone")
+        if interrupted: print(f"   the phone was told to stop {round(interrupted[0]['t'] - t_speech, 2)} s after the speech began")
+        tr = p.trace()
+        check("the server logged that the assistant was audible when you barged in", any(e["kind"] == "user_turn" and e["state"] == "start" and e.get("audible") for e in tr))
 
 async def one_run(new_protocol):
     pcm = tts16k("What do you see in front of me right now?")
@@ -142,6 +152,8 @@ async def s3():
     print(f"   saving at the median: {st.median(old) - st.median(new):.2f} s")
 
 async def main():
-    await s1(); await s2(); await s3()
+    only = sys.argv[1:] or ["s1", "s2", "s3"]
+    for name in only:
+        await {"s1": s1, "s2": s2, "s3": s3}[name]()
     print(f"\n{sum(results)}/{len(results)} checks passed")
 asyncio.run(main())

@@ -112,6 +112,27 @@ def run():
         agent._get_client = original
         watch._thinking_ok = True
 
+    # ---- static-scene skip
+    still = [(100.0 + i * 0.5, 0.003) for i in range(5)]
+    check("a still scene is skipped", watch.scene_is_static(still, 102.4, 100.0, "normal", True) is True)
+    check("never skipped while attention is raised", watch.scene_is_static(still, 102.4, 100.0, "elevated", True) is False)
+    check("never skipped right after a look that found something", watch.scene_is_static(still, 102.4, 100.0, "normal", False) is False)
+    check("a look is made at least every 4 s even in a still scene", watch.scene_is_static(still, 104.2, 100.0, "normal", True) is False)
+    moving = still[:3] + [(101.5, 0.05)] + still[3:]
+    check("any recent movement ends the skipping", watch.scene_is_static(sorted(moving), 102.4, 100.0, "normal", True) is False)
+    check("with no motion data (an older page) nothing is skipped", watch.scene_is_static([], 102.4, 100.0, "normal", True) is False)
+    check("with a single reading nothing is skipped", watch.scene_is_static([(102.0, 0.0)], 102.4, 100.0, "normal", True) is False)
+    old_motion = [(90.0 + i * 0.5, 0.0) for i in range(5)]
+    check("old readings do not count", watch.scene_is_static(old_motion, 102.4, 100.0, "normal", True) is False)
+    saved = config.STATIC_SKIP
+    config.STATIC_SKIP = False
+    check("the skip can be switched off", watch.scene_is_static(still, 102.4, 100.0, "normal", True) is False)
+    config.STATIC_SKIP = saved
+
+    # ---- more pre-made phrases
+    check("the plan's extra phrases are in the bank", all(t in phrases.all_phrases() for t in ["Car from the right, stop.", "Vehicle approaching, stop!", "Bicycle ahead, caution.", "Person right ahead.", "Pole at twelve o'clock.", "Wall right ahead, stop."]))
+    check("and their Greek versions", "Αυτοκίνητο από δεξιά, σταμάτα." in phrases.all_phrases())
+
     # ---- warming the voice bank
     made = []
     async def fake_synth(text):

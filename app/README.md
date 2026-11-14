@@ -52,6 +52,11 @@ Evaluation of the plan and what was built: `project-context/fast-warnings-evalua
 sensors stop false alarms from a swinging camera and from a stationary user; 30 common alert voices are made ahead of time
 and an uncached urgent alert is spoken by the phone at once; a confident hazard is announced on the first sighting.
 
+## Speed (plan v3)
+Voice model is `gemini-3.8-live` (about 0.8 s to first speech, with automatic fallback to the older model); the watcher looks every 1 s
+at 2 frames and skips looks while the picture is still; common alert voices are pre-made. Measurements and what was not adopted:
+`project-context/fast-warnings-evaluation.md` (round 2). The on-device detector is opt-in: add `?ondevice=1` to the address.
+
 ## Several people at once
 Each connection has its own session, memory, alert state and id; the trace can be filtered per connection
 (`/panel?conn=<id>`). Limits: `EYES_MAX_CONNECTIONS` (10) open connections, `EYES_MAX_PARALLEL_CALLS` (6) model calls at once.
