@@ -65,15 +65,16 @@ events (heard, reply, ...)    <--JSON over WS--     trace log (/trace, /panel)
 ### 5.1 Audio in (microphone)
 - Captured with `getUserMedia` with echo cancellation, noise suppression and auto gain on, mono.
 - Converted in the browser to PCM16 mono at 16 kHz (linear-interpolation downsampling) and streamed in chunks of 4096 samples (about 85 ms at 48 kHz) using a `ScriptProcessor`.
-- **Noise gate:**
-  - Audio below a level threshold is replaced by silence of the same length, so room noise and speaker echo are not sent, and the server can still detect the end of a sentence.
-  - Default threshold 0.030 (RMS, 0 to 1). It was 0.015 before. Range 0.005 to 0.300.
-  - Hang time 800 ms after the voice drops, plus the chunk just before the voice starts is included, so word starts and ends are not clipped.
-  - Adjustable live with **gate −** and **gate +** buttons (steps of 0.005), saved in the browser, or set with `?gate=0.05` in the address.
+- **Noise gate and voice tagging** (`static/micgate.js`):
+  - Audio below the gate level is not treated as speech; zeros are sent in its place so the server keeps a steady clock. Default level 0.030 (RMS, 0 to 1), range 0.005 to 0.300, adjustable with **gate −/+**, `?gate=0.05`, remembered.
+  - **A turn opens only after about 250 ms of sustained sound** above the gate (one quiet chunk in the middle is tolerated, since speech dips between syllables). Clicks, coughs and noise bursts are ignored. The chunk just before the voice began is included, so word starts are not clipped.
+  - **While the assistant is speaking the gate is 2.5 times higher**, so only clearly louder speech can cut it off (its own echo no longer does).
+  - **Every audio message carries a 1-byte tag:** 1 = voice, 0 = quiet. After your voice stops the page keeps sending 500 ms of real audio so word endings are not cut, but tags it quiet. The server therefore measures your pause from the true end of your voice and the tail adds no dead time (older pages that send raw audio still work; for them any sound counts as voice).
+- **Wait after you stop talking:** default 900 ms, minimum 700 ms (the buttons stop there, `?silence=300` is raised to 700, and the server enforces it too). It is stored under a new key, so the 300 ms that was saved in an earlier version is ignored. Short utterances (under 1 s of voice) get 0.4 s more patience, because people pause after the first words.
 
 ### 5.2 Camera in
 - Rear camera (`facingMode: environment`).
-- One JPEG frame per second, scaled to 640 px wide, quality 0.6, sent as base64 JSON.
+- One JPEG frame per second by default (2.5 or 4 per second when the server asks for a closer look, see section 5b), scaled to 640 px wide, quality 0.6, sent as base64 JSON.
 - Requests a screen wake lock while running so the phone does not sleep.
 
 ### 5.3 Audio out (speech)
@@ -134,6 +135,24 @@ Settings are environment variables (`EYES_ALERT_*`, `EYES_WATCH_S`).
 4. The assistant gets a silent note of what was said, so "what was that?" works.
 Typical timing in tests: about 2 s from the hazard appearing to the alert decision, then about 2 to 3 s until the words are heard (the beep and the cut come first).
 
+### Adaptive attention: images and looks speed up when the AI wants a closer look
+The camera normally sends **1 image per second** and the watcher looks about **every 2 seconds**. The watcher model also says how closely to watch (`attention`), and the rates follow:
+
+| Attention | When (the model decides) | Camera images | Watcher looks | Frames shown to the watcher |
+|---|---|---|---|---|
+| `normal` | nothing relevant is happening | 1 per second | every 2.0 s | 3 frames about 1.0 s apart |
+| `elevated` | something could become a danger soon (object or person moving toward the user, road or crossing nearby, stairs or a drop coming, a crowded or fast-changing scene, or the model is unsure) | 2.5 per second | every 1.2 s | 3 frames about 0.7 s apart |
+| `high` | a warning is justified now or expected within a couple of seconds | 4 per second | every 0.8 s (in practice about every 1.2 s, the time one look takes) | 3 frames about 0.5 s apart |
+
+- **Rises at once, falls gradually.** The level goes up the moment it is asked for. It only steps down one level at a time, after a hold (5 s at elevated, 8 s at high) with no further need, so it does not flap.
+- **Our own signals also raise it:** an alert that just fired sets `high`; a suspected hazard that is being held back (waiting for confirmation, low confidence, cooldown) sets at least `elevated`.
+- **Cost guard:** more than 30 s continuously above normal forces it back to normal for 12 s (only a real alert can break through). Settings: `EYES_ATTENTION_MAX_S`, `EYES_ATTENTION_COOLDOWN_S`.
+- **The Live (voice) model still gets about 1 image per second**; only the watcher uses the extra frames, so the voice session does not cost more. The server keeps the last ~10 s of frames and picks 3 well-separated ones.
+- **The page** is told the new rate (`rate` message) and changes its timer; the debug panel shows the rate set, the measured rate, and the attention level.
+- Settings: `EYES_FPS_NORMAL/ELEVATED/HIGH` (1, 2.5, 4), `EYES_LOOK_ELEVATED_S` (1.2), `EYES_LOOK_HIGH_S` (0.8).
+- **Measured (honest):** in three side-by-side runs on a synthetic growing car, the adaptive server sent 56 to 66 images against 24 and made 13 to 15 looks against 10 to 11, so it does work as built. But it did **not** detect the car earlier (alert 4.1, 3.7, 4.1 s after the car appeared, against 2.4, 3.7, 4.3 s for a fixed 1 fps server). The reason: the model went from `normal` straight to `high` in a single look, with no `elevated` step first, so the extra images were used only after the warning. Faster looks are also limited by the time one look takes (about 1.2 s). Extra images help most when the model notices something developing before it is certain; that did not happen in this synthetic test. A cheap non-AI trigger (for example, a sudden change between frames) could raise the rate earlier; it is not built.
+- Cost while raised: a look is about 3,800 tokens, so about 190,000 tokens a minute at elevated and about 285,000 at high, for at most 30 s at a time.
+
 ### User control
 - Button on the page cycles **alerts: normal / urgent only / off** (remembered). The user can also say "only warn me about serious things" or "be quiet" (tool `set_alert_mode`).
 - `/panel` and the debug panel show every check (silent, held back with the reason, or ALERT) with confidence, key and time.
@@ -173,7 +192,7 @@ Many phones can use one server at the same time without affecting each other. Ea
 ### Live session settings (`live.py`)
 - Response modality: audio. Voice: `Kore` by default (`GEMINI_VOICE`; others: Aoede, Puck, Charon, Fenrir, Leda, Zephyr).
 - Input and output **transcription on**, which gives text for the trace and debug panel.
-- **Voice activity is controlled by the server, not by Gemini** (automatic detection is off). The page's noise gate sends pure silence when you are quiet; any sound means you are talking. The server sends "you started" to Gemini at the first sound and "you stopped" after your wait (1200 ms by default, `EYES_SILENCE_MS`, or `?silence=<ms>` from the page, clamped 300 to 4000). The page already keeps sending quiet audio for 0.8 s after you stop, so the server adds the rest (setting minus 0.8 s, at least 0.25 s). A longer wait avoids cutting in on pauses but delays the answer by about the same amount. Manual control is also what lets an alert force an interrupt.
+- **Voice activity is controlled by the server, not by Gemini** (automatic detection is off); the logic is in `server/turns.py` (`TurnTracker`, 23 unit checks). It sends "you started" to Gemini at the first voice chunk and "you stopped" after the wait: `EYES_SILENCE_MS` (default 900), or `?silence=<ms>` from the page, clamped 700 to 4000, counted from the last chunk tagged voice. Rules: the wait never goes below 700 ms; a short utterance waits 0.4 s longer; **while the assistant is speaking, 0.45 s of sustained voice is needed to cut it off** (a short burst is ignored even if the page let it through); after an alert the interrupt turn stays open until you really speak. A longer wait avoids cutting in on pauses but delays the answer by about the same amount. Manual control is also what lets an alert force an interrupt. The `user_turn end` trace event now includes `voiced_s` (seconds of voice in that turn).
 - **Sliding-window context compression on**, to extend audio-plus-video sessions beyond the roughly 2-minute default.
 - Barge-in (interruption) handled by the model; the server forwards an `interrupted` event and the browser stops playback.
 - A `go_away` notice from the server is passed to the page.
@@ -185,7 +204,7 @@ Many phones can use one server at the same time without affecting each other. Ea
 
 ## 7. Observability (show the work)
 - `/panel` live table of events (heard, tool calls, replies, errors) refreshed every second; `/trace` returns the same as JSON; add `?conn=<id>` to filter one connection.
-- Events recorded: `watch` (every look: silent, held back with the reason, or ALERT, with confidence, key, ms and tokens), `alert`, `alert_spoken`, `alert_mode`, `user_turn` (start and end), `live_connect`, `first_mic_audio`, `first_frame`, `first_audio` (with latency in ms), `heard`, `reply`, `tool`, `interrupted`, `go_away`, `error`, `live_input_totals` (KB of microphone audio and frames received), `live_disconnect`. The text path also logs token counts.
+- Events recorded: `watch` (every look: silent, held back with the reason, or ALERT, with confidence, key, ms and tokens), `alert`, `alert_spoken`, `alert_mode`, `attention` (a change of camera and look rate, with the reason), `user_turn` (start and end), `live_connect`, `first_mic_audio`, `first_frame`, `first_audio` (with latency in ms), `heard`, `reply`, `tool`, `interrupted`, `go_away`, `error`, `live_input_totals` (KB of microphone audio and frames received), `live_disconnect`. The text path also logs token counts.
 - The input counters answer "did the phone's audio and camera actually reach the server?".
 
 ## 8. Tools the agent can call
@@ -203,7 +222,7 @@ All tool calls are logged and shown in the trace.
 | `GEMINI_VOICE` | `Kore` | Assistant voice. |
 | `GEMINI_MODEL` | `gemini-3.5-flash-lite` | Text and vision model for the older path. |
 | `GEMINI_HARD_MODEL` | `gemini-3.8-flash` | Reserved, not used yet. |
-| `EYES_SILENCE_MS` | `1200` | Wait after the user stops talking before the assistant answers (ms). The page can override it per connection. |
+| `EYES_SILENCE_MS` | `900` | Wait after the user stops talking before the assistant answers (ms). The page can override it per connection. |
 | `GEMINI_WATCH_MODEL` | `gemini-3.5-flash-lite` | Model that decides from the last 3 frames whether to alert (about 1 to 1.4 s per look). |
 | `GEMINI_TTS_MODEL` | `gemini-3.8-flash-lite-tts` | Voice for spoken alerts. |
 | `EYES_WATCH_S` | `2.0` | Seconds between looks. |
@@ -211,10 +230,13 @@ All tool calls are logged and shown in the trace.
 | `EYES_ALERT_COOLDOWN_S` / `_HIGH_S` | `6` / `1.5` | Minimum gap between alerts. |
 | `EYES_ALERT_DEDUPE_S` | `25` | Same hazard is not repeated within this time. |
 | `EYES_ALERT_MAX_PER_MIN` | `6` | Rate limit (double for high urgency). |
+| `EYES_FPS_NORMAL` / `_ELEVATED` / `_HIGH` | `1` / `2.5` / `4` | Camera images per second at each attention level. |
+| `EYES_LOOK_ELEVATED_S` / `_HIGH_S` | `1.2` / `0.8` | Watcher look interval at elevated and high attention. |
+| `EYES_ATTENTION_MAX_S` / `_COOLDOWN_S` | `30` / `12` | Longest stretch above normal, then forced back to normal for this long. |
 | `EYES_MAX_CONNECTIONS` | `10` | Open voice connections allowed at once; more are told the assistant is busy. |
 | `EYES_MAX_PARALLEL_CALLS` | `6` | Watcher and alert-voice model calls running at once across all connections. |
 
-URL options on the page: `?gate=0.05` (noise gate level), `?silence=1500` (wait after you stop talking, in ms) and `?debug=0` (hide debug panel). The page also has **gate −/+** and **wait −/+** buttons (wait in steps of 200 ms, saved in the browser, applied the next time you tap Start).
+URL options on the page: `?gate=0.05` (noise gate level), `?silence=1500` (wait after you stop talking, in ms, minimum 700) and `?debug=0` (hide debug panel). The page also has **gate −/+** and **wait −/+** buttons (wait in steps of 200 ms from 700 ms up, saved in the browser, applied the next time you tap Start).
 
 ## 10. Performance (measured)
 - **Realtime voice:** in a synthetic-speech test, first speech audio arrived about 3.9 s after the end of speech with a 600 ms wait, and about 4.7 to 5.6 s with a 2000 ms wait (the wait adds roughly its own length; the rest is model and network time, which varies). An earlier test with a 500 ms wait measured 1.2 to 2.1 s after a padded end, so expect 2 to 4 s in practice; real phone latency is untested.
@@ -237,13 +259,13 @@ Each look sends 3 images and costs about 3,800 input tokens. At one look every ~
 ## 12. Known limits and risks
 - Not tested on a real phone yet with the Live client (camera, mic, playback, gate). The debug panel was verified in a desktop browser pane where camera and mic are blocked.
 - **Alerts are decision support, not a safety guarantee.** The watcher can miss a hazard or raise a false one. It was tested on synthetic images only (an empty road stayed silent, a growing car triggered a high-urgency alert), not on real streets.
-- **Echo:** speaker audio can reach the mic and make the assistant interrupt itself. The noise gate, echo cancellation and headphones or low volume mitigate this; the gate level needs tuning per phone.
+- **Echo:** speaker audio can reach the mic and make the assistant interrupt itself. The gate (raised 2.5 times while it speaks), a 450 ms sustained-voice requirement, echo cancellation and headphones or low volume mitigate this; the gate level needs tuning per phone.
 - **iPhone Safari** is the strictest about audio and may need extra handling; Chrome on Android is the primary target.
 - **Session length:** audio plus video sessions are normally limited to about 2 minutes; compression is enabled but long sessions are untested. Connections can drop outdoors; the page shows the close code and asks for a tap.
 - **Browser audio nodes:** `ScriptProcessor` is deprecated but widely supported; a later cleanup can move to `AudioWorklet`.
 - Memory of places is in RAM only and private to one connection (lost when it closes).
 - Gate too high can cut quiet speech.
-- Camera frames are 1 per second, so fast motion can be missed.
+- Camera frames are 1 per second normally (up to 4 when the watcher asks), so very fast motion can still be missed.
 - The larger "hard reading" model is configured but not used.
 
 ## 13. What was tested
@@ -253,7 +275,8 @@ Each look sends 3 images and costs about 3,800 input tokens. At one look every ~
 - **UI:** page loads, noise-gate buttons change and save the value (range 0.005 to 0.300), debug panel renders, permission failure shows the red error state with `NotAllowedError`.
 - **Proactive alerts, tested without a phone:** 26 automated policy checks (silence default, confirmation, thresholds, duplicates and synonyms, escalation, cooldown, rate limit, not talking over the user, modes). AI watcher on synthetic frames: empty road and a car that does not grow stayed silent, a growing car gave high urgency with confidence 0.95 to 1.0. 30 seconds of an empty road gave 14 looks and 0 alerts. End to end: while a long story was playing a car approached; the alert stopped the story at once, was spoken about 2 to 3 s later in exact words, the story did not resume, and the follow-up "What did you just warn me about?" was answered correctly.
 - **Observed once and not explained:** in two of about six story tests the model produced no answer to the long-story request until the alert arrived; normal short questions worked every time. Worth re-checking on a phone.
-- **Not tested:** real phone, real microphone, real playback, long sessions, iPhone.
+- **Turn-taking fixes, tested without a phone:** 23 unit checks for `server/turns.py` (wait floor, voice-versus-tail, short-utterance patience, a 0.6 s pause staying one turn, a 300 ms wait no longer splitting a sentence, barge-in needing sustained voice, hold-open after an alert, older raw clients) and 12 for the page's gate (`node tests/test_micgate.js`). Live: a 0.6 s pause inside a sentence stayed one turn and was answered even though the page asked for 300 ms; a 0.2 s burst did not cut the assistant off while 0.9 s of speech did (cut-off about 1.4 s after speech began); end of voice to first speech was a median 3.80 s with the new tagging against 4.24 s with the old tail handling (4 runs each, a 0.44 s saving, within noise). Regression: 4 simultaneous phones 12 of 12, alert cutting a story and a follow-up answered.
+- **Not tested:** the new gate and tagging on a real phone, real microphone, real playback, long sessions, iPhone.
 
 ## 14. Run it
 ```bash

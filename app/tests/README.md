@@ -6,6 +6,9 @@ No test framework needed. Run from the `app/` folder.
 ```bash
 uv run python tests/test_watch_policy.py   # alert policy: when the app is allowed to speak (26 checks)
 uv run python tests/test_isolation.py      # several connections never share data (22 checks)
+uv run python tests/test_turns.py          # turn-taking: wait floor, tail, barge-in debounce (23 checks)
+node tests/test_micgate.js                 # the page's microphone gate (12 checks; Node is needed only for this test)
+uv run python tests/test_attention.py      # adaptive camera rate and frame selection (31 checks)
 ```
 
 **Against a running server with a real Gemini key** (they create synthetic speech and drawn camera frames):
@@ -13,6 +16,8 @@ uv run python tests/test_isolation.py      # several connections never share dat
 uv run uvicorn server.main:app --port 8000      # in another terminal
 PYTHONPATH=. uv run --with pillow --with websockets python tests/e2e/multi_connections.py      # 4 phones at once
 PYTHONPATH=. uv run --with pillow --with websockets python tests/e2e/alert_during_story.py 18  # a car appears mid-story
+PYTHONPATH=. uv run --with pillow --with websockets python tests/e2e/turn_taking.py            # pauses, barge-in, dead time
+PYTHONPATH=. uv run --with pillow --with websockets python tests/e2e/adaptive_rate.py 8000   # growing car; compare against a fixed-rate server on 8001
 EYES_MAX_CONNECTIONS=2 uv run uvicorn server.main:app --port 8001                              # then:
 uv run --with websockets python tests/e2e/connection_cap.py
 ```

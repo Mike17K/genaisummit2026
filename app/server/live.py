@@ -23,7 +23,7 @@ from fastapi import WebSocket
 from google import genai
 from google.genai import types
 
-from . import config, speak, tools, trace, watch
+from . import config, speak, tools, trace, turns, watch
 
 LIVE_SYSTEM = """You are Eyes, a voice assistant for a blind or low-vision person. They cannot see anything, they only hear you.
 You receive their voice and a camera picture about once per second.
@@ -44,7 +44,6 @@ _client: genai.Client | None = None
 
 _active_connections = 0                       # open /live connections right now
 _watch_slots: asyncio.Semaphore | None = None  # limits parallel watcher calls across all connections
-CLIENT_HANG_S = 0.8   # keep in step with GATE_HANG_MS in static/app.js
 GREEK = re.compile(r"[Ͱ-Ͽ]")
 
 
@@ -88,12 +87,12 @@ class State:
     """Everything the bridge tracks for one browser connection."""
     socket: WebSocket
     session: object = None
-    frames: deque = field(default_factory=lambda: deque(maxlen=3))   # (time, jpeg bytes): the last 3 frames
+    frames: deque = field(default_factory=lambda: deque(maxlen=40))  # (time, jpeg bytes): recent frames (about 10 s at the top rate)
+    attention: watch.Attention = field(default_factory=watch.Attention)
+    last_live_frame: float = 0.0      # when a frame was last forwarded to the Live model (at most about 1 per second)
     policy: watch.AlertPolicy = field(default_factory=watch.AlertPolicy)
     recent_alerts: deque = field(default_factory=lambda: deque(maxlen=4))  # (time, key, message)
-    last_user_voice: float = 0.0
-    user_active: bool = False         # we told Gemini the user is currently talking
-    hold_open: bool = False           # the interrupt turn from an alert stays open until the user really speaks
+    turn: turns.TurnTracker = field(default_factory=turns.TurnTracker)   # when the user's turn starts and ends
     expect_interrupt: bool = False    # we interrupted the model ourselves for an alert; do not forward the resulting event
     model_speaking: bool = False
     drop_audio_since: float = 0.0     # >0 while old speech is being thrown away after an alert
@@ -191,13 +190,12 @@ async def _fire_alert(state: State, d: watch.WatchDecision) -> None:
     await state.send({"type": "alert", "urgency": d.urgency, "text": d.message})
     # 2) silence the Live model if it is talking. A manual activity signal is a hard barge-in; a plain message would only
     #    queue behind the current speech. Old audio still in flight is thrown away until the interrupt arrives.
-    if was_speaking and not state.user_active:
+    if was_speaking and not state.turn.active:
         state.drop_audio_since = now
         state.expect_interrupt = True
         # Leave the turn OPEN: ending it would make Gemini answer the old request again (the story just carried on).
         # The server's normal voice logic closes it after the user's next words.
-        state.user_active = True
-        state.hold_open = True
+        state.turn.hold_for_alert()
         await state.session.send_realtime_input(activity_start=types.ActivityStart())
     # 3) let the model know what was said, without making it reply (turn_complete=False)
     await state.session.send_client_content(
@@ -217,6 +215,13 @@ async def _fire_alert(state: State, d: watch.WatchDecision) -> None:
     trace.log("alert_spoken", ms=round((time.time() - now) * 1000), audio_s=round(len(pcm) / 48000, 1))
 
 
+async def _announce_rate(state: State, why: str) -> None:
+    """Tell the page how fast to send camera images now."""
+    a = state.attention
+    trace.log("attention", level=a.level, fps=a.fps, look_s=a.look_s, why=why)
+    await state.send({"type": "rate", "fps": a.fps, "attention": a.level, "look_s": a.look_s})
+
+
 async def _warm_voice(text: str) -> None:
     try:
         await speak.synthesize(text)
@@ -233,13 +238,16 @@ async def _watch_loop(state: State) -> None:
             raise
         except Exception as exc:
             trace.log("watch_error", error=f"{type(exc).__name__}: {exc}"[:200])
-        await asyncio.sleep(max(0.2, config.WATCH_S - (time.time() - started)))
+        await asyncio.sleep(max(0.15, state.attention.look_s - (time.time() - started)))
 
 
 async def _watch_once(state: State, now: float) -> None:
     if state.policy.mode == "off":
+        if state.attention.level != "normal":
+            state.attention = watch.Attention()
+            await _announce_rate(state, "alerts off")
         return
-    frames = [f for f in state.frames if now - f[0] < 6]
+    frames = watch.select_frames(state.frames, state.attention.spacing, now)
     if len(frames) < 2 or frames[-1][0] <= state.last_judged_frame:
         return  # nothing new to look at
     global _watch_slots
@@ -253,12 +261,19 @@ async def _watch_once(state: State, now: float) -> None:
     async with _watch_slots:
         d, info = await watch.judge(frames, list(state.recent_alerts), state.lang)
     ms = round((time.time() - t0) * 1000)
-    fire, why = state.policy.decide(d, time.time(), time.time() - state.last_user_voice)
+    fire, why = state.policy.decide(d, time.time(), time.time() - state.turn.last_voice)
     outcome = "ALERT" if fire else ("silent" if not d.notify else "held: " + why)
+    # Adaptive attention: the model's own sense of how closely to watch, plus our own signals (an alert just fired,
+    # or a suspected hazard is being held back). This raises the camera rate and the look rate, then eases back.
+    held = d.notify and not fire and why in ("needs_confirmation", "low_confidence", "cooldown", "rate_limit", "user_speaking")
+    changed = state.attention.update(d.attention, time.time(), alerted=fire, held=held)
     trace.log("watch", outcome=outcome, notify=d.notify, urgency=d.urgency, confidence=d.confidence,
-              key=d.hazard_key, message=d.message or None, reason=d.reason[:100], ms=ms, **info)
+              key=d.hazard_key, message=d.message or None, reason=d.reason[:100], ms=ms,
+              attention=d.attention, level=state.attention.level, fps=state.attention.fps, **info)
     await state.send({"type": "watch", "outcome": outcome, "urgency": d.urgency, "confidence": d.confidence,
-                      "key": d.hazard_key, "ms": ms})
+                      "key": d.hazard_key, "ms": ms, "attention": state.attention.level})
+    if changed:
+        await _announce_rate(state, f"model said {d.attention}" + (", alert fired" if fire else "") + (f", held ({why})" if held else ""))
     if fire:
         await _fire_alert(state, d)
     elif d.notify:
@@ -294,7 +309,7 @@ async def _serve(socket: WebSocket, conn_id: str) -> None:
         silence_ms = int(socket.query_params.get("silence", config.SILENCE_MS))
     except ValueError:
         silence_ms = config.SILENCE_MS
-    silence_ms = max(300, min(4000, silence_ms))
+    silence_ms = max(int(turns.END_WAIT_FLOOR_S * 1000), min(4000, silence_ms))
     trace.log("live_connect", silence_ms=silence_ms, active=_active_connections)
     if not config.API_KEY:
         await socket.send_json({"type": "error", "text": "The model is not connected yet."})
@@ -302,8 +317,8 @@ async def _serve(socket: WebSocket, conn_id: str) -> None:
         return
 
     state = State(socket=socket)
-    # The page keeps sending real (quiet) audio for CLIENT_HANG_S after you stop, so only the rest of the wait is added here.
-    end_wait = max(0.25, silence_ms / 1000 - CLIENT_HANG_S)
+    # The page tags its audio as voice or quiet, so the wait is counted from the true end of your voice.
+    state.turn = turns.TurnTracker(end_wait=silence_ms / 1000)
 
     def set_alert_mode(mode: str) -> dict:
         """Change how often camera safety alerts interrupt the user. mode: 'normal', 'urgent_only' (only serious dangers) or 'off'."""
@@ -332,20 +347,14 @@ async def _serve(socket: WebSocket, conn_id: str) -> None:
                         if mic_bytes == 0:
                             trace.log("first_mic_audio", bytes=len(chunk))
                         mic_bytes += len(chunk)
-                        now = time.time()
-                        voice = bool(chunk.strip(b"\x00"))   # the page sends pure silence below its noise gate
-                        if voice:
-                            state.last_user_voice = now
-                            state.hold_open = False   # the user really spoke: back to the normal turn logic
-                            if not state.user_active:
-                                state.user_active = True
+                        for action in state.turn.feed(chunk, time.time(), state.model_speaking):
+                            if action[0] == "start":
                                 trace.log("user_turn", state="start", model_speaking=state.model_speaking)
                                 await session.send_realtime_input(activity_start=types.ActivityStart())
-                        if state.user_active and not state.hold_open:
-                            await session.send_realtime_input(audio=types.Blob(data=chunk, mime_type="audio/pcm;rate=16000"))
-                            if not voice and now - state.last_user_voice >= end_wait:
-                                state.user_active = False
-                                trace.log("user_turn", state="end", silence_s=round(now - state.last_user_voice, 2))
+                            elif action[0] == "audio":
+                                await session.send_realtime_input(audio=types.Blob(data=action[1], mime_type="audio/pcm;rate=16000"))
+                            elif action[0] == "end":
+                                trace.log("user_turn", state="end", silence_s=action[1], voiced_s=round(state.turn.voiced_s, 1))
                                 await session.send_realtime_input(activity_end=types.ActivityEnd())
                     elif message.get("text"):
                         msg = json.loads(message["text"])
@@ -355,8 +364,11 @@ async def _serve(socket: WebSocket, conn_id: str) -> None:
                             if frames == 0:
                                 trace.log("first_frame", bytes=len(jpeg))
                             frames += 1
-                            state.frames.append((time.time(), jpeg))
-                            await session.send_realtime_input(video=types.Blob(data=jpeg, mime_type="image/jpeg"))
+                            now_f = time.time()
+                            state.frames.append((now_f, jpeg))   # the watcher can use every frame
+                            if now_f - state.last_live_frame >= 0.95:   # the Live model only needs about 1 per second
+                                state.last_live_frame = now_f
+                                await session.send_realtime_input(video=types.Blob(data=jpeg, mime_type="image/jpeg"))
                         elif kind == "mode" and msg.get("mode") in watch.AlertPolicy.MODES:
                             state.policy.mode = msg["mode"]
                             trace.log("alert_mode", mode=msg["mode"], by="button")

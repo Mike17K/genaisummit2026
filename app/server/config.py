@@ -27,7 +27,7 @@ LIVE_MODEL = os.environ.get("GEMINI_LIVE_MODEL", "gemini-2.5-flash-native-audio-
 VOICE = os.environ.get("GEMINI_VOICE", "Kore")  # try Aoede, Puck, Charon, Fenrir, Leda, Zephyr
 
 # Wait after the user stops talking before the assistant answers (ms). The page can override it with ?silence=.
-SILENCE_MS = int(os.environ.get("EYES_SILENCE_MS", "1200"))
+SILENCE_MS = int(os.environ.get("EYES_SILENCE_MS", "900"))
 
 # ---- proactive safety watcher ----
 WATCH_MODEL = os.environ.get("GEMINI_WATCH_MODEL", "gemini-3.5-flash-lite")  # decides from the last 3 frames, ~1.5 s per call
@@ -45,3 +45,20 @@ TTS_MODEL = os.environ.get("GEMINI_TTS_MODEL", "gemini-3.8-flash-lite-tts")  # ~
 # ---- many connections at once ----
 MAX_CONNECTIONS = int(os.environ.get("EYES_MAX_CONNECTIONS", "10"))          # more are told "busy"; protects the API quota
 MAX_PARALLEL_CALLS = int(os.environ.get("EYES_MAX_PARALLEL_CALLS", "6"))     # watcher and alert-voice calls running at once
+
+# ---- adaptive attention: how often the camera sends images and the watcher looks ----
+# The watcher model says how closely to watch ("normal", "elevated", "high"); these map that to rates.
+FPS = {
+    "normal": float(os.environ.get("EYES_FPS_NORMAL", "1")),        # images per second sent by the phone
+    "elevated": float(os.environ.get("EYES_FPS_ELEVATED", "2.5")),
+    "high": float(os.environ.get("EYES_FPS_HIGH", "4")),
+}
+LOOK_S = {                                                           # seconds between watcher looks
+    "normal": WATCH_S,
+    "elevated": float(os.environ.get("EYES_LOOK_ELEVATED_S", "1.2")),
+    "high": float(os.environ.get("EYES_LOOK_HIGH_S", "0.8")),
+}
+SPACING_S = {"normal": 1.0, "elevated": 0.7, "high": 0.5}           # gap between the 3 frames the watcher is shown
+ATTENTION_HOLD_S = {"elevated": 5.0, "high": 8.0}                    # stay at a level at least this long after last needed
+ATTENTION_MAX_S = float(os.environ.get("EYES_ATTENTION_MAX_S", "30"))        # cost guard: longest stretch above normal
+ATTENTION_COOLDOWN_S = float(os.environ.get("EYES_ATTENTION_COOLDOWN_S", "12"))  # then forced back to normal for this long

@@ -23,6 +23,7 @@ class WatchDecision(BaseModel):
     hazard_key: str = ""
     message: str = ""
     reason: str = ""
+    attention: Literal["normal", "elevated", "high"] = "normal"
 
 
 WATCH_SYSTEM = """You are the silent safety watcher for a blind person who is walking or standing somewhere. A phone camera on them gives you the last 3 frames, oldest first, about one second apart. You only decide whether to interrupt them. Silence is the normal answer.
@@ -40,6 +41,10 @@ confidence: 0.0 to 1.0, how sure you are that this is real and relevant.
 hazard_key: 2 or 3 lowercase words joined by hyphens, object then direction, e.g. car-right, step-down, pole-ahead. Use the same key for the same hazard across checks.
 message: at most 8 words, spoken aloud, minimal, with a clock position or direction and distance when you can tell. Examples: "Car from the right, stop." "Step down, two steps ahead." "Pole at twelve o'clock." Write it in the language requested below. Do not describe the scene.
 reason: one short sentence for the log.
+attention: how closely to keep watching. It only controls how often you receive new images (it never speaks to the user).
+  "normal": nothing relevant is going on.
+  "elevated": something could become a danger soon even though no warning is needed yet: an object or person moving toward them, a road, crossing or driveway nearby, stairs or a drop coming up, a crowded or fast-changing scene, or you are unsure.
+  "high": a warning is justified right now, or you expect to need one within a couple of seconds.
 If notify is false, leave message and hazard_key empty."""
 
 
@@ -98,6 +103,77 @@ _DIRECTIONS = {"ahead", "front", "left", "right", "behind", "up", "down"}
 
 def _tokens(key: str) -> list[str]:
     return [_SYNONYMS.get(t, t) for t in re.split(r"[-_ ]+", key) if t]
+
+
+def select_frames(buffer, spacing: float, now: float, n: int = 3, max_age: float = 6.0) -> list[tuple[float, bytes]]:
+    """Pick up to n frames from the buffer, newest last, about `spacing` seconds apart.
+    At a higher frame rate the buffer holds more frames, but the watcher still gets 3 well-separated ones so it can see motion."""
+    fresh = [f for f in buffer if now - f[0] <= max_age]
+    if not fresh:
+        return []
+    chosen = [fresh[-1]]
+    for f in reversed(fresh[:-1]):
+        if chosen[-1][0] - f[0] >= spacing * 0.9:
+            chosen.append(f)
+            if len(chosen) == n:
+                break
+    return list(reversed(chosen))
+
+
+class Attention:
+    """How closely to watch right now. Rises at once when the model asks for it, falls one step at a time after a hold
+    (so it does not flap), and is capped so a busy scene cannot keep the expensive rates on forever. Pure logic, testable."""
+
+    ORDER = ("normal", "elevated", "high")
+
+    def __init__(self) -> None:
+        self.level = "normal"
+        self.since = float("-inf")          # when the level was last raised or last re-confirmed as needed
+        self.above_since: float | None = None   # start of the current stretch above normal
+        self.cooldown_until = float("-inf")
+
+    def _rank(self, level: str) -> int:
+        return self.ORDER.index(level)
+
+    def update(self, model_level: str, now: float, *, alerted: bool = False, held: bool = False) -> bool:
+        """Feed one look's result. Returns True if the level changed."""
+        want = model_level if model_level in self.ORDER else "normal"
+        if alerted:
+            want = "high"
+        elif held and self._rank(want) < self._rank("elevated"):
+            want = "elevated"            # a suspected hazard we have not announced yet deserves a closer look
+        if now < self.cooldown_until and not alerted:
+            want = "normal"              # cost guard cool-down: only a real alert can break through
+        old = self.level
+        if self._rank(want) > self._rank(self.level):
+            self.level, self.since = want, now
+        elif self._rank(want) == self._rank(self.level):
+            if self.level != "normal":
+                self.since = now         # still needed: restart the hold
+        elif now - self.since >= config.ATTENTION_HOLD_S[self.level]:
+            self.level = self.ORDER[self._rank(self.level) - 1]
+            self.since = now
+        if self.level != "normal":
+            if self.above_since is None:
+                self.above_since = now
+            elif now - self.above_since > config.ATTENTION_MAX_S:
+                self.level, self.above_since = "normal", None
+                self.cooldown_until = now + config.ATTENTION_COOLDOWN_S
+        else:
+            self.above_since = None
+        return self.level != old
+
+    @property
+    def fps(self) -> float:
+        return config.FPS[self.level]
+
+    @property
+    def look_s(self) -> float:
+        return config.LOOK_S[self.level]
+
+    @property
+    def spacing(self) -> float:
+        return config.SPACING_S[self.level]
 
 
 def same_hazard(a: str, b: str) -> bool:

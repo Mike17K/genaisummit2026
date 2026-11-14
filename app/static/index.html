@@ -49,12 +49,13 @@
     <button id="modeBtn" type="button" style="width:auto;padding:0 .8rem">alerts: normal</button>
   </div>
   <div id="waitbar" class="bar" aria-hidden="true">
-    <span>wait after you stop talking (applies on next start)</span>
-    <button id="waitDown" type="button">&minus;</button><b id="waitVal">1200 ms</b><button id="waitUp" type="button">+</button>
+    <span>wait after you stop talking, min 700 ms (applies on next start)</span>
+    <button id="waitDown" type="button">&minus;</button><b id="waitVal">900 ms</b><button id="waitUp" type="button">+</button>
   </div>
   <div id="debug" aria-hidden="true"></div>
   <video id="cam" playsinline muted></video>
   <canvas id="canvas" hidden></canvas>
+  <script src="/static/micgate.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

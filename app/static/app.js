@@ -10,10 +10,11 @@ const canvas = document.getElementById("canvas");
 
 const IN_RATE = 16000;
 const OUT_RATE = 24000;
-// Noise gate: mic audio below this level is replaced by silence, so room noise and speaker echo are not sent.
-// Change it on the page (gate - / gate +), with ?gate=0.05, or it is remembered from last time.
+// Noise gate (static/micgate.js): audio below this level is not treated as speech, so room noise and speaker echo are
+// not sent as voice. A turn opens only after about 250 ms of sustained sound. Change the level on the page
+// (gate - / gate +), with ?gate=0.05, or it is remembered from last time.
 const GATE_DEFAULT = 0.03;
-const GATE_HANG_MS = 800; // keep sending this long after the voice drops, so word endings are not cut
+const ECHO_FACTOR = 2.5;   // while the assistant is speaking the gate is this many times higher: only clearly louder speech cuts in
 function loadGate() {
   const q = parseFloat(new URLSearchParams(location.search).get("gate"));
   if (q > 0) return q;
@@ -21,18 +22,20 @@ function loadGate() {
   return GATE_DEFAULT;
 }
 let gate = loadGate();
+const micGate = new MicGate({ onsetMs: 250, hangMs: 500, rate: IN_RATE });
 
 // How long the assistant waits after you stop talking before it answers (applies the next time you tap Start).
-const WAIT_DEFAULT_MS = 1200;
+// Counted from the end of your voice. Below about 700 ms a natural pause splits your sentence into pieces that cancel
+// each other's answers, so that is the minimum (the server enforces it too). Stored under a new key so an old 300 ms is dropped.
+const WAIT_MIN_MS = 700;
+const WAIT_DEFAULT_MS = 900;
 function loadWait() {
   const q = parseInt(new URLSearchParams(location.search).get("silence"), 10);
-  if (q > 0) return q;
-  try { const v = parseInt(localStorage.getItem("eyesWait"), 10); if (v > 0) return v; } catch (_) {}
+  if (q > 0) return Math.max(WAIT_MIN_MS, q);
+  try { const v = parseInt(localStorage.getItem("eyesWait2"), 10); if (v >= WAIT_MIN_MS) return v; } catch (_) {}
   return WAIT_DEFAULT_MS;
 }
 let waitMs = loadWait();
-let gateOpenUntil = 0;
-let prevChunk = null;
 
 let socket, stream, ctx, processor, frameTimer, wakeLock, debugTimer;
 let running = false;
@@ -45,7 +48,7 @@ const dbg = {
   micLevel: 0, micPeak: 0, sentKB: 0, sentFrames: 0, recvKB: 0, recvChunks: 0,
   lastHeard: "", lastReply: "", lastEvent: "", lastModelAudioAt: 0, lastSpeechAt: 0,
   error: "", startedAt: 0, log: [],
-  watch: "-", lastAlert: "-", alertMode: "normal", alerts: 0, conn: "-",
+  watch: "-", lastAlert: "-", alertMode: "normal", alerts: 0, conn: "-", fps: 1, attention: "normal", frameStamps: [], voiceOpen: false, effGate: 0,
 };
 const hideDebug = new URLSearchParams(location.search).get("debug") === "0";
 if (hideDebug) debugEl.style.display = "none";
@@ -74,14 +77,15 @@ function renderDebug() {
   const now = Date.now();
   const wsState = socket ? ["connecting", "open", "closing", "closed"][socket.readyState] : "-";
   const sinceAudio = dbg.lastModelAudioAt ? ((now - dbg.lastModelAudioAt) / 1000).toFixed(1) + "s ago" : "never";
-  const talkingNow = dbg.micLevel > gate;
+  const talkingNow = !!dbg.voiceOpen;
   const up = dbg.startedAt ? Math.round((now - dbg.startedAt) / 1000) + "s" : "-";
   const rows = [
     ["state", cls(dbg.state === "error" ? false : dbg.state === "idle" ? null : true, dbg.state) + "  up " + up],
     ["camera", cls(dbg.camera === "ok" ? true : dbg.camera === "-" ? null : false, dbg.camera) + `  sent ${dbg.sentFrames} frames`],
+    ["camera rate", `${dbg.fps} fps set (measured ${(dbg.frameStamps.length / 3).toFixed(1)}), attention: ` + cls(dbg.attention === "normal" ? null : dbg.attention === "high" ? false : true, dbg.attention)],
     ["mic", cls(dbg.mic === "ok" ? true : dbg.mic === "-" ? null : false, dbg.mic) + `  sent ${dbg.sentKB.toFixed(0)} KB` +
       `<div id="meter"><div style="width:${Math.min(100, dbg.micLevel * 600)}%"></div></div>` +
-      `level ${dbg.micLevel.toFixed(3)} peak ${dbg.micPeak.toFixed(3)} gate ${gate.toFixed(3)} ${talkingNow ? cls(true, "(sending your voice)") : cls(null, "(below gate: sending silence)")}`],
+      `level ${dbg.micLevel.toFixed(3)} peak ${dbg.micPeak.toFixed(3)} gate ${(dbg.effGate || gate).toFixed(3)}${dbg.effGate > gate ? " (raised: assistant speaking)" : ""} ${talkingNow ? cls(true, "(voice open: sending speech)") : dbg.micLevel > (dbg.effGate || gate) ? cls(null, "(sound above gate, waiting to confirm)") : cls(null, "(below gate: sending silence)")}`],
     ["audio ctx", cls(dbg.audioCtx === "running" ? true : dbg.audioCtx === "-" ? null : false, dbg.audioCtx)],
     ["session id", esc(dbg.conn) + "  (filter the server trace with /panel?conn=" + esc(dbg.conn) + ")"],
     ["websocket", cls(wsState === "open" ? true : wsState === "-" ? null : wsState === "connecting" ? null : false, wsState) + (dbg.ws !== "-" ? "  " + esc(dbg.ws) : "")],
@@ -102,11 +106,11 @@ function updateLiveState() {
   // Derive what is happening from the audio flow, so the badge matches reality.
   if (!running) return;
   const now = Date.now();
-  if (dbg.micLevel > gate) dbg.lastSpeechAt = now;
+  if (dbg.voiceOpen) dbg.lastSpeechAt = now;
   const speaking = playing.size > 0 || (dbg.lastModelAudioAt && now - dbg.lastModelAudioAt < 700);
   let next = "listening";
   if (speaking) next = "speaking";
-  else if (dbg.micLevel > gate) next = "hearing";
+  else if (dbg.voiceOpen) next = "hearing";
   else if (dbg.lastSpeechAt && now - dbg.lastSpeechAt < 6000 && dbg.lastSpeechAt > dbg.lastModelAudioAt) next = "thinking";
   if (next !== dbg.state) setState(next, { listening: "Listening. Ask me anything.", hearing: "Hearing you...", thinking: "Thinking...", speaking: "Speaking..." }[next]);
 }
@@ -181,7 +185,22 @@ function downsampleToInt16(float32, fromRate) {
   return out;
 }
 
+function effectiveGate(now) {
+  const assistantSpeaking = playing.size > 0 || (dbg.lastModelAudioAt && now - dbg.lastModelAudioAt < 600);
+  return assistantSpeaking ? gate * ECHO_FACTOR : gate;
+}
+
+// Every audio message is 1 flag byte (1 = voice, 0 = quiet) followed by PCM16 mono 16 kHz.
+function sendAudio(pcm, flag) {
+  const out = new Uint8Array(1 + pcm.byteLength);
+  out[0] = flag;
+  out.set(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength), 1);
+  socket.send(out.buffer);
+  if (flag === 1 || pcm.some((v) => v !== 0)) dbg.sentKB += pcm.byteLength / 1024;
+}
+
 function startMic() {
+  micGate.reset();
   const source = ctx.createMediaStreamSource(stream);
   processor = ctx.createScriptProcessor(4096, 1, 1);
   processor.onaudioprocess = (e) => {
@@ -193,16 +212,9 @@ function startMic() {
     if (!socket || socket.readyState !== 1) return;
     const pcm = downsampleToInt16(input, ctx.sampleRate);
     const now = Date.now();
-    const wasOpen = now < gateOpenUntil;
-    if (dbg.micLevel > gate) gateOpenUntil = now + GATE_HANG_MS;
-    if (now < gateOpenUntil) {
-      if (!wasOpen && prevChunk) socket.send(prevChunk.buffer); // include the chunk just before the voice started
-      socket.send(pcm.buffer);
-      dbg.sentKB += pcm.byteLength / 1024;
-    } else {
-      socket.send(new Int16Array(pcm.length).buffer); // silence keeps the timing steady and lets the server detect the end of your sentence
-    }
-    prevChunk = pcm;
+    dbg.effGate = effectiveGate(now);
+    for (const [chunk, flag] of micGate.process(pcm, dbg.micLevel, now, dbg.effGate)) sendAudio(chunk, flag);
+    dbg.voiceOpen = micGate.open;
   };
   const mute = ctx.createGain(); mute.gain.value = 0; // keeps the processor running without echoing the mic
   source.connect(processor); processor.connect(mute); mute.connect(ctx.destination);
@@ -212,6 +224,14 @@ function startMic() {
 }
 
 // ---- camera ---------------------------------------------------------------
+// How often camera images are sent. The server raises it when the AI watcher wants a closer look and lowers it again.
+function setFrameRate(fps) {
+  fps = Math.min(5, Math.max(0.5, +fps || 1));
+  dbg.fps = fps;
+  clearInterval(frameTimer);
+  frameTimer = setInterval(sendFrame, 1000 / fps);
+}
+
 function sendFrame() {
   if (!cam.videoWidth || !socket || socket.readyState !== 1) return;
   canvas.width = 640;
@@ -220,6 +240,9 @@ function sendFrame() {
   const data = canvas.toDataURL("image/jpeg", 0.6).split(",")[1];
   socket.send(JSON.stringify({ type: "frame", data }));
   dbg.sentFrames++;
+  const t = Date.now();
+  dbg.frameStamps.push(t);
+  while (dbg.frameStamps.length && t - dbg.frameStamps[0] > 3000) dbg.frameStamps.shift();   // measured rate over 3 s
 }
 
 // ---- lifecycle ------------------------------------------------------------
@@ -279,6 +302,10 @@ async function start() {
       dbg.watch = `${m.outcome}${m.key ? " [" + m.key + "]" : ""} conf ${(+m.confidence).toFixed(2)} ${m.ms} ms`;
     }
     else if (m.type === "speak_text") { try { speechSynthesis.speak(new SpeechSynthesisUtterance(m.text)); } catch (_) {} note("fallback voice: " + m.text); }
+    else if (m.type === "rate") {
+      setFrameRate(m.fps); dbg.attention = m.attention;
+      note(`camera rate ${m.fps} fps (attention ${m.attention})`);
+    }
     else if (m.type === "suppressed") note(`held back (${m.reason}): ${m.key}`);
     else if (m.type === "mode") { dbg.alertMode = m.mode; syncModeButton(); note("alert mode: " + m.mode); }
   };
@@ -293,7 +320,7 @@ async function start() {
   });
 
   startMic();
-  frameTimer = setInterval(sendFrame, 1000);
+  setFrameRate(1);
   try { wakeLock = await navigator.wakeLock?.request("screen"); note("screen wake lock on"); } catch (_) { note("screen wake lock unavailable"); }
 
   running = true;
@@ -346,9 +373,9 @@ modeBtn.addEventListener("click", () => {
 
 const waitVal = document.getElementById("waitVal");
 function setWait(v) {
-  waitMs = Math.min(4000, Math.max(300, Math.round(v / 100) * 100));
+  waitMs = Math.min(4000, Math.max(WAIT_MIN_MS, Math.round(v / 100) * 100));
   waitVal.textContent = waitMs + " ms";
-  try { localStorage.setItem("eyesWait", String(waitMs)); } catch (_) {}
+  try { localStorage.setItem("eyesWait2", String(waitMs)); } catch (_) {}
   note("wait set to " + waitMs + " ms" + (running ? " (applies next start)" : ""));
 }
 document.getElementById("waitDown").addEventListener("click", () => setWait(waitMs - 200));
