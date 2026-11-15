@@ -8,6 +8,7 @@
   <link rel="icon" href="/favicon.ico" sizes="48x48 32x32 16x16">
   <link rel="icon" type="image/png" href="/static/icon-192.png" sizes="192x192">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.json">
   <style>
     * { box-sizing: border-box; }
     html, body { height: 100%; margin: 0; background: #000; color: #fff; font-family: system-ui, sans-serif; }
@@ -57,7 +58,7 @@
   </style>
 </head>
 <body>
-  <div id="top" aria-live="off"><img id="logo" src="/static/logo.png" width="30" height="30" alt="VoxEye"><span id="badge">idle</span><span id="status">Tap the button to start</span></div>
+  <div id="top" aria-live="off"><img id="logo" src="/static/logo.png" width="30" height="30" alt="VoxEye"><span id="badge">idle</span><span id="status">Tap the button to start</span><a href="/landing" style="color:#8b949e;font:12px ui-monospace,monospace;text-decoration:none;padding:.2rem .45rem;border:1px solid #30363d;border-radius:5px">landing</a></div>
   <div id="stage">
     <canvas id="depthView" aria-hidden="true"></canvas>
     <button id="go" aria-pressed="false" aria-label="Tap to start the assistant. When running, hold to talk and release to send; tap to stop.">Tap to start</button>
