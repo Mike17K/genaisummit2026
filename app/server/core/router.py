@@ -13,6 +13,7 @@
 """
 import base64
 from dataclasses import dataclass
+import os
 import re
 import time
 from typing import Literal
@@ -675,6 +676,30 @@ async def handle_gps(state: State, msg: dict) -> None:
 PTT_MAX_S = 30.0  # safety cap for one push-to-talk turn
 
 
+PTT_DEBUG_DIR = config.APP_DIR / ".debug" / "ptt"
+PTT_DEBUG_KEEP = 10
+
+
+def _save_ptt_clip(pcm: bytes) -> None:
+    """Keep the last few push-to-talk clips as WAV (local, git-ignored) to debug what the phone really sends."""
+    if os.environ.get("EYES_SAVE_PTT_CLIPS", "1") == "0" or not pcm:
+        return
+    try:
+        import wave
+
+        PTT_DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+        path = PTT_DEBUG_DIR / f"{time.strftime('%H%M%S')}_{trace.current_conn()}.wav"
+        with wave.open(str(path), "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(16000)
+            w.writeframes(pcm)
+        for old in sorted(PTT_DEBUG_DIR.glob("*.wav"))[:-PTT_DEBUG_KEEP]:
+            old.unlink(missing_ok=True)
+    except Exception as exc:
+        trace.log("ptt_clip_save_failed", error=f"{type(exc).__name__}: {exc}"[:120])
+
+
 def pcm_level(pcm: bytes) -> dict:
     """Loudness of a PCM16 turn for the trace: RMS and peak in dBFS (silence / too-quiet mic diagnosis)."""
     import numpy as np
@@ -719,6 +744,7 @@ async def ptt_end(state: State) -> None:
     held_s = round(time.time() - state.ptt_started_at, 1)
     trace.log("user_turn", state="end", mode="push_to_talk", held_s=held_s,
               audio_s=round(len(pcm_bytes) / turns.BYTES_PER_S, 1), **pcm_level(pcm_bytes))
+    _save_ptt_clip(pcm_bytes)
     if len(pcm_bytes) >= MIN_VOICE_PCM_BYTES:
         info_pipeline.cancel_for_user(state)
         state.info_task = alerts.spawn(info_pipeline.answer_user_audio(state, pcm_bytes, frame_jpeg))
