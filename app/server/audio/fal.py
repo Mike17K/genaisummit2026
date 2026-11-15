@@ -1,6 +1,13 @@
 """fal API TTS provider (ElevenLabs v3 raw PCM16 24 kHz)."""
 from urllib.parse import urlparse
 
+try:
+    import truststore
+
+    truststore.inject_into_ssl()
+except ImportError:
+    pass
+
 import fal_client
 import httpx
 
