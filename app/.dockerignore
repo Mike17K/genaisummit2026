@@ -10,3 +10,5 @@ __pycache__
 .last_lang
 tests
 debug_triggers
+*.mp4
+**/*.mp4
