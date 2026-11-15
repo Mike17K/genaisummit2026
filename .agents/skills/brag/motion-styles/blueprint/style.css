@@ -1,0 +1,102 @@
+/* Blueprint: white line work on cyanotype blue. Scoped under #stage.ms-blueprint. */
+@font-face { font-family: 'BP Hand'; src: url(assets/ArchitectsDaughter.ttf); font-display: block; }
+@font-face { font-family: 'BP Mono'; src: url(assets/ShareTechMono.ttf); font-display: block; }
+
+#stage.ms-blueprint {
+  /* tokens */
+  --paper-1: #2a58a6; --paper-2: #18336b; --paper-3: #0f2350;
+  --line: #e7f0f9; --line-2: rgba(231, 240, 249, .62); --hair: rgba(231, 240, 249, .16); --grid: rgba(231, 240, 249, .07);
+  --stamp: #ff5a47;           /* the one non-blue colour, used once: the verdict */
+  --table: #0d1116;
+  --accent: #e7f0f9;          /* fx.highlight / bars colour */
+  --hand: 'BP Hand', 'Architects Daughter', cursive;
+  --mono: 'BP Mono', 'Share Tech Mono', monospace;
+  --w-outline: 3.4px; --w-detail: 2.2px; --w-thin: 1.4px; --w-hair: 1px;
+  font-family: var(--hand); color: var(--line);
+}
+#stage.ms-blueprint, #stage.ms-blueprint .scene {
+  background:
+    linear-gradient(var(--hair) 1px, transparent 1px) 0 0 / 216px 216px,
+    linear-gradient(90deg, var(--hair) 1px, transparent 1px) 0 0 / 216px 216px,
+    linear-gradient(var(--grid) 1px, transparent 1px) 0 0 / 36px 36px,
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px) 0 0 / 36px 36px,
+    radial-gradient(120% 80% at 28% 22%, var(--paper-1), var(--paper-2) 58%, var(--paper-3) 100%);
+}
+#stage.ms-blueprint .scene { position: absolute; inset: 0; overflow: hidden; }
+#stage.ms-blueprint .bp-inner { position: absolute; inset: 0; }
+#stage.ms-blueprint .bp-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+
+/* ---- the sheet: border, centring marks, title block (static, above the scenes) */
+#stage.ms-blueprint .bp-frame { position: absolute; inset: 0; z-index: 8000; pointer-events: none; }
+#stage.ms-blueprint .bp-border { position: absolute; inset: 36px; border: 3px solid var(--line); }
+#stage.ms-blueprint .bp-border::after { content: ''; position: absolute; inset: 9px; border: 1px solid var(--line-2); }
+#stage.ms-blueprint .bp-tick { position: absolute; background: var(--line); }
+#stage.ms-blueprint .bp-tick.t { left: 540px; top: 20px; width: 2px; height: 16px; }
+#stage.ms-blueprint .bp-tick.l { left: 20px; top: 960px; width: 16px; height: 2px; }
+#stage.ms-blueprint .bp-tick.r { right: 20px; top: 960px; width: 16px; height: 2px; }
+#stage.ms-blueprint .bp-zone { position: absolute; font: 18px var(--mono); color: var(--line-2); }
+#stage.ms-blueprint .bp-tb {
+  position: absolute; left: 36px; right: 36px; bottom: 36px; height: 168px; border-top: 3px solid var(--line);
+  display: grid; grid-template-columns: 1.7fr 1fr 1fr; grid-template-rows: 1fr 1fr; background: rgba(15, 35, 80, .78);
+}
+#stage.ms-blueprint .bp-tb > div { border-left: 1.5px solid var(--line-2); border-top: 1.5px solid var(--line-2); padding: 8px 14px; display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
+#stage.ms-blueprint .bp-tb > div:nth-child(3n+1) { border-left: 0; }
+#stage.ms-blueprint .bp-tb > div:nth-child(-n+3) { border-top: 0; }
+#stage.ms-blueprint .bp-tb small { font: 15px var(--mono); letter-spacing: .12em; color: var(--line-2); }
+#stage.ms-blueprint .bp-tb .v { display: grid; align-items: center; font: 34px var(--hand); line-height: 1; white-space: nowrap; }
+#stage.ms-blueprint .bp-tb .v.mono { font: 32px var(--mono); letter-spacing: .04em; }
+#stage.ms-blueprint .bp-tb .v > * { font: inherit; }
+
+/* ---- type */
+#stage.ms-blueprint .bp-h { margin: 0; font: 400 104px/1.12 var(--hand); letter-spacing: -.01em; color: var(--line); text-shadow: 0 0 18px rgba(231, 240, 249, .25); }
+#stage.ms-blueprint .bp-h.sm { font-size: 92px; }
+#stage.ms-blueprint .bp-fig { font: 24px var(--mono); letter-spacing: .14em; color: var(--line-2); text-transform: uppercase; margin: 0; }
+#stage.ms-blueprint .bp-note { font: 400 52px/1.18 var(--hand); color: var(--line); margin: 0; }
+#stage.ms-blueprint .bp-mono { font-family: var(--mono); letter-spacing: .05em; }
+#stage.ms-blueprint .bp-pen {
+  position: absolute; left: -9px; top: -9px; width: 18px; height: 18px; border-radius: 50%; pointer-events: none; z-index: 5;
+  background: radial-gradient(circle, #fff 0 28%, rgba(231, 240, 249, .85) 42%, rgba(231, 240, 249, 0) 72%);
+  box-shadow: 0 0 22px 6px rgba(231, 240, 249, .55);
+}
+
+/* ---- line work (svg) */
+#stage.ms-blueprint .bp-svg * { vector-effect: none; }
+#stage.ms-blueprint .bp-line, #stage.ms-blueprint .bp-svg path, #stage.ms-blueprint .bp-svg line, #stage.ms-blueprint .bp-svg rect, #stage.ms-blueprint .bp-svg circle, #stage.ms-blueprint .bp-svg ellipse, #stage.ms-blueprint .bp-svg polyline {
+  fill: none; stroke: var(--line); stroke-width: var(--w-detail); stroke-linejoin: round; stroke-linecap: butt;
+}
+#stage.ms-blueprint .bp-svg .bp-heavy { stroke-width: var(--w-outline); }
+#stage.ms-blueprint .bp-svg .bp-thin, #stage.ms-blueprint .bp-svg .bp-hair-line { stroke-width: var(--w-thin); stroke: var(--line-2); }
+#stage.ms-blueprint .bp-svg .bp-hair line { stroke-width: var(--w-hair); stroke: var(--line-2); }
+#stage.ms-blueprint .bp-svg .bp-centre { stroke-width: var(--w-thin); stroke-dasharray: 46 8 8 8; stroke: var(--line-2); }
+#stage.ms-blueprint .bp-svg .bp-hidden { stroke-width: var(--w-thin); stroke-dasharray: 12 9; stroke: var(--line-2); }
+#stage.ms-blueprint .bp-svg .bp-guide { stroke-width: var(--w-thin); stroke-dasharray: 6 10; stroke: var(--line-2); }
+#stage.ms-blueprint .bp-svg .bp-dimline, #stage.ms-blueprint .bp-svg .bp-leader { stroke-width: var(--w-thin); stroke: var(--line); }
+#stage.ms-blueprint .bp-svg .bp-arrow { fill: var(--line); stroke: none; }
+#stage.ms-blueprint .bp-svg .bp-dot { fill: var(--line); stroke: none; }
+#stage.ms-blueprint .bp-svg .bp-ring { stroke-width: var(--w-detail); fill: rgba(24, 51, 107, .9); }
+#stage.ms-blueprint .bp-svg .bp-fillpaper { fill: #1d417f; stroke: var(--line); }
+#stage.ms-blueprint .bp-svg text, #stage.ms-blueprint .bp-svg .bp-dimtext { font-family: var(--mono); fill: var(--line); stroke: none; letter-spacing: .04em; }
+#stage.ms-blueprint .bp-svg text.hand { font-family: var(--hand); letter-spacing: 0; }
+#stage.ms-blueprint .bp-svg .bp-nib { fill: #fff; stroke: none; filter: drop-shadow(0 0 7px #fff) drop-shadow(0 0 16px rgba(231, 240, 249, .9)); }
+
+/* ---- rubber stamp (the single non-blue colour) */
+#stage.ms-blueprint .bp-stamp {
+  position: absolute; z-index: 20; padding: 8px 22px 6px; border: 7px double var(--stamp); border-radius: 10px; color: var(--stamp);
+  font: 700 76px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; mix-blend-mode: normal; opacity: .94;
+  -webkit-mask-image: radial-gradient(circle at 18% 30%, #000 60%, rgba(0, 0, 0, .78) 100%);
+}
+#stage.ms-blueprint .bp-stamp small { display: block; font: 22px var(--mono); letter-spacing: .3em; text-align: center; margin-top: 6px; }
+
+/* ---- cutting-plane sweep that rides a wipe transition */
+#stage.ms-blueprint .bp-section { position: absolute; left: -2px; top: 0; width: 4px; height: 100%; z-index: 7000; background: repeating-linear-gradient(180deg, var(--line) 0 70px, transparent 70px 84px, var(--line) 84px 98px, transparent 98px 112px); visibility: hidden; }
+#stage.ms-blueprint .bp-section span { display: none; }
+#stage.ms-blueprint .bp-section b { position: absolute; left: -22px; width: 48px; height: 48px; border-radius: 50%; background: var(--paper-2); border: 3px solid var(--line); font: 28px/42px var(--mono); text-align: center; font-weight: 400; }
+#stage.ms-blueprint .bp-section b:first-child { top: 70px; }
+#stage.ms-blueprint .bp-section b:last-child { bottom: 214px; }
+
+/* ---- real product UI: print it onto the sheet as a duotone "Fig." inside a thin-line frame */
+#stage.ms-blueprint .bp-shot { position: absolute; border: 2px solid var(--line); background: var(--paper-3); overflow: hidden; }
+#stage.ms-blueprint .bp-shot img, #stage.ms-blueprint .bp-shot video { display: block; width: 100%; height: 100%; object-fit: cover; filter: grayscale(1) contrast(1.15) brightness(1.1); mix-blend-mode: screen; opacity: .9; }
+
+/* ---- scan line (the fridge "knowing") */
+#stage.ms-blueprint .bp-svg .bp-scan { stroke: #fff; stroke-width: 3; filter: drop-shadow(0 0 8px #fff) drop-shadow(0 0 20px rgba(231, 240, 249, .8)); }

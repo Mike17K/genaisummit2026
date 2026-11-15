@@ -119,6 +119,10 @@ const labelSize = Math.round(((VERTICAL ? 60 : 40) * FW) / 1080);
 const safeBoxes = VERTICAL
   ? `drawbox=x=0:y=0:w=iw:h=${SAFE.top}:color=red@0.22:t=fill,drawbox=x=0:y=ih-${SAFE.bottom}:w=iw:h=${SAFE.bottom}:color=red@0.22:t=fill,drawbox=x=iw-${SAFE.right}:y=${SAFE.top}:w=${SAFE.right}:h=ih-${SAFE.top + SAFE.bottom}:color=red@0.22:t=fill,`
   : '';
+// ffmpeg builds without libfreetype (e.g. Homebrew's ffmpeg 8) have no drawtext: the sheets then go unlabelled
+const HAS_DRAWTEXT = / drawtext /.test(spawnSync('ffmpeg', ['-hide_banner', '-filters']).stdout.toString());
+if (!HAS_DRAWTEXT) console.warn('contact sheets: ffmpeg has no drawtext filter, so frames are not labelled with their time');
+const stamp = HAS_DRAWTEXT ? `drawtext=${font}:text='%{pts\\:hms}  f%{n}':x=14:y=14:fontsize=${labelSize}:fontcolor=yellow:box=1:boxcolor=black@0.65:boxborderw=6,` : '';
 for (const shot of T.shots) {
   const f0 = Math.round(shot.t0 * T.fps), f1 = Math.round(shot.t1 * T.fps) - 1;
   const picks = [];
@@ -128,7 +132,7 @@ for (const shot of T.shots) {
   const sheet = path.join(REVIEW, `${tag}-sheet.jpg`);
   const sel = uniq.map((f) => `eq(n\\,${f})`).join('+');
   let r = spawnSync('ffmpeg', ['-v', 'error', '-y', '-framerate', String(T.fps), '-start_number', '0', '-i', path.join(ROOT, 'frames', 'f%04d.png'),
-    '-vf', `${safeBoxes}drawtext=${font}:text='%{pts\\:hms}  f%{n}':x=14:y=14:fontsize=${labelSize}:fontcolor=yellow:box=1:boxcolor=black@0.65:boxborderw=6,select='${sel}',scale=${cellW}:${cellH},tile=${cols}x${rows}`,
+    '-vf', `${safeBoxes}${stamp}select='${sel}',scale=${cellW}:${cellH},tile=${cols}x${rows}`,
     '-frames:v', '1', '-q:v', '3', sheet], { stdio: 'inherit' });
   if (r.status !== 0) throw new Error('sheet failed for shot ' + shot.id);
   const refs = (REF_FOR[shot.id] || []).map(refPath).filter((p) => fs.existsSync(p));
@@ -145,7 +149,7 @@ for (const shot of T.shots) {
     const scaled = refs.map((_, i) => `[${i + 1}:v]scale=540:${probeH[i]}[r${i}]`).join(';');
     const stack = refs.length > 1 ? `${refs.map((_, i) => `[r${i}]`).join('')}vstack=inputs=${refs.length}` : '[r0]null';
     r = spawnSync('ffmpeg', ['-v', 'error', '-y', '-i', sheet, ...refs.flatMap((p) => ['-i', p]), '-filter_complex',
-      `[0:v]pad=${sheetW}:${h}:0:0:color=0x202020[s];${scaled};${stack},pad=540:${h}:0:0:color=0x202020,drawtext=${font}:text='REFERENCE':x=12:y=12:fontsize=34:fontcolor=white:box=1:boxcolor=black@0.7[refs];[s][refs]hstack=inputs=2`,
+      `[0:v]pad=${sheetW}:${h}:0:0:color=0x202020[s];${scaled};${stack},pad=540:${h}:0:0:color=0x202020${HAS_DRAWTEXT ? `,drawtext=${font}:text='REFERENCE':x=12:y=12:fontsize=34:fontcolor=white:box=1:boxcolor=black@0.7` : ''}[refs];[s][refs]hstack=inputs=2`,
       '-frames:v', '1', '-q:v', '3', out], { stdio: 'inherit' });
     if (r.status !== 0) throw new Error('side-by-side failed for shot ' + shot.id);
   }

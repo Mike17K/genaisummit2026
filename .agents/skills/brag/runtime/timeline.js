@@ -15,6 +15,13 @@
 //   BRAG.p(t, t0, d, ease)    0..1 progress of a move that starts at t0 and lasts d (clamped, eased)
 //   BRAG.ease                 { linear, inOut, out, in, back, spring }
 //   BRAG.mix(a, b, u)         lerp
+// GSAP (optional; this is how compositions get real motion, see references/motion.md): load gsap.js BEFORE this
+// file and motion.js (BRAG.fx, the effects library) right AFTER it. Then
+//   BRAG.build((tl, fx) => { ... })   runs once after fonts/images load (so SplitText measures real glyphs);
+//                                     put every tween on `tl` (a paused master timeline, seconds = video time).
+//   BRAG.tl                           that master timeline; seek(t) sets its time, so GSAP stays frame-exact.
+// Math.random is replaced by a seeded generator (TIMELINE.seed, default 1) so random staggers are the same in
+// every render worker. Tweens made with gsap.to() outside `tl` never play: the global timeline is paused.
 // Preview (open index.html in a browser): plays in real time, loops. Space = play/pause, ←/→ = ±1s,
 // ?t=12.5 freezes a frame, ?export=1 hides the preview controls (the tools set it).
 (function () {
@@ -24,7 +31,22 @@
   T.fps = T.fps || 30;
   const params = new URLSearchParams(location.search);
   const EXPORT = params.has('export');
-  const callbacks = [];
+  const callbacks = [], builders = [];
+  // seeded Math.random (mulberry32): every page load makes the same sequence
+  let seed = (T.seed ?? 1) >>> 0;
+  Math.random = () => { seed = (seed + 0x6D2B79F5) >>> 0; let x = seed; x = Math.imul(x ^ (x >>> 15), x | 1); x ^= x + Math.imul(x ^ (x >>> 7), x | 61); return ((x ^ (x >>> 14)) >>> 0) / 4294967296; };
+  const G = window.gsap;
+  if (G) {
+    const plugins = ['SplitText', 'CustomEase', 'CustomWiggle', 'CustomBounce', 'DrawSVGPlugin', 'MorphSVGPlugin', 'MotionPathPlugin'].map((k) => window[k]).filter(Boolean);
+    G.registerPlugin(...plugins);
+    G.ticker.lagSmoothing(0);
+    G.globalTimeline.pause();
+  }
+  // CSS transitions run on the wall clock, not the video's: real app CSS copied into a composition would add its own
+  // half-played transitions on top of every tween. Switch them off; replay them on the timeline with BRAG.fx.ui.
+  const noTransitions = document.createElement('style');
+  noTransitions.textContent = '*, *::before, *::after { transition: none !important; }';
+  document.head.appendChild(noTransitions);
   const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
   const ease = {
     linear: (u) => u,
@@ -36,6 +58,8 @@
   };
   window.BRAG = {
     onFrame: (fn) => callbacks.push(fn),
+    build: (fn) => builders.push(fn),
+    tl: G ? G.timeline({ paused: true, defaults: { ease: 'power3.out', duration: 0.6 } }) : null,
     p: (t, t0, d, e = ease.inOut) => e(clamp((t - t0) / d)),
     ease, clamp,
     mix: (a, b, u) => a + (b - a) * u,
@@ -61,6 +85,12 @@
       return v.readyState >= 2 ? null : new Promise((r) => { v.addEventListener('loadeddata', r, { once: true }); v.addEventListener('error', r, { once: true }); v.load(); });
     });
     await Promise.all([...imgs, ...vids]);
+    for (const fn of builders) await fn(BRAG.tl, BRAG.fx);
+    if (BRAG.tl) {
+      // render the whole timeline once in order, so every tween records its start values; then back to 0
+      if (BRAG.tl.duration() > T.duration + 0.01) console.warn(`timeline.js: GSAP timeline runs ${BRAG.tl.duration().toFixed(2)}s, past TIMELINE.duration ${T.duration}s`);
+      BRAG.tl.totalTime(T.duration); BRAG.tl.totalTime(0);
+    }
   }
   window.BRAG_READY = (document.readyState === 'complete' ? Promise.resolve() : new Promise((r) => addEventListener('load', r, { once: true }))).then(ready);
 
@@ -68,10 +98,12 @@
   let current = 0;
   async function seek(t, { wait = true } = {}) {
     current = t;
+    if (BRAG.tl) BRAG.tl.totalTime(t);
     for (const a of document.getAnimations()) { a.pause(); a.currentTime = t * 1000; }
     for (const fn of callbacks) fn(t);
     const seeks = [];
     for (const v of document.querySelectorAll('video')) {
+      if (v.readyState < 1) continue;
       const local = Math.max(0, t - Number(v.dataset.start || 0));
       const target = Math.min(local, (v.duration || Infinity) - 0.001);
       if (Math.abs(v.currentTime - target) > 0.5 / T.fps) {

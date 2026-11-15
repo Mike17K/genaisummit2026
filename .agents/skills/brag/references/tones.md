@@ -1,6 +1,6 @@
 # Tone reference
 
-Seven tones. Each changes scripting energy, pacing, typography personality, and transition style.
+Seven tones. Each changes scripting energy, pacing, typography personality, and transition style. Each tone also sets the default motion **energy** (calm / lively / punchy / hype); the table and the effect names are in [motion.md](motion.md). Use the tone's transition line to pick from the motion menu's transitions.
 
 ---
 

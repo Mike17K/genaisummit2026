@@ -1,0 +1,105 @@
+<!doctype html><html><head><meta charset="utf-8"><title>living-screencast demo</title>
+<link rel="stylesheet" href="../style.css">
+<style>
+html, body { margin: 0; background: #000; }
+#win { left: 60px; top: 260px; width: 960px; height: 1380px; }
+#h1 { position: absolute; top: 150px; left: 64px; width: 832px; }
+#inp { position: absolute; top: 560px; left: 64px; width: 832px; box-sizing: border-box; }
+#hint { position: absolute; top: 710px; left: 64px; }
+#h2 { position: absolute; top: 66px; left: 64px; width: 832px; }
+#rows { position: absolute; top: 300px; left: 64px; width: 832px; }
+#find { position: absolute; top: 1000px; left: 64px; width: 832px; }
+#num { position: absolute; top: 60px; left: 64px; }
+#cap3 { position: absolute; top: 320px; left: 64px; width: 832px; font-size: 62px; font-weight: 700; line-height: 1.1; letter-spacing: -.03em; margin: 0; }
+#cards { position: absolute; top: 640px; left: 64px; width: 832px; }
+</style></head><body>
+<div id="stage" class="ms-living-screencast">
+ <div id="cam">
+  <div class="ls-window" id="win">
+    <div class="ls-titlebar"><div class="dots"><i></i><i></i><i></i></div><div class="ls-title">Pantry</div></div>
+    <div class="ls-body">
+      <section class="scene" id="s1">
+        <h1 class="ls-h1" id="h1">Your fridge knows more than you do.</h1>
+        <div class="ls-input" id="inp"><span class="ph" id="ph">Ask your fridge…</span><span id="typed">See what's expiring</span></div>
+        <div class="ls-hint" id="hint">12 items in your fridge · updated just now</div>
+      </section>
+      <section class="scene" id="s2">
+        <h2 class="ls-h2" id="h2">See what's expiring</h2>
+        <div id="rows">
+          <div class="ls-row" id="r1"><div class="ls-thumb" style="background:linear-gradient(140deg,#f3f6fb,#9eb0cf)"></div><div class="ls-name">Greek yoghurt</div><span class="ls-badge warn" id="b1">2 days</span></div>
+          <div class="ls-row" id="r2"><div class="ls-thumb" style="background:linear-gradient(140deg,#79b45f,#2a5a2c)"></div><div class="ls-name">Spinach</div><span class="ls-badge warn" id="b2">tomorrow</span></div>
+          <div class="ls-row" id="r3"><div class="ls-thumb" style="background:linear-gradient(140deg,#f7f3e6,#c8bfa2)"></div><div class="ls-name">Feta</div><span class="ls-badge" id="b3">9 days</span></div>
+        </div>
+        <div class="ls-btn" id="find">Find recipes</div>
+      </section>
+      <section class="scene" id="s3">
+        <div class="ls-num" id="num">12</div>
+        <p id="cap3">recipes from what you already have</p>
+        <div id="cards">
+          <div class="ls-card" id="c1"><div class="ls-thumb" style="background:linear-gradient(140deg,#79b45f,#f1e6c8)"></div><div>Spinach &amp; feta pie<small>uses 3 items</small></div></div>
+          <div class="ls-card" id="c2"><div class="ls-thumb" style="background:linear-gradient(140deg,#f3f6fb,#e5b469)"></div><div>Yoghurt flatbread<small>uses 2 items</small></div></div>
+          <div class="ls-card" id="c3"><div class="ls-thumb" style="background:linear-gradient(140deg,#e0662a,#f1c27a)"></div><div>Shakshuka<small>uses 4 items</small></div></div>
+        </div>
+      </section>
+    </div>
+  </div>
+ </div>
+</div>
+<script>window.TIMELINE = { width: 1080, height: 1920, fps: 30, duration: 6 };</script>
+<script src="../../../runtime/gsap.js"></script><script src="../../../runtime/timeline.js"></script><script src="../../../runtime/motion.js"></script>
+<script src="../kit.js"></script>
+<script>
+BRAG.build((tl, fx) => {
+  const S = BRAG.styles['living-screencast'];
+  // measure the live DOM first: the mascot stands on these edges
+  const inp = S.rectOf('#inp'), r1 = S.rectOf('#r1'), r2 = S.rectOf('#r2'), r3 = S.rectOf('#r3'), btn = S.rectOf('#find'), c1 = S.rectOf('#c1');
+
+  fx.scenes([
+    { el: '#s1', start: 0, end: 2.0, out: 'whip-left', outDur: 0.4 },
+    { el: '#s2', start: 2.0, end: 4.15, out: 'whip-left', outDur: 0.4 },
+    { el: '#s3', start: 4.15, end: 6 },
+  ]);
+
+
+  // ---- 01 Ask: heading rises, mascot reads it from the input box, the user types a question
+  S.chapter(0.05, '01', 'Ask');
+  fx.highlight('#h1', 0.5, { words: [4, 5, 6], color: 'rgba(47,125,79,.22)' });
+  S.mascot(inp.x + 120, inp.y);
+  S.eyes(0.55, 'u'); S.eyes(1.0, 'r');
+  S.walk(1.0, inp.x + 420, { dur: 0.35 });
+  S.camera(0.5, { zoom: 1.22, focus: { x: 540, y: 820 }, dur: 0.6 });
+  const cEnd = S.cursor(0.55, [{ x: 960, y: 560 }, { x: inp.x + 260, y: inp.y + 60, dur: 0.55, click: true }]);
+  tl.to('#inp', { borderColor: '#2f7d4f', boxShadow: '0 0 0 6px rgba(47,125,79,.15)', duration: 0.15 }, cEnd);
+  tl.set('#ph', { autoAlpha: 0 }, cEnd + 0.05);
+  fx.type('#typed', cEnd + 0.05, { cps: 30 });
+  S.keys(1.78, ['Enter'], { hold: 0.35 });
+  S.camera(1.75, { zoom: 1, dur: 0.35 });
+
+  // ---- 02 Expiring: rows spawn, the mascot hops row to row reading the badges, then stomps Find recipes
+  S.chapter(2.15, '02', 'Expiring');
+  fx.text('#h2', 'rise', 2.2);
+  tl.from('#rows .ls-row', { y: 60, autoAlpha: 0, duration: 0.45, ease: 'back.out(1.5)', stagger: 0.09, immediateRender: true }, 2.35);
+  S.hop(2.25, r1.x + 160, r1.y, { h: 150 }); S.eyes(2.7, 'r');
+  S.hop(2.7, r2.x + 560, r2.y, { h: 100 }); S.eyes(2.7, 'r');
+  S.hop(3.05, r3.x + 560, r3.y, { h: 90 }); S.eyes(3.0, 'd');
+  S.camera(2.3, { zoom: 1.2, focus: { x: 540, y: 880 }, dur: 0.7 });
+  S.hop(3.3, btn.x + btn.w / 2, btn.y, { h: 130, up: 0.2, down: 0.18 });
+  S.camera(3.1, { zoom: 1.15, focus: { x: 540, y: 1100 }, dur: 0.55 });
+  const cl = S.cursor(3.15, [{ x: 960, y: 1500 }, { x: btn.x + btn.w - 120, y: btn.y + 70, dur: 0.6, click: true }], { out: true });
+  S.stomp(cl - 0.05);
+  tl.to('#find', { scale: 0.95, duration: 0.08, yoyo: true, repeat: 1 }, cl - 0.05);
+  tl.to('#b1, #b2', { backgroundColor: '#dff0e5', color: '#2f7d4f', duration: 0.2, stagger: 0.08 }, cl);
+  tl.set('#b1', { textContent: 'in a recipe' }, cl); tl.set('#b2', { textContent: 'in a recipe' }, cl + 0.08);
+  S.camera(3.9, { zoom: 1, dur: 0.3 });
+
+  // ---- 03 Cook: the answer; the mascot cheers on the first card
+  S.chapter(4.25, '03', 'Cook');
+  fx.count('#num', 12, 4.25, { from: 0, dur: 0.8 });
+  fx.text('#cap3', 'rise', 4.45, { by: 'words', stagger: 0.05 });
+  tl.from('#cards .ls-card', { y: 60, autoAlpha: 0, duration: 0.45, ease: 'back.out(1.5)', stagger: 0.1, immediateRender: true }, 4.65);
+  S.hop(4.25, c1.x + 140, c1.y, { h: 170 });
+  S.eyes(4.85, 'h'); S.arms(4.85, true); S.heart(4.9);
+  S.caption(5.15, 'Pantry. Cook what you have.', { hold: 99 });
+  S.camera(4.5, { zoom: 1.08, focus: { x: 540, y: 1000 }, dur: 1.5, ease: 'sine.inOut' });
+});
+</script></body></html>

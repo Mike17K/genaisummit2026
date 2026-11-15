@@ -20,7 +20,7 @@ When asked to plan, storyboard, or build a demo/launch/walkthrough video for **V
      - `SendUserFile` -> Link the rendered files (`brag.mp4`, `brag.jpg`, `storyboard/panels/v1/pNN.jpg`) in markdown.
 
 2. **VoxEye Architecture & SOTA Demo Blueprint:** [`context/video-demo-blueprint.md`](../../context/video-demo-blueprint.md)
-   - Always use **`product-native` mode** (`runtime/timeline.js` + `tools/export-dom.mjs`) rather than hand-drawn 2D canvas styles (`cut-paper`, `riso`), so judges see VoxEye's real working UI and live telemetry.
+   - Always use **`product-native` mode** (`runtime/gsap.js` + `runtime/timeline.js` + `runtime/motion.js` + `tools/ui-motion.mjs` + `tools/export-dom.mjs`) or a product-framing motion style (`dark-keynote`, `living-screencast`, `glass-product`, `blueprint`) rather than hand-drawn 2D canvas styles (`cut-paper`, `riso`), so judges see VoxEye's real working UI (`fx.ui` / `fx.uiAnim`) and live telemetry.
    - Build the **3-Zone Split-Screen `1920x1080` (`30fps`, ~45–60s) Stage**:
      - **Left Zone:** Physical POV / Camera `<video data-start="...">` + `Depth-Anything-V2` plasma heatmap + center-probe distance (`2.1m -> 0.82m`) + compass bearing (`203° SW -> +30° turn`).
      - **Center Zone:** Real `app/static/index.html` DOM (`#top` header + `#badge` + giant `#go` button transitioning `#0b5fff` hearing -> `#1a7f37` listening -> `#8250df` speaking -> `#d92d20` emergency stop -> `#0e7490` depth sonar + `#membox` + `#meter`).

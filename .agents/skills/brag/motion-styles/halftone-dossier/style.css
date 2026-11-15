@@ -1,0 +1,47 @@
+/* Halftone Dossier: retro print case file. Cream paper, overprinted halftone dots, rubber stamps, typewriter labels. */
+@font-face { font-family: 'HDAlfa'; src: url(assets/alfaslab.ttf); }
+@font-face { font-family: 'HDElite'; src: url(assets/specialelite.ttf); }
+#stage.ms-halftone-dossier {
+  --paper: #EFE4CB; --paper2: #E4D6B6; --ink: #1E2A44; --red: #D8452B; --teal: #2A9D8F; --yellow: #F2B632; --pink: #E88AA5;
+  --display: 'HDAlfa', 'Rockwell', serif; --type: 'HDElite', 'Courier New', monospace;
+  font-family: var(--type); color: var(--ink); background: var(--paper);
+}
+.ms-halftone-dossier .scene { position: absolute; inset: 0; overflow: hidden; background: var(--paper); }
+.ms-halftone-dossier .inner { position: absolute; inset: 0; }
+/* paper: mottling + grain from an inline SVG, vignette and a centre fold; sits on top, multiplied */
+.ms-halftone-dossier .paper { position: absolute; inset: 0; z-index: 50; pointer-events: none; mix-blend-mode: multiply;
+  background:
+    linear-gradient(90deg, transparent 49.7%, rgba(120,90,40,.16) 50%, transparent 50.4%),
+    radial-gradient(120% 90% at 50% 45%, transparent 55%, rgba(110,80,30,.32) 100%),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' seed='4'/><feColorMatrix values='0 0 0 0 .45  0 0 0 0 .32  0 0 0 0 .15  0 0 0 .22 0'/></filter><rect width='300' height='300' filter='url(%23n)'/></svg>"),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='900' height='900'><filter id='m'><feTurbulence type='fractalNoise' baseFrequency='.004' numOctaves='3' seed='9'/><feColorMatrix values='0 0 0 0 .55  0 0 0 0 .4  0 0 0 0 .2  0 0 0 .3 -.08'/></filter><rect width='900' height='900' filter='url(%23m)'/></svg>");
+}
+/* halftone: a dot tile + a density field, thresholded by contrast(). --f 0..255 is the field value (low = big dots, high = none).
+   Structure: .ht > .pat (the dots) + .tint (the ink colour); .ht multiplies onto the paper. */
+.ms-halftone-dossier .ht { position: absolute; inset: 0; isolation: isolate; mix-blend-mode: multiply; overflow: hidden; --f: 0; --ink-c: var(--ink); --dot: 26px; --ang: 15deg; opacity: .8; pointer-events: none; }
+.ms-halftone-dossier .ht .pat { position: absolute; inset: -30%; transform: rotate(var(--ang)); filter: contrast(40);
+  background-image: var(--field), radial-gradient(circle at 50% 50%, #000 0, #fff 100%); background-size: 100% 100%, var(--dot) var(--dot); background-blend-mode: screen; }
+.ms-halftone-dossier .ht .tint { position: absolute; inset: 0; background: var(--ink-c); mix-blend-mode: lighten; }
+.ms-halftone-dossier .ht.edge { --field: radial-gradient(ellipse at 50% 48%, rgb(255,255,255) 27%, rgb(var(--f),var(--f),var(--f)) 50%); }
+.ms-halftone-dossier .ht.linear { --field: linear-gradient(180deg, rgb(255,255,255) 0%, rgb(var(--f),var(--f),var(--f)) 100%); }
+.ms-halftone-dossier .ht.glow { --field: radial-gradient(circle at 50% 50%, rgb(var(--f),var(--f),var(--f)) 10%, rgb(255,255,255) 64%); }
+/* type */
+.ms-halftone-dossier .hl { position: absolute; margin: 0; font-family: var(--display); font-weight: 400; line-height: 1.02; letter-spacing: 0.005em; color: var(--ink); text-transform: uppercase;
+  text-shadow: 7px 7px 0 var(--red); }
+.ms-halftone-dossier .lab { position: absolute; font-family: var(--type); font-size: 34px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink); }
+.ms-halftone-dossier .chip { position: absolute; background: var(--ink); color: var(--paper); font-family: var(--type); font-size: 30px; padding: 8px 22px 6px; letter-spacing: .08em; text-transform: uppercase; }
+.ms-halftone-dossier .chip.y { background: var(--yellow); color: var(--ink); border: 4px solid var(--ink); }
+/* stamps: double rounded border, rough edge via filter, tilted */
+.ms-halftone-dossier .stamp { position: absolute; font-family: var(--display); text-transform: uppercase; color: var(--red); border: 10px solid var(--red); outline: 4px solid var(--red); outline-offset: 8px; border-radius: 22px; padding: 12px 36px 6px; letter-spacing: .05em; opacity: .94; mix-blend-mode: multiply; filter: url(#rough); white-space: nowrap; }
+.ms-halftone-dossier .stamp.navy { color: var(--ink); border-color: var(--ink); outline-color: var(--ink); }
+/* exhibits: paper strips and cards with ink outline and a hard print shadow */
+.ms-halftone-dossier .exh { position: absolute; background: #F8F1DE; border: 7px solid var(--ink); border-radius: 10px; box-shadow: 12px 12px 0 rgba(30,42,68,.85); }
+.ms-halftone-dossier .exh .tag { position: absolute; left: -7px; top: -48px; background: var(--ink); color: var(--paper); font-size: 28px; padding: 6px 18px 4px; letter-spacing: .1em; text-transform: uppercase; }
+.ms-halftone-dossier .strip { left: 80px; width: 920px; height: 150px; display: flex; align-items: center; justify-content: space-between; padding: 0 40px; font-size: 54px; text-transform: uppercase; }
+.ms-halftone-dossier .strip b { font-family: var(--display); font-weight: 400; font-size: 52px; color: var(--ink); background: var(--yellow); padding: 6px 18px 0; border: 5px solid var(--ink); }
+.ms-halftone-dossier .strip b.hot { background: var(--red); color: var(--paper); }
+.ms-halftone-dossier .pin { position: absolute; width: 38px; height: 38px; margin: -19px 0 0 -19px; border-radius: 50%; background: var(--red); border: 6px solid var(--ink); z-index: 5; }
+.ms-halftone-dossier svg.string { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 4; pointer-events: none; overflow: visible; }
+.ms-halftone-dossier svg.string path { fill: none; stroke: var(--red); stroke-width: 9; stroke-linecap: round; }
+/* caption bar: dark ink bar, typewriter text, one keyword on a yellow highlight */
+.ms-halftone-dossier .capbar { position: absolute; left: 60px; right: 60px; background: var(--ink); color: var(--paper); font-family: var(--type); font-size: 52px; line-height: 1.2; padding: 26px 36px 22px; border-radius: 8px; box-shadow: 10px 10px 0 var(--red); }

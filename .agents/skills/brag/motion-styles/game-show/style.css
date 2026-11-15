@@ -1,0 +1,45 @@
+/* Game Show Flat: rhythm-game variety show. Flat vector, thick ink outline, hard offset shadows, candy sets, everything on the beat. */
+@font-face { font-family: 'GSLilita'; src: url(assets/lilita.ttf); }
+@font-face { font-family: 'GSFredoka'; src: url(assets/fredoka.ttf); font-weight: 300 700; font-stretch: 75% 125%; }
+#stage.ms-game-show {
+  --ink: #1B1030; --cream: #FFF4D6; --white: #FFFFFF;
+  --yellow: #FFD23F; --orange: #FF8A3D; --red: #FF4D6D; --pink: #FF8FC7; --green: #3DDC84; --sky: #4CC9F0; --blue: #3A6BFF; --purple: #8B5CF6;
+  --line: 8px; --shadow: 12px;
+  --display: 'GSLilita', 'Arial Rounded MT Bold', sans-serif; --body: 'GSFredoka', 'Arial Rounded MT Bold', sans-serif;
+  font-family: var(--body); font-weight: 600; color: var(--ink); background: var(--yellow);
+}
+.ms-game-show .scene { position: absolute; inset: 0; overflow: hidden; }
+.ms-game-show .inner { position: absolute; inset: 0; }
+/* sets: one hue each, pattern one step lighter. .pat is oversized so it can scroll / spin forever */
+.ms-game-show .set { position: absolute; inset: 0; overflow: hidden; }
+.ms-game-show .pat { position: absolute; left: -50%; top: -50%; width: 200%; height: 200%; }
+.ms-game-show .set.pink   { background: #FF8FC7; } .ms-game-show .set.pink .pat   { background: repeating-linear-gradient(45deg, #FFB3DA 0 70px, transparent 70px 140px); }
+.ms-game-show .set.orange { background: #FF8A3D; } .ms-game-show .set.orange .pat { background: repeating-conic-gradient(from 0deg at 50% 50%, #FFA566 0 7.5deg, transparent 7.5deg 15deg); }
+.ms-game-show .set.blue   { background: #3A6BFF; } .ms-game-show .set.blue .pat   { background: repeating-conic-gradient(from 0deg at 50% 50%, #5C86FF 0 7.5deg, transparent 7.5deg 15deg); }
+.ms-game-show .set.yellow { background: #FFD23F; } .ms-game-show .set.yellow .pat { background-image: radial-gradient(circle, #FFE385 0 14px, transparent 15px); background-size: 90px 90px; }
+.ms-game-show .floor { position: absolute; left: 0; right: 0; bottom: 0; height: 300px; background: rgba(27,16,48,.22); border-top: var(--line) solid var(--ink); }
+/* ink-outlined type (telops) */
+.ms-game-show .tele { position: absolute; margin: 0; font-family: var(--display); font-weight: 400; line-height: 0.98; letter-spacing: 0.01em; color: var(--white); text-transform: uppercase;
+  -webkit-text-stroke: 16px var(--ink); paint-order: stroke fill; text-shadow: 0 12px 0 var(--ink); text-align: center; }
+.ms-game-show .tele .y { color: var(--yellow); }
+.ms-game-show .tele.ink { color: var(--ink); -webkit-text-stroke: 0; text-shadow: none; }
+/* flat card with outline and hard offset shadow */
+.ms-game-show .card { position: absolute; background: var(--cream); border: var(--line) solid var(--ink); border-radius: 36px; box-shadow: var(--shadow) var(--shadow) 0 var(--ink); }
+.ms-game-show .pill { position: absolute; display: flex; align-items: center; gap: 18px; background: var(--white); border: var(--line) solid var(--ink); border-radius: 99px; box-shadow: 8px 8px 0 var(--ink); font-family: var(--display); font-size: 48px; padding: 8px 34px 4px; text-transform: uppercase; }
+.ms-game-show .pill b { font-weight: 400; background: var(--ink); color: var(--yellow); border-radius: 99px; padding: 4px 22px 0; }
+.ms-game-show .sticker { position: absolute; background: var(--red); color: #fff; font-family: var(--display); text-transform: uppercase; font-size: 54px; padding: 14px 40px 8px; border: var(--line) solid var(--ink); border-radius: 18px; box-shadow: 8px 8px 0 var(--ink); }
+.ms-game-show .sticker.g { background: var(--green); color: var(--ink); }
+.ms-game-show .sticker.b { background: var(--sky); color: var(--ink); }
+.ms-game-show .row { position: absolute; left: 70px; width: 940px; height: 190px; display: flex; align-items: center; justify-content: space-between; padding: 0 40px; font-size: 62px; font-weight: 700; letter-spacing: -0.01em; }
+.ms-game-show .row .tag { font-family: var(--display); font-weight: 400; font-size: 56px; text-transform: uppercase; background: var(--green); border: var(--line) solid var(--ink); border-radius: 99px; padding: 10px 30px 4px; }
+.ms-game-show .row .tag.hot { background: var(--red); color: #fff; }
+.ms-game-show .row .tag.mid { background: var(--yellow); }
+.ms-game-show .row .ico { width: 96px; height: 96px; border-radius: 50%; border: var(--line) solid var(--ink); margin-right: 26px; flex: none; }
+.ms-game-show .row .nm { flex: 1; display: flex; align-items: center; }
+/* burst: judgement word on a starburst */
+.ms-game-show .burst { position: absolute; width: 640px; height: 640px; display: flex; align-items: center; justify-content: center; }
+.ms-game-show .burst svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.ms-game-show .burst .tele { position: relative; font-size: 120px; -webkit-text-stroke: 14px var(--ink); }
+.ms-game-show .mascot { position: absolute; width: 520px; height: 760px; }
+.ms-game-show .mascot svg { width: 100%; height: 100%; overflow: visible; }
+.ms-game-show .conf { position: absolute; width: 36px; height: 36px; border: 5px solid var(--ink); border-radius: 8px; }

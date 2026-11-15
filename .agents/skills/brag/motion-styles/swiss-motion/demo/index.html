@@ -1,0 +1,103 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Swiss Motion demo</title>
+<link rel="stylesheet" href="../style.css">
+<style>
+#hook .hl { top: 800px; line-height: 1.0; width: 940px; font-size: 176px; }
+#hook .sq { left: 872px; top: 1440px; width: 136px; height: 136px; }
+#list .hl { top: 300px; width: 940px; font-size: 138px; }
+#list .row { height: 250px; }
+#list .row .name { top: 50px; font-size: 76px; }
+#list .row .when { top: 58px; font-size: 44px; }
+#list .row .bar, #list .row .track { height: 44px; bottom: 44px; }
+#stat .num { top: 330px; font-size: 760px; }
+#stat .cap { left: 72px; top: 1190px; width: 760px; font-size: 92px; }
+#cta .hl { top: 400px; line-height: 1.12; font-size: 250px; letter-spacing: -0.06em; }
+#cta .redblock { left: 0; right: 0; top: 1000px; bottom: 0; }
+#cta .cap { left: 72px; top: 1060px; width: 780px; font-size: 128px; font-weight: 800; letter-spacing: -0.045em; line-height: 0.96; color: var(--ink); }
+</style></head><body>
+<div id="stage" class="ms-swiss-motion">
+  <section class="scene" id="hook"><div class="sw-grid"></div><div class="inner">
+    <div class="note" style="left:72px;top:72px"><b>Pantry</b><br>Kitchen app</div>
+    <div class="note" style="left:552px;top:72px">Nº 01<br>Fridge</div>
+    <div class="rule" style="left:72px;top:216px;width:936px"></div>
+    <h1 class="hl">Your fridge knows more than you do.</h1>
+    <div class="rule thin" style="left:72px;top:1598px;width:800px"></div>
+    <div class="block signal sq"></div>
+    <div class="note" style="left:72px;top:1760px"><b>01</b> / 04</div>
+  </div></section>
+  <section class="scene" id="list"><div class="sw-grid"></div><div class="inner">
+    <div class="note" style="left:72px;top:72px"><b>02</b><br>Expiring</div>
+    <div class="note" style="left:552px;top:72px">Days left<br>Scale 0 – 12</div>
+    <h2 class="hl">See what’s expiring</h2>
+    <div class="rule thin" style="left:72px;top:800px;width:936px"></div>
+    <div class="row" style="top:800px"><div class="name">Greek yoghurt</div><div class="when">2 days</div><div class="track"></div><div class="bar" style="width:156px"></div></div>
+    <div class="rule thin" style="left:72px;top:1050px;width:936px"></div>
+    <div class="row" style="top:1050px"><div class="name">Spinach</div><div class="when">tomorrow</div><div class="track"></div><div class="bar signal" style="width:78px"></div></div>
+    <div class="rule thin" style="left:72px;top:1300px;width:936px"></div>
+    <div class="row" style="top:1300px"><div class="name">Feta</div><div class="when">9 days</div><div class="track"></div><div class="bar" style="width:702px"></div></div>
+    <div class="rule" style="left:72px;top:1550px;width:936px"></div>
+    <div class="note" style="left:72px;top:1760px"><b>02</b> / 04</div>
+  </div></section>
+  <section class="scene" id="stat"><div class="sw-grid"></div><div class="inner">
+    <div class="note" style="left:72px;top:72px"><b>03</b><br>Recipes</div>
+    <div class="note" style="left:552px;top:72px">From your<br>own fridge</div>
+    <div class="num" style="color:var(--signal)"><span id="n12">12</span></div>
+    <div class="rule" style="left:72px;top:1130px;width:936px"></div>
+    <p class="cap">recipes from what you already have</p>
+    <div class="note" style="left:72px;top:1760px"><b>03</b> / 04</div>
+  </div></section>
+  <section class="scene" id="cta"><div class="sw-grid"></div><div class="inner">
+    <div class="note" style="left:72px;top:72px"><b>04</b><br>Pantry</div>
+    <h1 class="hl">Pantry.</h1>
+    <div class="block signal redblock"></div>
+    <p class="cap">Cook what you have.</p>
+    <div class="note" style="left:72px;top:1760px;color:var(--ink)"><b>04</b> / 04</div>
+  </div></section>
+</div>
+<script>window.TIMELINE = { width: 1080, height: 1920, fps: 30, duration: 6 };</script>
+<script src="../../../runtime/gsap.js"></script><script src="../../../runtime/timeline.js"></script><script src="../../../runtime/motion.js"></script>
+<script src="../kit.js"></script>
+<script>
+BRAG.build((tl, fx) => {
+  const S = BRAG.styles['swiss-motion'];
+  document.querySelectorAll('.sw-grid').forEach((g) => {
+    for (let k = 0; k < 6; k++) g.insertAdjacentHTML('beforeend', `<i style="left:${72 + k * 160}px"></i>`);
+    g.insertAdjacentHTML('beforeend', '<i style="left:1008px"></i>');
+  });
+  S.scenes(fx, [
+    { el: '#hook', start: 0,   end: 1.9, out: 'wipe',    outDur: 0.4 },
+    { el: '#list', start: 1.9, end: 3.7, out: 'push-up', outDur: 0.45 },
+    { el: '#stat', start: 3.7, end: 4.9, out: 'wipe',    outDur: 0.4 },
+    { el: '#cta',  start: 4.9, end: 6.0 },
+  ]);
+  S.grid('#hook', 0.05);
+      fx.text('#hook .hl', 'rise', 0.2, { dur: 0.6, stagger: 0.09 });
+  S.bar('#hook .rule.thin', 0.9, { dur: 0.5, steps: 6 });
+  S.snap('#hook .sq', 0.3, { from: 'left', dist: 360, dur: 0.6, fade: false });
+  S.offGrid('#hook .sq', 1.1, { dx: 18, dy: -14, rot: -3, dur: 0.5 });
+  fx.drift('#hook .hl', 0.8, 2.1, { scale: 1.02 });
+
+  S.grid('#list', 1.95);
+  S.snap('#list .note', 2.0, { from: 'up', dist: 20, dur: 0.4, stagger: 0.1 });
+  fx.text('#list .hl', 'rise', 2.1, { dur: 0.55, stagger: 0.08 });
+  S.bar('#list .rule', 2.5, { dur: 0.5, steps: 8, stagger: 0.12 });
+  S.snap('#list .row .name', 2.55, { from: 'left', dist: 90, dur: 0.5, stagger: 0.12 });
+  S.snap('#list .row .when', 2.65, { from: 'right', dist: 90, dur: 0.5, stagger: 0.12 });
+  tl.from('#list .row .track', { scaleX: 0, transformOrigin: '0 50%', duration: 0.4, ease: 'steps(6)', stagger: 0.12, immediateRender: true }, 2.7);
+  S.bar('#list .row .bar', 2.95, { dur: 0.6, steps: 10, stagger: 0.12 });
+  fx.pulse('#list .row .bar.signal', 3.5, { scale: 1.08, dur: 0.3 });
+
+  S.grid('#stat', 3.75);
+  S.snap('#stat .note', 3.8, { from: 'up', dist: 20, dur: 0.4, stagger: 0.1 });
+  S.ticker('#n12', 12, 3.85, { dur: 0.6 });
+  tl.from('#stat .num', { x: -80, autoAlpha: 0, duration: 0.5, ease: 'expo.out', immediateRender: true }, 3.8);
+  S.bar('#stat .rule', 4.2, { dur: 0.4 });
+  fx.text('#stat .cap', 'lines', 4.25, { dur: 0.6 });
+  fx.drift('#stat .num', 4.4, 5.1, { scale: 1.04 });
+
+  S.snap('#cta .note', 4.95, { from: 'up', dist: 20, dur: 0.4 });
+  fx.text('#cta .hl', 'rise', 5.0, { dur: 0.5, stagger: 0.08 });
+  tl.fromTo('#cta .redblock', { clipPath: 'inset(100% 0 0 0)' }, { clipPath: 'inset(0% 0 0 0)', duration: 0.6, ease: 'steps(9)', immediateRender: true }, 5.05);
+  fx.text('#cta .cap', 'rise', 5.25, { dur: 0.5, stagger: 0.07 });
+  fx.drift('#cta .cap', 5.4, 6.0, { scale: 1.03 });
+});
+</script></body></html>

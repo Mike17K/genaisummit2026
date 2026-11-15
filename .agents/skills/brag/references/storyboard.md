@@ -39,9 +39,13 @@ Each panel is **one real frame of the video**: the composition's own code render
       "onscreen": "Dating apps were built for humans.\nObvious mistake.",
       "voiceover": "",
       "motion": "Line 1 types on; line 2 slams in on the beat.",
+      "enter": "type (line 1), slam (line 2)",
+      "during": "drift 1.05; highlight on 'mistake'",
+      "exit": "whip-left",
       "sound": "Low pad; soft impact on 'mistake'.",
       "transition": "Hard cut on the beat to the app's swipe screen.",
-      "image": "panels/v1/p01.jpg"
+      "image": "panels/v1/p01.jpg",
+      "strip": "panels/v1/p01-strip.jpg"
     }
   ]
 }
@@ -54,6 +58,8 @@ Each panel is **one real frame of the video**: the composition's own code render
 - `onscreen`: the exact words that will be visible, one line per `\n`. This is the script the user edits. Leave it empty for no text.
 - `voiceover`: the narration line for this panel, if voice is on.
 - `motion`, `sound`, `transition`: one sentence each, in plain language.
+- `enter`, `during`, `exit`: the motion-menu names ([motion.md](motion.md)) for how this panel arrives, what keeps moving while it holds, and the transition out. Required at `lively` energy and up; the review page shows them.
+- `strip` (written by `panels.mjs --strip`): 6 frames from the panel's entrance to its exit, so the user sees the movement.
 - `changed` (v2+): `true` on panels that changed since the last version. `changeNote` says how in a few words ("shorter; shows export dialog instead").
 - `changes` (v2+): a one-paragraph summary of what this version changed.
 
@@ -66,13 +72,13 @@ Each panel is **one real frame of the video**: the composition's own code render
    ```bash
    node <skill-dir>/tools/panels.mjs <composition-or-piece-dir> <output-dir>/storyboard/storyboard.json
    ```
-   This renders every panel's `t` to `panels/v<version>/pNN.jpg` and writes the image paths back into the JSON. Add `--only hook,cta` to re-render only some panels and copy the rest from the previous version.
+   This renders every panel's `t` to `panels/v<version>/pNN.jpg` and writes the image paths back into the JSON. Add `--only hook,cta` to re-render only some panels and copy the rest from the previous version. Add `--strip` once motion is written: each panel also gets `pNN-strip.jpg`.
 3. **Look at the panels yourself** before showing them. Check readability, overflow, contrast, and the type's must-haves (video-types.md), and fix anything broken. The user's attention is for creative calls, not bugs.
 4. **Open the review page.** Run the server **in the background** (Bash `run_in_background: true`). It exits on its own when the user submits, which wakes you:
    ```bash
    node <skill-dir>/tools/review-server.mjs <output-dir>/storyboard
    ```
-   Read the URL from its output (`REVIEW http://127.0.0.1:<port>/`). Open it in the built-in browser pane with `preview_start` (url) in Claude Code, or run `open <url>` in Gemini/Antigravity and Cursor. Tell the user in one or two lines: what's on the page, that they can edit the on-screen text directly, mark each panel ✓ / change / cut with notes, and press the button at the bottom. Then **stop and wait**. Don't start building.
+   Read the URL from its output (`REVIEW http://127.0.0.1:<port>/`). Open it in the built-in browser pane with `preview_start` (url); if that's unavailable, use `open <url>`. Tell the user in one or two lines: what's on the page, that they can edit the on-screen text directly, mark each panel ✓ / change / cut with notes, and press the button at the bottom. Then **stop and wait**. Don't start building.
 5. **Read the feedback** when the server exits. It prints `FEEDBACK <path>`, pointing to `feedback-v<N>.json`:
    ```json
    {

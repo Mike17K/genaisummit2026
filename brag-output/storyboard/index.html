@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Storyboard Review</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --surface: #ffffff; --surface-2: #f0eeea; --text: #1c1b19; --muted: #6b6760; --line: #e2dfd8;
+    --accent: #3b5bdb; --accent-ink: #ffffff; --keep: #2f9e44; --change: #e8590c; --cut: #c92a2a; --shadow: 0 1px 2px #0000000d, 0 4px 16px #00000010;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141413; --surface: #1d1c1a; --surface-2: #262522; --text: #ecebe7; --muted: #9c978e; --line: #33312d;
+      --accent: #7b93f5; --accent-ink: #0e0e10; --keep: #51cf66; --change: #ff922b; --cut: #ff6b6b; --shadow: 0 1px 2px #0006, 0 4px 16px #0004;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #141413; --surface: #1d1c1a; --surface-2: #262522; --text: #ecebe7; --muted: #9c978e; --line: #33312d;
+    --accent: #7b93f5; --accent-ink: #0e0e10; --keep: #51cf66; --change: #ff922b; --cut: #ff6b6b; --shadow: 0 1px 2px #0006, 0 4px 16px #0004;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 32px 24px 140px; }
+  header { display: grid; gap: 14px; margin-bottom: 28px; }
+  .eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  h1 { margin: 0; font-size: 30px; line-height: 1.15; letter-spacing: -.01em; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-size: 13px; color: var(--muted); }
+  .chip b { color: var(--text); font-weight: 600; }
+  .angle { margin: 0; max-width: 75ch; color: var(--text); }
+  .changes { background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 8px; padding: 10px 14px; max-width: 90ch; }
+  .changes b { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 2px; }
+  .help { color: var(--muted); font-size: 14px; margin: 0; max-width: 90ch; }
+  label.block { display: grid; gap: 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+  textarea, input[type=number] { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; }
+  textarea { resize: vertical; min-height: 42px; }
+  textarea:focus, input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+  textarea.script { font-size: 15px; font-weight: 500; line-height: 1.45; }
+  textarea.edited { border-color: var(--change); background: color-mix(in srgb, var(--change) 6%, var(--surface)); }
+  .grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fill, minmax(var(--min, 380px), 1fr)); }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column; transition: opacity .15s; }
+  .card[data-verdict=change] { border-color: var(--change); }
+  .card[data-verdict=cut] { opacity: .55; border-color: var(--cut); }
+  .card[data-verdict=cut] .frame img { filter: grayscale(1); }
+  .frame { position: relative; background: #000; aspect-ratio: var(--ar, 16/9); cursor: zoom-in; }
+  .frame img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .strip { display: block; width: 100%; background: #000; cursor: zoom-in; border-top: 1px solid var(--line); }
+  .frame .beat { position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; color: #ddd; background: repeating-linear-gradient(135deg, #222 0 12px, #262626 12px 24px); font-size: 14px; text-align: center; cursor: default; }
+  .badge { position: absolute; top: 10px; left: 10px; background: #000c; color: #fff; border-radius: 8px; padding: 2px 9px; font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; }
+  .time { position: absolute; bottom: 10px; left: 10px; background: #000b; color: #fff; border-radius: 6px; padding: 1px 8px; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .new { position: absolute; top: 10px; right: 10px; background: var(--accent); color: var(--accent-ink); border-radius: 6px; padding: 2px 8px; font-size: 12px; font-weight: 700; }
+  .body { padding: 14px 16px 16px; display: grid; gap: 12px; }
+  .title { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .title h2 { margin: 0; font-size: 17px; }
+  .changenote { font-size: 13px; color: var(--accent); }
+  dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; font-size: 13.5px; }
+  dt { color: var(--muted); font-weight: 600; }
+  dd { margin: 0; }
+  .verdict { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+  .verdict button { font: inherit; font-size: 14px; font-weight: 600; padding: 7px 0; border: 0; background: var(--surface); color: var(--muted); cursor: pointer; }
+  .verdict button + button { border-left: 1px solid var(--line); }
+  .verdict button[aria-pressed=true][data-v=keep] { background: var(--keep); color: #fff; }
+  .verdict button[aria-pressed=true][data-v=change] { background: var(--change); color: #fff; }
+  .verdict button[aria-pressed=true][data-v=cut] { background: var(--cut); color: #fff; }
+  .row { display: grid; grid-template-columns: 110px 1fr; gap: 12px; align-items: start; }
+  footer { position: fixed; left: 0; right: 0; bottom: 0; background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(10px); border-top: 1px solid var(--line); }
+  footer .in { max-width: 1280px; margin: 0 auto; padding: 12px 24px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .status { flex: 1; min-width: 220px; font-size: 14px; color: var(--muted); }
+  .status b { color: var(--text); }
+  .btn { font: inherit; font-weight: 600; border-radius: 10px; padding: 10px 18px; border: 1px solid var(--line); background: var(--surface); color: var(--text); cursor: pointer; }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .sent { position: fixed; inset: 0; display: none; place-items: center; background: color-mix(in srgb, var(--bg) 94%, transparent); z-index: 10; text-align: center; padding: 24px; }
+  .sent.on { display: grid; }
+  .sent h2 { font-size: 26px; margin: 0 0 8px; }
+  .lightbox { position: fixed; inset: 0; background: #000e; display: none; place-items: center; z-index: 20; cursor: zoom-out; padding: 24px; }
+  .lightbox.on { display: grid; }
+  .lightbox img { max-width: 100%; max-height: 100%; }
+  .toast { position: fixed; bottom: 84px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .toast.on { opacity: 1; }
+  @media (max-width: 640px) {
+    .wrap { padding: 20px 16px 170px; }
+    h1 { font-size: 24px; }
+    .grid { grid-template-columns: 1fr; }
+    footer .in { padding: 10px 16px; }
+    .row { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header id="head"></header>
+  <main class="grid" id="grid"></main>
+</div>
+<footer><div class="in">
+  <div class="status" id="status"></div>
+  <button class="btn" id="copy" type="button">Copy as text</button>
+  <button class="btn primary" id="send" type="button">Approve</button>
+</div></footer>
+<div class="sent" id="sent"><div><h2 id="sentTitle">Sent to Claude</h2><p id="sentText" class="help">You can close this tab and go back to the chat.</p></div></div>
+<div class="lightbox" id="lightbox"><img alt=""></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const SB = {"kind":"storyboard","version":2,"project":"VoxEye","title":"VoxEye — Real-Time 3D Depth Sonar & Voice Guide on Every Phone","type":"launch","style":"sketchbook","tone":"default","energy":"lively","format":"16:9","duration":60,"voice":false,"angle":"Hand-drawn #19 Sketchbook style (graphite, ink, highlighter yellow & terracotta hero on a 16:9 dot-grid notebook page with taped real VoxEye UI screenshots and a 15s Real Camera Live Demo window).","changes":"Switched visual style to #19 Sketchbook (hand-drawn graphite/ink on warm notebook paper, boiling on 2s, shape-morph bridges, terracotta doodleHero, and real VoxEye UI screens taped onto the page).","panels":[{"id":"the-person","title":"1 · The Person & The Problem","start":0,"end":6.8,"t":4.6,"changed":true,"changeNote":"Redrawn in #19 Sketchbook style with puzzled hero + 3 sketched gap cards + rubber stamp","onscreen":"Navigating blind shouldn't cost €5,000.\nGAP 01: White canes miss head-level hazards (>80% injuries).\nGAP 02: Cloud AI lags 3 seconds — too late to stop.\nGAP 03: Dedicated depth rigs cost €5,000+.\nWhat if the phone in your pocket could see depth in real time?","voiceover":"","motion":"Pencil draws the 3 problem cards on the dot-grid page; puzzled terracotta hero holds a cane; red stamp lands on €5,000+.","enter":"handLetter write-on + pencilTool card drawing","during":"2s boil + highlighter swipe on €5,000 & real time","exit":"shape-morph into glowing VoxEye idea bulb","sound":"Pencil scratches on 16ths + warm acoustic pad & plucks.","transition":"Card morphs on the bare sketchbook page into the glowing VoxEye lightbulb.","image":"panels/v2/p01.jpg","strip":"panels/v2/p01-strip.jpg"},{"id":"reveal","title":"2 · Meet VoxEye (Taped Real UI + Dual-System Sketch)","start":6.8,"end":13.6,"t":10.5,"changed":true,"changeNote":"Redrawn in #19 Sketchbook with glowing idea bulb, taped real UI, and System 1/2 notebook cards","onscreen":"Meet VoxEye.\nReal-time stereo depth sonar & bilingual voice guide.\nSystem 1: 3-Sector Stereo Earphone Depth Sonar (\u003c200ms)\nSystem 2: Bilingual EN / Ελληνικά Voice, Memory & Places\nTap to start · Hold 1s for full-speed 3D scan.","voiceover":"","motion":"Lightbulb scribbles yellow; hero hops with '!'; real VoxEye UI is taped to the center of the page; green checkmarks write on.","enter":"shape-morph window -> scribbleFill bulb + taped phone UI","during":"2s boil + hero hop + arrowPencil write-on","exit":"shape-morph into 3-sector stereo sonar radar","sound":"Bright chord + pencil scribble + checkmark chime.","transition":"Taped phone morphs across the page into the System 1 stereo sonar view.","image":"panels/v2/p02.jpg","strip":"panels/v2/p02-strip.jpg"},{"id":"sonar-safety","title":"3 · System 1: Stereo Earphone Depth Sonar","start":13.6,"end":21.8,"t":18.5,"changed":true,"changeNote":"Redrawn in #19 Sketchbook with 3-sector radar cone, ear sound waves, and taped #0e7490 depth UI","onscreen":"1 · Stereo Earphone Depth Sonar (System 1)\nLEFT EAR: 1.85 m (440 Hz · 3.5/s)\nCENTER (BOTH): 0.78 m! (880 Hz · 9.5/s)\nRIGHT EAR: 2.10 m (480 Hz · 2.0/s)\nSplits your view into LEFT · CENTER · RIGHT.\nCloser obstacles = faster, louder beeps in that ear — zero spoken clutter.","voiceover":"","motion":"3-sector radar cone fans up from hero; center 0.78m sector scribbles yellow; stereo sound waves pulse from left/right ears beside real #0e7490 UI.","enter":"gpencil/gline radar cone + scribbleFill center hazard","during":"2s boil + pulsing stereo ear wave arcs + camera push-in","exit":"shape-morph into System 2 voice & memory","sound":"Real stereo Geiger sonar beeps (L 520Hz, C 880Hz rapid, R 460Hz).","transition":"Shape-morph on the sketchbook page into System 2 bilingual voice & memory.","image":"panels/v2/p03.jpg","strip":"panels/v2/p03-strip.jpg"},{"id":"voice-memory","title":"4 · System 2: Bilingual Voice, Barge-In & Smart Memory","start":21.8,"end":30.5,"t":26.8,"changed":true,"changeNote":"Redrawn in #19 Sketchbook with speech bubbles, router.py box, taped #8250df UI, and \u003c150ms barge-in stamp","onscreen":"2 · Bilingual Voice, Barge-In & Smart Memory (System 2)\n\"Πού είναι η πόρτα; Ψάχνω το φαρμακείο.\"\ncore/router.py -> should_answer = True · keep_memory = True\n\"Door 4 steps ahead at 12 o'clock. Saved goal: Pharmacy.\"\nRemembers explicit goals — ignores background noise. Talk over it anytime.","voiceover":"","motion":"Speech bubble writes on, pencil arrows flow through router.py box to spoken reply; real #8250df UI & \u003c150ms BARGE-IN stamp appear.","enter":"sketchBox bubbles + arrowPencil flow + taped speaking UI","during":"2s boil + highlighter swipe on Saved goal: Pharmacy","exit":"shape-morph into sketched compass rose","sound":"Spoken bilingual reply + rubber stamp hit.","transition":"Morphs into the hand-drawn compass rose & Hackathon Partner Stack.","image":"panels/v2/p04.jpg","strip":"panels/v2/p04-strip.jpg"},{"id":"places-tech","title":"5 · Compass Tour Guide & Hackathon Partner Stack","start":30.5,"end":38.2,"t":35,"changed":true,"changeNote":"Redrawn in #19 Sketchbook with compass rose (203° SW), taped compass UI, and 4 sponsor/track cards","onscreen":"3 · Compass Tour Guide & Hackathon Stack\n203° SW -> +30° RIGHT · Pharmacy 45 steps (34m)\nGoogle Gemini + Maps API · fal.ai ElevenLabs v3 TTS\nPhone as 3D Sensor Rig (Open Track) · Bilingual Voice & Trace\nBuilt with Google Gemini Live & Flash · Google Maps API · fal.ai ElevenLabs v3 TTS","voiceover":"","motion":"Hand-drawn compass rose spins & locks +30° right; hero walks along dashed path; 4 taped sponsor & track cards write on.","enter":"loopPts compass rose + taped compass UI + 4 sponsor cards","during":"2s boil + walking hero stride + highlighter on Google Gemini & fal.ai","exit":"shape-morph into the 16:9 Live Camera Demo window","sound":"Compass alignment chime + upbeat plucks.","transition":"Opens into the large taped 16:9 Real-World Camera Live Demo window.","image":"panels/v2/p05.jpg","strip":"panels/v2/p05-strip.jpg"},{"id":"live-demo","title":"6 · Real-World Camera Live Demo Showcase","start":38.2,"end":53.5,"t":46,"changed":true,"changeNote":"Redrawn in #19 Sketchbook with a corner-taped 16:9 viewport for assets/real-demo.mp4 + sketched live trace","onscreen":"Real-World Live Demo — Walking with VoxEye\nLIVE CAMERA DEMO · 38.2s – 53.5s · Real Camera Footage Slot (assets/real-demo.mp4)\nOne user. One job, end to end. Walking with VoxEye: live camera, stereo sonar & voice.\nDrop your camera clip at composition/assets/real-demo.mp4 — framed right on the page","voiceover":"","motion":"Large 16:9 sketchbook window taped at all 4 corners holds your real camera footage (with animated sketch preview) alongside live /panel trace.","enter":"shape-morph window -> corner-taped cinema frame + live trace card","during":"Real camera video clip plays inside the sketched frame + live telemetry checkmarks","exit":"shape-morph into the closing Athens hilltop sun","sound":"Music ducks -12dB so your real camera clip audio & VoxEye voice play clearly.","transition":"Morphs from the live demo frame into the glowing sun over the sketched hill.","image":"panels/v2/p06.jpg","strip":"panels/v2/p06-strip.jpg"},{"id":"whats-next-cta","title":"7 · What's Next & Closing Pitch","start":53.5,"end":60,"t":57.2,"changed":true,"changeNote":"Redrawn in #19 Sketchbook with 3 checked roadmap cards, hilltop waving hero, and glowing VoxEye sun","onscreen":"VoxEye — Ready for Real Users on Tuesday.\nNEXT WEEK 01: Overhang (head-height) & curb/stair drop-off depth bands\nNEXT WEEK 02: 3D HRTF Audio Beacons (PannerNode + Soundscape 360°)\nNEXT WEEK 03: Offline Edge Voice (WASM Silero VAD v5 + local ONNX TTS)\nOpen-source · Zero hardware cost · Built in Athens.\nVoxEye — Eyes, Ears & 3D Spatial Safety on Every Phone","voiceover":"","motion":"3 roadmap cards get green checkmarks; hero waves from a sketched hilltop under the glowing VoxEye sun; OPEN SOURCE · $0 stamp lands.","enter":"shape-morph sun + 3 checked roadmap cards + waving hero","during":"2s boil + rotating sun rays + hero wave + highlighter on Ready for Real Users","exit":"clean hold on final poster frame","sound":"Warm finale chord + chime.","transition":"Holds cleanly on the final poster frame.","image":"panels/v2/p07.jpg","strip":"panels/v2/p07-strip.jpg"}]};
+(function () {
+  'use strict';
+  if (!SB) { document.body.innerHTML = '<p style="padding:40px">No storyboard data. Open this page through tools/review-server.mjs.</p>'; return; }
+  const $ = (s, r = document) => r.querySelector(s);
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const KIND = SB.kind || 'storyboard';
+  const KEY = `brag-review:${SB.project || ''}:${SB.title || ''}:v${SB.version || 1}:${KIND}`;
+  const fmt = (s) => (Math.round(s * 10) / 10).toFixed(1);
+  const [aw, ah] = String(SB.format || '16:9').split(':').map(Number);
+  document.documentElement.style.setProperty('--ar', `${aw}/${ah}`);
+  document.documentElement.style.setProperty('--min', aw >= ah ? '400px' : '260px');
+  document.title = `${SB.project ? SB.project + ' ' : ''}${KIND === 'look' ? 'Look' : 'Storyboard'} v${SB.version || 1}`;
+
+  // ---- state (restored from a draft if the tab was reloaded)
+  const state = { overall: '', panels: {} };
+  SB.panels.forEach((p) => { state.panels[p.id] = { verdict: 'keep', notes: '', onscreen: p.onscreen || '', voiceover: p.voiceover || '', duration: +(p.end - p.start).toFixed(2) }; });
+  try { const d = JSON.parse(localStorage.getItem(KEY) || 'null'); if (d) { state.overall = d.overall || ''; for (const id in d.panels) if (state.panels[id]) Object.assign(state.panels[id], d.panels[id]); } } catch {}
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {} };
+
+  // ---- header
+  const label = { storyboard: 'Storyboard', look: 'Look check', beats: 'Beats' }[KIND];
+  const chips = [['Type', SB.type], ['Style', SB.style], ['Tone', SB.tone], ['Format', SB.format], ['Target', SB.duration ? SB.duration + 's' : ''], ['Voice', SB.voice ? 'on' : '']].filter(([, v]) => v);
+  const help = KIND === 'look'
+    ? 'These frames show the look only. Keep the ones that feel right; mark the others "Change" and say what should be closer to (or further from) the reference.'
+    : 'Edit the words in <b>On screen</b> directly: they\'ll be used exactly as you write them. Mark each panel <b>Keep</b>, <b>Change</b> (add a note), or <b>Cut</b>, then press the button at the bottom. Kept panels won\'t be touched.';
+  $('#head').innerHTML = `
+    <div class="eyebrow">${esc(label)} · v${SB.version || 1}${SB.project ? ' · ' + esc(SB.project) : ''}</div>
+    <h1>${esc(SB.title || SB.project || 'Untitled')}</h1>
+    <div class="chips">${chips.map(([k, v]) => `<span class="chip">${k} <b>${esc(v)}</b></span>`).join('')}<span class="chip" id="total"></span></div>
+    ${SB.angle ? `<p class="angle">${esc(SB.angle)}</p>` : ''}
+    ${SB.changes ? `<div class="changes"><b>What changed in v${SB.version}</b>${esc(SB.changes)}</div>` : ''}
+    <p class="help">${help}</p>
+    <label class="block">Overall notes (apply to everything not kept)<textarea id="overall" rows="2" placeholder="e.g. Funnier, less text, faster cuts in the middle">${esc(state.overall)}</textarea></label>`;
+  $('#overall').addEventListener('input', (e) => { state.overall = e.target.value; save(); update(); });
+
+  // ---- panels
+  const grid = $('#grid');
+  SB.panels.forEach((p, i) => {
+    const s = state.panels[p.id], n = i + 1, el = document.createElement('article');
+    el.className = 'card'; el.dataset.id = p.id;
+    const dur = +(p.end - p.start).toFixed(2);
+    const frame = p.image
+      ? `<img src="${esc(p.image)}" alt="Panel ${n}: ${esc(p.title)}" loading="lazy">`
+      : `<div class="beat">${esc(p.motion || p.title || '')}</div>`;
+    el.innerHTML = `
+      <div class="frame">${frame}<span class="badge">${n}</span><span class="time">${fmt(p.start)}–${fmt(p.end)}s</span>${p.changed ? '<span class="new">Updated</span>' : ''}</div>
+      ${p.strip ? `<img class="strip" src="${esc(p.strip)}" alt="Panel ${n} motion, entrance to exit" loading="lazy">` : ''}
+      <div class="body">
+        <div class="title"><h2>${esc(p.title || p.id)}</h2></div>
+        ${p.changed && p.changeNote ? `<div class="changenote">${esc(p.changeNote)}</div>` : ''}
+        ${KIND !== 'look' ? `<label class="block">On screen<textarea class="script" data-f="onscreen" rows="${Math.max(2, (p.onscreen || '').split('\n').length)}" placeholder="(no text on screen)">${esc(s.onscreen)}</textarea></label>` : ''}
+        ${KIND !== 'look' && (SB.voice || p.voiceover) ? `<label class="block">Voice-over<textarea class="script" data-f="voiceover" rows="2" placeholder="(no narration)">${esc(s.voiceover)}</textarea></label>` : ''}
+        <dl>
+          ${p.motion && p.image ? `<dt>Motion</dt><dd>${esc(p.motion)}</dd>` : ''}
+          ${p.enter ? `<dt>Enter</dt><dd>${esc(p.enter)}</dd>` : ''}
+          ${p.during ? `<dt>During</dt><dd>${esc(p.during)}</dd>` : ''}
+          ${p.exit ? `<dt>Exit</dt><dd>${esc(p.exit)}</dd>` : ''}
+          ${p.sound ? `<dt>Sound</dt><dd>${esc(p.sound)}</dd>` : ''}
+          ${p.transition ? `<dt>Next</dt><dd>${esc(p.transition)}</dd>` : ''}
+        </dl>
+        <div class="verdict" role="group" aria-label="Verdict for panel ${n}">
+          <button type="button" data-v="keep">✓ Keep</button><button type="button" data-v="change">✎ Change</button><button type="button" data-v="cut">✕ Cut</button>
+        </div>
+        <div class="row">
+          ${KIND !== 'look' ? `<label class="block">Seconds<input type="number" data-f="duration" min="0.5" step="0.5" value="${s.duration}"></label>` : '<span></span>'}
+          <label class="block">Notes<textarea data-f="notes" rows="2" placeholder="What should change?">${esc(s.notes)}</textarea></label>
+        </div>
+      </div>`;
+    const orig = { onscreen: p.onscreen || '', voiceover: p.voiceover || '', duration: dur };
+    const paint = () => {
+      el.dataset.verdict = s.verdict;
+      el.querySelectorAll('.verdict button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === s.verdict)));
+      el.querySelectorAll('[data-f=onscreen],[data-f=voiceover]').forEach((t) => t.classList.toggle('edited', t.value !== orig[t.dataset.f]));
+    };
+    el.querySelectorAll('.verdict button').forEach((b) => b.addEventListener('click', () => { s.verdict = b.dataset.v; paint(); save(); update(); }));
+    el.querySelectorAll('[data-f]').forEach((f) => f.addEventListener('input', () => {
+      const k = f.dataset.f; s[k] = k === 'duration' ? Number(f.value) : f.value;
+      const touched = k === 'notes' ? s.notes.trim() !== '' : (k === 'duration' ? Math.abs(s.duration - orig.duration) > 0.001 : s[k] !== orig[k]);
+      if (touched && s.verdict === 'keep') s.verdict = 'change';
+      paint(); save(); update();
+    }));
+    el.querySelector('.frame img')?.addEventListener('click', () => { const lb = $('#lightbox'); lb.querySelector('img').src = p.image; lb.classList.add('on'); });
+    el.querySelector('img.strip')?.addEventListener('click', () => { const lb = $('#lightbox'); lb.querySelector('img').src = p.strip; lb.classList.add('on'); });
+    s.orig = orig; paint();
+    grid.appendChild(el);
+  });
+  $('#lightbox').addEventListener('click', (e) => e.currentTarget.classList.remove('on'));
+  addEventListener('keydown', (e) => { if (e.key === 'Escape') $('#lightbox').classList.remove('on'); });
+
+  // ---- feedback
+  function feedback() {
+    const panels = SB.panels.map((p, i) => {
+      const s = state.panels[p.id], o = s.orig, out = { id: p.id, n: i + 1, verdict: s.verdict === 'keep' ? 'approve' : s.verdict }, edited = [];
+      if (s.notes.trim()) out.notes = s.notes.trim();
+      if (s.onscreen !== o.onscreen) { out.onscreen = s.onscreen; edited.push('onscreen'); }
+      if (s.voiceover !== o.voiceover) { out.voiceover = s.voiceover; edited.push('voiceover'); }
+      if (Math.abs(s.duration - o.duration) > 0.001) { out.duration = s.duration; edited.push('duration'); }
+      if (edited.length) out.edited = edited;
+      return out;
+    });
+    const revise = state.overall.trim() || panels.some((p) => p.verdict !== 'approve' || p.edited || p.notes);
+    return { kind: KIND, version: SB.version || 1, submittedAt: new Date().toISOString(), decision: revise ? 'revise' : 'approve', overall: state.overall.trim(), panels };
+  }
+  function asText(f) {
+    const L = [`${label} v${f.version} feedback: ${f.decision === 'approve' ? 'APPROVED' : 'changes requested'}`];
+    if (f.overall) L.push(`Overall: ${f.overall}`);
+    for (const p of f.panels) {
+      if (p.verdict === 'approve' && !p.edited && !p.notes) { L.push(`${p.n} (${p.id}): keep`); continue; }
+      const bits = [`${p.n} (${p.id}): ${p.verdict.toUpperCase()}`];
+      if (p.notes) bits.push(`notes: ${p.notes}`);
+      if (p.onscreen != null) bits.push(`on screen → "${p.onscreen.replace(/\n/g, ' / ')}"`);
+      if (p.voiceover != null) bits.push(`voice-over → "${p.voiceover}"`);
+      if (p.duration != null) bits.push(`duration → ${p.duration}s`);
+      L.push(bits.join(' | '));
+    }
+    return L.join('\n');
+  }
+  function update() {
+    const f = feedback(), c = { approve: 0, change: 0, cut: 0 };
+    f.panels.forEach((p) => c[p.verdict]++);
+    const total = SB.panels.reduce((a, p) => a + (state.panels[p.id].verdict === 'cut' ? 0 : state.panels[p.id].duration), 0);
+    $('#total').innerHTML = `Length <b>${fmt(total)}s</b>`;
+    $('#status').innerHTML = `<b>${c.approve}</b> kept · <b>${c.change}</b> to change · <b>${c.cut}</b> cut`;
+    const changes = f.panels.filter((p) => p.verdict !== 'approve' || p.edited || p.notes).length + (f.overall ? 1 : 0);
+    $('#send').textContent = f.decision === 'approve' ? (KIND === 'look' ? 'Approve the look' : KIND === 'beats' ? 'Approve the beats' : 'Approve & build the video') : `Send ${changes} change${changes === 1 ? '' : 's'} to Claude`;
+  }
+  const toast = (m) => { const t = $('#toast'); t.textContent = m; t.classList.add('on'); setTimeout(() => t.classList.remove('on'), 2200); };
+  async function copy(text) { try { await navigator.clipboard.writeText(text); return true; } catch { const t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select(); const ok = document.execCommand('copy'); t.remove(); return ok; } }
+  $('#copy').addEventListener('click', async () => { toast((await copy(asText(feedback()))) ? 'Copied: paste it into the chat' : 'Copy failed'); });
+  $('#send').addEventListener('click', async () => {
+    const f = feedback(), btn = $('#send'); btn.disabled = true;
+    try {
+      const r = await fetch('feedback', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(f) });
+      if (!r.ok) throw new Error(await r.text());
+      try { localStorage.removeItem(KEY); } catch {}
+      $('#sentTitle').textContent = f.decision === 'approve' ? 'Approved' : 'Sent to Claude';
+      $('#sentText').textContent = f.decision === 'approve' ? 'Claude is building it now. You can close this tab.' : 'Claude is revising it. A new version will open here when it\'s ready. You can close this tab.';
+      $('#sent').classList.add('on');
+    } catch {
+      btn.disabled = false;
+      const ok = await copy(asText(f));
+      toast(ok ? 'Couldn\'t reach Claude, so it was copied: paste it into the chat' : 'Couldn\'t send. Use "Copy as text".');
+    }
+  });
+  update();
+})();
+</script>
+</body>
+</html>

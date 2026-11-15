@@ -1,0 +1,96 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Game Show demo</title>
+<link rel="stylesheet" href="../style.css">
+<style>
+.t1 { left: 0; width: 1080px; font-size: 134px; }
+#hook .pill { left: 215px; top: 90px; }
+#hook .sticker { left: 52px; top: 236px; transform: rotate(-5deg); }
+#hook .mascot { left: 290px; top: 880px; }
+#list .t-head { left: 0; width: 1080px; font-size: 124px; top: 130px; }
+#list .row { height: 190px; }
+#list .burst { left: 330px; top: 1170px; }
+#list .burst .tele { font-size: 100px; }
+#stat .pill { left: 215px; top: 90px; }
+#stat .big { left: 0; width: 1080px; top: 270px; font-size: 560px; line-height: 1; -webkit-text-stroke: 26px var(--ink); text-shadow: 0 20px 0 var(--ink); }
+#stat .cap { left: 0; width: 1080px; font-size: 92px; top: 1010px; }
+#stat .burst { left: 520px; top: 1230px; }
+#cta .rc { left: 90px; top: 330px; width: 900px; height: 1060px; }
+#cta .rc .hd { position: absolute; left: 0; right: 0; top: 0; height: 110px; background: var(--red); border-bottom: var(--line) solid var(--ink); border-radius: 28px 28px 0 0; color: #fff; font-family: var(--display); font-size: 62px; text-align: center; padding-top: 22px; letter-spacing: .06em; text-transform: uppercase; box-sizing: border-box; }
+#cta .rc .logo { left: 0; width: 900px; top: 300px; font-size: 215px; }
+#cta .rc .tag { position: absolute; left: 0; right: 0; top: 590px; text-align: center; font-size: 78px; font-weight: 700; }
+#cta .rc .rows { position: absolute; left: 70px; right: 70px; top: 780px; font-size: 52px; font-weight: 700; }
+#cta .rc .rows div { display: flex; justify-content: space-between; border-bottom: 5px dashed var(--ink); padding: 14px 0 8px; }
+#cta .burst { left: 600px; top: -40px; width: 520px; height: 520px; }
+#cta .burst .tele { font-size: 150px; }
+</style></head><body>
+<div id="stage" class="ms-game-show">
+  <section class="scene" id="hook"><div class="set pink"><div class="pat"></div></div><div class="inner">
+    <div class="floor"></div>
+    <div class="pill" id="sc1">You <b id="s_you">0</b> Fridge <b>1</b></div>
+    <div class="sticker" id="rd1">Round 1</div>
+    <h1 class="tele t1" id="l1" style="top:340px">Your fridge</h1>
+    <h1 class="tele t1" id="l2" style="top:490px">knows <span class="y">more</span></h1>
+    <h1 class="tele t1" id="l3" style="top:640px">than you do.</h1>
+    <div class="mascot" id="mas"></div>
+  </div></section>
+  <section class="scene" id="list"><div class="set orange"><div class="pat"></div></div><div class="inner">
+    <div class="floor"></div>
+    <h2 class="tele t-head" id="th">See what’s <span class="y">expiring</span></h2>
+    <div class="card row" style="top:470px"><div class="nm"><div class="ico" style="background:#fff"></div>Greek yoghurt</div><div class="tag mid">2 days</div></div>
+    <div class="card row" style="top:700px"><div class="nm"><div class="ico" style="background:#3DDC84"></div>Spinach</div><div class="tag hot">tomorrow</div></div>
+    <div class="card row" style="top:930px"><div class="nm"><div class="ico" style="background:#fff7d0"></div>Feta</div><div class="tag">9 days</div></div>
+    <div class="burst" id="bu1"><div class="tele">Use it!</div></div>
+  </div></section>
+  <section class="scene" id="stat"><div class="set blue"><div class="pat"></div></div><div class="inner">
+    <div class="floor"></div>
+    <div class="pill"><span>Recipes</span> <b>unlocked</b></div>
+    <div class="tele big" id="n12">12</div>
+    <h2 class="tele cap" id="cap">recipes from what you already have</h2>
+    <div class="burst" id="bu2"><div class="tele">Nice!</div></div>
+  </div></section>
+  <section class="scene" id="cta"><div class="set yellow"><div class="pat"></div></div><div class="inner">
+    <div class="card rc" id="rc"><div class="hd">Report card</div>
+      <div class="tele ink logo">Pantry.</div><div class="tag">Cook what you have.</div>
+      <div class="rows"><div><span>Fridge</span><span>Known</span></div><div><span>Recipes</span><span>Ready</span></div></div></div>
+    <div class="burst" id="bu3"><div class="tele">A+</div></div>
+  </div></section>
+</div>
+<script>window.TIMELINE = { width: 1080, height: 1920, fps: 30, duration: 6 };</script>
+<script src="../../../runtime/gsap.js"></script><script src="../../../runtime/timeline.js"></script><script src="../../../runtime/motion.js"></script>
+<script src="../kit.js"></script>
+<script>
+BRAG.build((tl, fx) => {
+  const S = BRAG.styles['game-show'], t = S.t;
+  S.mascot('#mas');
+  S.scenes(fx, [
+    { el: '#hook', start: 0,   end: 1.6, out: 'wipe-diag', outDur: 0.4 },
+    { el: '#list', start: 1.6, end: 3.6, out: 'zoom',      outDur: 0.4 },
+    { el: '#stat', start: 3.6, end: 4.8, out: 'push-left', outDur: 0.4 },
+    { el: '#cta',  start: 4.8, end: 6.0 },
+  ]);
+  ['#hook .set', '#list .set', '#stat .set', '#cta .set'].forEach((s, i) => S.set(s, [0, 1.6, 3.6, 4.8][i] - 0.2 > 0 ? [0, 1.6, 3.6, 4.8][i] - 0.2 : 0, 6));
+  // 1 hook (beats 0-3): scoreboard drops, telops slam on beats 0,1,2, mascot hops and shouts
+  tl.from('#sc1', { y: -50, duration: 0.3, ease: 'back.out(2)', immediateRender: true }, 0); S.pop('#rd1', t(0.5), { rot: -12 });
+  S.telop('#l1,#l2,#l3', 0.05, { every: 1 });
+  tl.from('#mas', { y: 160, duration: 0.5, ease: 'back.out(1.5)', immediateRender: true }, 0.05);
+  S.hop('#mas', t(1.6), { n: 2, h: 60 });
+  S.shout('#mas', t(2.6), { hold: 1 });
+  fx.float('#sc1', 0.6, 1.8, { y: 5, period: 0.8 });
+  // 2 list (beats 4-8): title slam, three cards dealt one per beat, judgement burst on the 4th
+  S.telop('#th', t(4.0), {});
+  S.deal('#list .row', t(4.6), { every: 1, y: 500, rot: 5 });
+  S.judge('#bu1', t(7.2), { fill: '#FF4D6D' });
+  fx.pulse('#list .tag.hot', t(8.1), { scale: 1.12, dur: 0.3 });
+  // 3 stat (beats 9-11): number counts a step per half beat, judgement
+  S.pop('#stat .pill', 3.45, { rot: 0 });
+  tl.from('#n12', { scale: 0.2, autoAlpha: 0, duration: 0.3, ease: 'back.out(2)', transformOrigin: '50% 60%', immediateRender: true }, 3.45);
+  S.score('#n12', 12, 3.5, { steps: 12, dur: 0.8 });
+  S.telop('#cap', 4.0);
+  S.judge('#bu2', t(10.9), { fill: '#3DDC84' });
+  // 4 cta (beats 12-14): report card deals in, stamp slams, confetti
+  S.deal('#rc', 4.5, { y: 900, rot: -4 });
+  S.judge('#bu3', t(13.0), { fill: '#FFD23F', spin: 0.8 });
+  fx.shake('#rc', t(13.0) + 0.25, { strength: 10 });
+  S.confetti('#cta .inner', 5.04, 18);
+  S.hop('#rc', t(14.0), { n: 1, h: 20 });
+});
+</script></body></html>

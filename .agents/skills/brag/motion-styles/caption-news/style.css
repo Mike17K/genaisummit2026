@@ -1,0 +1,45 @@
+/* Caption News: social news short that works with the sound off. Huge captions are the lead actor. */
+@font-face { font-family: 'CNAnton'; src: url(assets/anton.ttf); }
+@font-face { font-family: 'CNArchivo'; src: url(assets/archivo.ttf); font-weight: 100 900; font-stretch: 62% 125%; }
+#stage.ms-caption-news {
+  --ink: #0B0D12; --slate: #181E2C; --slate2: #232B3F; --white: #FFFFFF; --mute: #AAB2C5;
+  --yellow: #FFD400; --red: #E5233B; --foot-h: 1340px;
+  --cap-font: 'CNAnton', Impact, 'Arial Narrow', sans-serif; --ui-font: 'CNArchivo', Arial, sans-serif;
+  font-family: var(--ui-font); color: var(--white); background: var(--ink);
+}
+.ms-caption-news .scene { position: absolute; inset: 0; background: var(--ink); overflow: hidden; }
+.ms-caption-news .inner { position: absolute; inset: 0; }
+/* footage band: stands in for video / photo / document card */
+.ms-caption-news .foot { position: absolute; left: 0; top: 0; width: 100%; height: var(--foot-h); overflow: hidden; }
+.ms-caption-news .foot.warm { background: radial-gradient(90% 70% at 50% 40%, #4a3526, #1b120d 80%); }
+.ms-caption-news .foot.cool { background: radial-gradient(90% 70% at 50% 40%, #243255, #0d1224 85%); }
+.ms-caption-news .foot.docbg { background: linear-gradient(180deg, #11151f, #0b0d12); }
+.ms-caption-news .shade { position: absolute; left: 0; right: 0; top: 700px; bottom: 0; background: linear-gradient(180deg, rgba(11,13,18,0) 0, rgba(11,13,18,.88) 38%, #0B0D12 70%); pointer-events: none; }
+.ms-caption-news .shade-top { position: absolute; left: 0; right: 0; top: 0; height: 300px; background: linear-gradient(180deg, rgba(11,13,18,.7), rgba(11,13,18,0)); pointer-events: none; }
+/* channel bug + source tag */
+.ms-caption-news .bug { position: absolute; left: 48px; top: 60px; height: 64px; display: flex; align-items: center; background: var(--yellow); color: var(--ink); padding: 0 22px; font-family: var(--cap-font); font-size: 40px; letter-spacing: 0.03em; text-transform: uppercase; }
+.ms-caption-news .bug small { font-family: var(--ui-font); font-weight: 800; font-size: 20px; letter-spacing: 0.08em; margin-left: 16px; padding-left: 16px; border-left: 3px solid var(--ink); font-stretch: 110%; }
+.ms-caption-news .src { position: absolute; left: 48px; top: 136px; height: 44px; display: flex; font-weight: 800; font-size: 22px; letter-spacing: 0.06em; text-transform: uppercase; font-stretch: 105%; overflow: hidden; }
+.ms-caption-news .src b { background: var(--white); color: var(--ink); padding: 0 14px; display: flex; align-items: center; }
+.ms-caption-news .src span { background: rgba(11,13,18,.82); padding: 0 16px; display: flex; align-items: center; }
+.ms-caption-news .live { position: absolute; right: 48px; top: 66px; background: var(--red); color: #fff; font-family: var(--cap-font); font-size: 34px; letter-spacing: 0.06em; padding: 8px 18px; }
+/* the caption: stacked chunks, one keyword on a yellow block */
+.ms-caption-news .cap { position: absolute; left: 48px; right: 48px; bottom: 150px; font-family: var(--cap-font); text-transform: uppercase; line-height: 1.02; font-size: 150px; letter-spacing: 0.005em; }
+.ms-caption-news .cap .ck { display: block; white-space: nowrap; margin-top: 4px; }
+.ms-caption-news .cap .w { display: inline-block; position: relative; margin-right: 0.22em; text-shadow: 0 6px 0 rgba(0,0,0,.55); }
+.ms-caption-news .cap .w.key { color: var(--ink); text-shadow: none; padding: 0 0.12em; margin-left: -0.12em; }
+.ms-caption-news .cap .w.key i { position: absolute; inset: 0.04em 0 0.02em 0; background: var(--yellow); transform-origin: 0 50%; z-index: -1; }
+.ms-caption-news .cap .w.key span { position: relative; }
+.ms-caption-news .cap.sm { font-size: 112px; }
+.ms-caption-news .sub { position: absolute; left: 52px; right: 52px; bottom: 76px; font-weight: 700; font-size: 34px; letter-spacing: 0.01em; color: var(--mute); }
+/* lower third */
+.ms-caption-news .strap { position: absolute; left: 0; top: 1030px; height: 96px; display: flex; align-items: stretch; overflow: hidden; }
+.ms-caption-news .strap b { width: 24px; background: var(--yellow); }
+.ms-caption-news .strap span { background: var(--white); color: var(--ink); font-weight: 800; font-size: 40px; padding: 0 30px; display: flex; align-items: center; letter-spacing: -0.01em; }
+.ms-caption-news .strap em { background: var(--ink); color: var(--yellow); font-style: normal; font-family: var(--cap-font); font-size: 42px; padding: 0 26px; display: flex; align-items: center; text-transform: uppercase; }
+/* callout badge */
+.ms-caption-news .badge { position: absolute; background: var(--red); color: #fff; font-family: var(--cap-font); text-transform: uppercase; line-height: 1; padding: 14px 26px 12px; font-size: 76px; box-shadow: 8px 8px 0 rgba(0,0,0,.5); }
+.ms-caption-news .badge.y { background: var(--yellow); color: var(--ink); }
+.ms-caption-news .mark { position: relative; z-index: 0; }
+.ms-caption-news .mark i { position: absolute; inset: 0 -8px; background: var(--yellow); transform-origin: 0 50%; z-index: -1; }
+.ms-caption-news .mark.on { color: var(--ink); }

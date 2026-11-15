@@ -1,0 +1,54 @@
+/* Whiteboard explainer: dry-erase marker on a glossy white board. Scoped under #stage.ms-whiteboard. */
+@font-face { font-family: 'WB Caveat'; src: url(assets/Caveat.ttf); font-weight: 400 700; font-display: block; }
+@font-face { font-family: 'WB Patrick'; src: url(assets/PatrickHand.ttf); font-display: block; }
+
+#stage.ms-whiteboard {
+  /* tokens */
+  --board: #fbfaf6; --board-2: #f1efe7; --board-3: #e4e1d6;
+  --ink: #23262c; --blue: #2a5cb3; --orange: #d97757;   /* three markers, each with one meaning: things, structure, the thing that matters */
+  --accent: rgba(217, 119, 87, .42);                    /* fx.highlight colour */
+  --ghost: rgba(60, 80, 120, .075);
+  --hand: 'WB Caveat', 'Caveat', cursive; --label: 'WB Patrick', 'Patrick Hand', cursive;
+  --stroke: 9px;
+  font-family: var(--hand); color: var(--ink);
+}
+#stage.ms-whiteboard, #stage.ms-whiteboard .scene {
+  background:
+    radial-gradient(90% 60% at 18% 8%, rgba(255, 255, 255, .95), rgba(255, 255, 255, 0) 70%),
+    radial-gradient(60% 40% at 80% 90%, rgba(190, 186, 170, .22), rgba(190, 186, 170, 0) 70%),
+    repeating-linear-gradient(97deg, rgba(120, 120, 110, .018) 0 3px, rgba(255, 255, 255, 0) 3px 9px),
+    linear-gradient(180deg, var(--board), var(--board-2));
+}
+#stage.ms-whiteboard .scene { position: absolute; inset: 0; overflow: hidden; }
+#stage.ms-whiteboard .wb-inner { position: absolute; inset: 0; }
+#stage.ms-whiteboard .wb-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+/* glossy sheen drifting at a different rate than the content (animate .wb-sheen with fx.parallax) */
+#stage.ms-whiteboard .wb-sheen { position: absolute; z-index: 7000; left: -700px; top: -200px; width: 900px; height: 2400px; pointer-events: none; transform: rotate(14deg);
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, .5) 50%, rgba(255, 255, 255, 0)); mix-blend-mode: soft-light; }
+#stage.ms-whiteboard .wb-vignette { position: absolute; inset: 0; z-index: 7100; pointer-events: none; box-shadow: inset 0 0 160px rgba(120, 112, 90, .22), inset 0 0 0 10px rgba(205, 203, 195, .9); }
+
+/* type: single-line hand, dark ink; labels in a second hand */
+#stage.ms-whiteboard .wb-h { margin: 0; font: 700 190px/0.98 var(--hand); letter-spacing: -.005em; color: var(--ink); }
+#stage.ms-whiteboard .wb-h.big { font-size: 320px; line-height: .9; }
+#stage.ms-whiteboard .wb-label { margin: 0; font: 400 88px/1.05 var(--label); color: var(--ink); }
+#stage.ms-whiteboard .wb-big { margin: 0; font: 700 140px/1 var(--hand); }
+#stage.ms-whiteboard .wb-blue { color: var(--blue); } #stage.ms-whiteboard .wb-orange { color: var(--orange); } #stage.ms-whiteboard .wb-ink { color: var(--ink); }
+#stage.ms-whiteboard .fx-char { transform-origin: 50% 80%; }
+
+/* marker ink: slightly translucent, multiplies where strokes cross; a touch of roughness */
+#stage.ms-whiteboard .wb-strokes { mix-blend-mode: multiply; }
+#stage.ms-whiteboard .wb-stroke { fill: none; stroke-width: var(--stroke); stroke-linecap: round; stroke-linejoin: round; opacity: .94; }
+#stage.ms-whiteboard .wb-stroke.wb-ink { stroke: var(--ink); }
+#stage.ms-whiteboard .wb-stroke.wb-blue { stroke: var(--blue); }
+#stage.ms-whiteboard .wb-stroke.wb-orange { stroke: var(--orange); }
+#stage.ms-whiteboard .wb-stroke.wb-swipe { stroke-linecap: butt; }
+#stage.ms-whiteboard .wb-ghost { fill: none; stroke: var(--ghost); stroke-width: 7px; stroke-linecap: round; stroke-linejoin: round; }
+
+/* the floating marker: no hand, a cast shadow that grows when it lifts */
+#stage.ms-whiteboard .wb-pen-shadow { fill: rgba(30, 30, 20, .2); filter: blur(7px); }
+#stage.ms-whiteboard .wb-pen-body { filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .18)); }
+#stage.ms-whiteboard .wb-pen { pointer-events: none; }
+
+/* real product UI: print it on the board as a taped-up card with a hand-drawn frame */
+#stage.ms-whiteboard .wb-shot { position: absolute; background: #fff; border-radius: 14px; box-shadow: 0 10px 26px rgba(60, 50, 30, .22), 0 0 0 3px rgba(35, 38, 44, .85); overflow: hidden; }
+#stage.ms-whiteboard .wb-shot img, #stage.ms-whiteboard .wb-shot video { display: block; width: 100%; height: 100%; object-fit: cover; }

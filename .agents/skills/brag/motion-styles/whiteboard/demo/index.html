@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Whiteboard demo</title>
+<link rel="stylesheet" href="../style.css">
+<style>
+  body { margin: 0; background: #888; }
+  .abs { position: absolute; white-space: nowrap; }
+  #h1 { left: 70px; top: 120px; width: 950px; white-space: normal; }
+  #h2 { left: 70px; top: 120px; width: 950px; white-space: normal; }
+  .nm { left: 350px; } .val { left: 346px; }
+  #logo { left: 40px; top: 100px; width: 1000px; text-align: center; }
+  #tagline { left: 40px; top: 500px; width: 1000px; text-align: center; font-size: 132px !important; }
+  #twelve { left: 690px; top: 1030px; width: 280px; text-align: center; font-size: 210px; line-height: 1; }
+  #recipes { left: 690px; top: 1215px; width: 280px; text-align: center; font-size: 84px; }
+</style></head>
+<body>
+<div id="stage" class="ms-whiteboard">
+
+  <section class="scene" id="hook"><div class="wb-inner" id="hook-in">
+    <h1 class="abs wb-h" id="h1">Your fridge knows more than you do.</h1>
+  </div></section>
+
+  <section class="scene" id="list"><div class="wb-inner" id="list-in">
+    <h1 class="abs wb-h" id="h2">See what&rsquo;s expiring</h1>
+    <p class="abs wb-label nm" id="n1" style="top:600px">Greek yoghurt</p>
+    <p class="abs wb-big wb-orange val" id="v1" style="top:690px">2 days</p>
+    <p class="abs wb-label nm" id="n2" style="top:930px">Spinach</p>
+    <p class="abs wb-big wb-orange val" id="v2" style="top:1020px">tomorrow</p>
+    <p class="abs wb-label nm" id="n3" style="top:1260px">Feta</p>
+    <p class="abs wb-big wb-blue val" id="v3" style="top:1350px">9 days</p>
+  </div></section>
+
+  <section class="scene" id="cta"><div class="wb-inner" id="cta-in">
+    <h1 class="abs wb-h big" id="logo">Pantry.</h1>
+    <p class="abs wb-h wb-blue" id="tagline">Cook what you have.</p>
+    <p class="abs wb-big wb-orange" id="twelve">12</p>
+    <p class="abs wb-label wb-orange" id="recipes">recipes</p>
+  </div></section>
+
+  <div class="wb-sheen" id="sheen"></div>
+  <div class="wb-vignette"></div>
+</div>
+
+<script>window.TIMELINE = { width: 1080, height: 1920, fps: 30, duration: 6 };</script>
+<script src="../../../runtime/gsap.js"></script>
+<script src="../../../runtime/timeline.js"></script>
+<script src="../../../runtime/motion.js"></script>
+<script src="../kit.js"></script>
+<script>
+BRAG.build((tl, fx) => {
+  const W = BRAG.styles.whiteboard;
+  fx.scenes([
+    { el: '#hook', start: 0, end: 2.2, out: 'whip-left', outDur: 0.35 },
+    { el: '#list', start: 2.2, end: 4.3, out: 'zoom', outDur: 0.45 },
+    { el: '#cta', start: 4.3, end: 6 },
+  ]);
+  const L1 = W.layer('#hook-in'), L2 = W.layer('#list-in'), L3 = W.layer('#cta-in');
+  W.ghosts(L1, 2); W.ghosts(L2, 5); W.ghosts(L3, 8);
+  fx.parallax([{ el: '#sheen', x: 1900 }], 0, 6);
+
+  // ---------- scene 1: the hook. ink writes, blue draws the fridge, orange circles the key word ----------
+  const A = W.pen(L1, 'ink', { x: 90, y: 250 }), Bp = W.pen(L1, 'blue', { x: 1250, y: 700 }), C = W.pen(L1, 'orange', { x: 1250, y: 300 });
+  const t1 = W.write(A, '#h1', 0.05, { cps: 30 });
+  const D = (n) => W.DOODLES[n].map((d) => W.tx(d, 5.6, 300, 640));
+  let t = W.stroke(Bp, D('fridge').join(' '), 0.2, { dur: 0.85 });
+  t = W.stroke(Bp, D('face').join(' '), t, { dur: 0.35, color: 'ink' });
+  const tc = W.circleWord(C, '#h1', 3, 0.95, { dur: 0.45, seed: 2, pad: 22 });
+  W.underlineWord(A, '#h1', 2, t1 + 0.02, { dur: 0.3, color: 'blue', y: 0.94 });
+  W.stroke(C, W.burst(850, 760, 120, 9, 4), tc + 0.1, { dur: 0.4, color: 'orange' });
+  fx.drift('#hook-in', 0, 2.4, { scale: 1.04, y: -8 });
+  W.park(A, 1.95, { x: -300, y: 400 }); W.park(Bp, 2.0); W.park(C, 1.95);
+
+  // ---------- scene 2: three items, doodled and written ----------
+  const A2 = W.pen(L2, 'ink', { x: 90, y: 250 }), B2 = W.pen(L2, 'blue', { x: 1250, y: 700 }), C2 = W.pen(L2, 'orange', { x: 1250, y: 800 });
+  const a = W.write(A2, '#h2', 2.05, { cps: 36 });
+  let b = 2.1;
+  b = W.doodle(B2, 'cup', 60, 600, 2.6, b, { dur: 0.38 });
+  b = W.doodle(B2, 'leaf', 70, 925, 2.5, b, { dur: 0.36 });
+  b = W.doodle(B2, 'feta', 55, 1240, 2.6, b, { dur: 0.4 });
+  let n = W.write(A2, '#n1', a + 0.02, { cps: 55 });
+  const v1 = W.write(C2, '#v1', 2.55, { cps: 22 });
+  n = W.write(A2, '#n2', n, { cps: 55 });
+  const v2 = W.write(C2, '#v2', v1, { cps: 30 });
+  n = W.write(A2, '#n3', n, { cps: 55 });
+  const v3 = W.write(B2, '#v3', Math.max(b, 3.3), { cps: 22 });
+  W.circleWord(C2, '#v1', W.rectOf('#v1'), v2 + 0.0, { dur: 0.32, seed: 4, pad: 12 });
+  W.circleWord(C2, '#v2', W.rectOf('#v2'), v2 + 0.4, { dur: 0.36, seed: 6, pad: 12 });
+  W.underlineWord(B2, '#v3', 0, v3 + 0.0, { dur: 0.25, color: 'blue', y: 0.95, seed: 3 });
+  fx.drift('#list-in', 2.0, 4.6, { scale: 1.04, y: -8 });
+  W.park(A2, 3.9, { x: -300, y: 500 }); W.park(B2, 3.95); W.park(C2, 4.0);
+
+  // ---------- scene 3: the sign-off ----------
+  const A3 = W.pen(L3, 'ink', { x: 200, y: 180 }), B3 = W.pen(L3, 'blue', { x: 1250, y: 600 }), C3 = W.pen(L3, 'orange', { x: 1250, y: 1100 });
+  const c = W.write(A3, '#logo', 4.05, { cps: 26 });
+  const u = W.stroke(B3, W.underline(210, 870, 430, 4, { rise: 12, double: true }), 4.25, { dur: 0.4, color: 'blue' });
+  W.write(B3, '#tagline', u + 0.02, { cps: 46 });
+  let p = W.doodle(A3, 'pot', 90, 880, 5.0, c + 0.02, { dur: 0.5 });
+  W.doodle(A3, 'steam', 90, 880, 5.0, p + 0.02, { dur: 0.3, color: 'blue' });
+  W.stroke(C3, W.burst(830, 1110, 160, 11, 7), 4.6, { dur: 0.4, color: 'orange' });
+  tl.set('#twelve', { autoAlpha: 0 }, 0); tl.set('#twelve', { autoAlpha: 1 }, 4.75);
+  fx.count('#twelve', 12, 4.75, { dur: 0.6 });
+  W.write(C3, '#recipes', 5.2, { cps: 30 });
+  fx.pulse('#twelve', 5.5, { scale: 1.12, dur: 0.3 });
+  fx.drift('#cta-in', 4.05, 6, { scale: 1.035, y: -6 });
+});
+</script>
+</body></html>

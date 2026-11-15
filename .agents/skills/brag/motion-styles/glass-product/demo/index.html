@@ -1,0 +1,87 @@
+<!doctype html><html><head><meta charset="utf-8"><title>glass-product demo</title>
+<link rel="stylesheet" href="../style.css">
+<style>
+html, body { margin: 0; background: #000; }
+#stage.ms-glass-product .abs { position: absolute; left: 0; right: 0; }
+#h1 { position: absolute; left: 0; right: 0; top: 250px; }
+#fridge { left: 270px; top: 900px; width: 540px; height: 820px; border-radius: 64px; }
+#fridge .gp-core { left: 120px; top: 360px; width: 300px; height: 300px; }
+#fridge .handle { position: absolute; left: 44px; top: 120px; width: 8px; height: 190px; border-radius: 8px; background: linear-gradient(180deg, rgba(255,255,255,.7), rgba(255,255,255,.12)); z-index: 3; }
+#fridge .gp-kicker { position: absolute; left: 0; right: 0; bottom: 56px; z-index: 3; }
+#h2 { position: absolute; left: 0; right: 0; top: 230px; }
+#list { left: 90px; top: 740px; width: 900px; height: 470px; }
+#list .rows { position: absolute; inset: 0; padding-top: 8px; z-index: 3; }
+#sub12 { top: 1380px; }
+#tile { left: 140px; top: 640px; width: 800px; height: 520px; border-radius: 80px; }
+#logo { position: absolute; left: 0; right: 0; top: 760px; font-size: 250px; font-weight: 200; z-index: 5; }
+#tag { position: absolute; left: 0; right: 0; top: 1020px; z-index: 5; }
+</style></head><body>
+<div id="stage" class="ms-glass-product">
+  <div class="gp-floor"></div>
+  <section class="scene" id="s1"><div class="inner">
+    <h1 class="gp-title" id="h1">Your fridge<br>knows more<br>than you do.</h1>
+    <div class="gp-slab" id="fridge"><div class="handle"></div><div class="gp-core" id="core"></div><div class="gp-kicker">Pantry</div></div>
+  </div></section>
+  <section class="scene" id="s2"><div class="inner">
+    <h1 class="gp-title" id="h2">See what's<br>expiring</h1>
+    <div class="gp-slab" id="list"><div class="rows">
+      <div class="gp-row" id="r1"><div class="gp-thumb" style="background:linear-gradient(140deg,#eef2fa,#7d8aa6)"></div><div class="gp-name">Greek yoghurt</div><span class="gp-pill" id="p1"><i></i>2 days</span></div>
+      <div class="gp-row" id="r2"><div class="gp-thumb" style="background:linear-gradient(140deg,#6fae5c,#1d3d22)"></div><div class="gp-name">Spinach</div><span class="gp-pill" id="p2"><i></i>tomorrow</span></div>
+      <div class="gp-row" id="r3"><div class="gp-thumb" style="background:linear-gradient(140deg,#f4f1e6,#b0a88f)"></div><div class="gp-name">Feta</div><span class="gp-pill" id="p3"><i></i>9 days</span></div>
+    </div></div>
+    <div class="gp-slab gp-sub-slab" id="sub12">12 recipes from what you already have</div>
+  </div></section>
+  <section class="scene" id="s3"><div class="inner">
+    <div class="gp-slab" id="tile"></div>
+    <h1 class="gp-title" id="logo">Pantry.</h1>
+    <div class="gp-sub" id="tag">Cook what you have.</div>
+  </div></section>
+</div>
+<script>window.TIMELINE = { width: 1080, height: 1920, fps: 30, duration: 6 };</script>
+<script src="../../../runtime/gsap.js"></script><script src="../../../runtime/timeline.js"></script><script src="../../../runtime/motion.js"></script>
+<script src="../kit.js"></script>
+<script>
+BRAG.build((tl, fx) => {
+  const S = BRAG.styles['glass-product'];
+  ['#fridge', '#list', '#sub12', '#tile'].forEach((e) => S.glass(e));
+  const c1 = S.sweepCut(1.85), c2 = S.sweepCut(3.7);   // cut times, under the black
+  fx.scenes([
+    { el: '#s1', start: 0, end: c1, out: 'cut' },
+    { el: '#s2', start: c1, end: c2, out: 'cut' },
+    { el: '#s3', start: c2, end: 6 },
+  ]);
+
+  // scene 1: the line sharpens, a glass door lifts out of the dark with a light inside
+  S.title('#h1', 0.0, { dur: 1.0, glintDur: 1.0, a0: 0.3 });
+  S.lift('#fridge', 0.0, { dur: 1.0, a0: 0.55 });
+  S.edge('#fridge', 0.6);
+  S.sheen('#fridge', 0.6, { dur: 1.2 });
+  tl.fromTo('#core', { scale: 0.5, autoAlpha: 0.4 }, { scale: 1, autoAlpha: 1, duration: 1.0, ease: 'power2.out', immediateRender: true }, 0.2);
+  tl.to('#core', { scale: 1.15, duration: 0.8, ease: 'sine.inOut', yoyo: true, repeat: 1 }, 1.5);
+  S.orbit('#fridge', 0.2, 2.1, { y0: -9, y1: 6 });
+  S.caustic(0.8, { y: 1790, scale: 3.6 });
+
+  // scene 2: list of slabs, strip light reads across them, dots light as the sweep passes
+  S.title('#h2', c1 + 0.05, { dur: 0.9, glintDur: 0.9 });
+  S.lift('#list', c1 + 0.15, { dur: 0.8 });
+  S.edge('#list', c1 + 0.45);
+  tl.fromTo('#list .gp-row', { y: 40, autoAlpha: 0 }, { y: 0, autoAlpha: 1, duration: 0.6, ease: 'expo.out', stagger: 0.12, immediateRender: true }, c1 + 0.35);
+  S.sheen('#list', c1 + 0.7, { dur: 1.0 });
+  tl.to('#p1, #p2', { color: '#fff', borderColor: 'rgba(150,180,255,.5)', backgroundColor: 'rgba(140,165,255,.12)', duration: 0.3, stagger: 0.12 }, c1 + 1.05);
+  tl.to('#p1 i, #p2 i', { background: 'linear-gradient(135deg,#7FB8FF,#A98BFF)', boxShadow: '0 0 18px #A98BFF', duration: 0.3, stagger: 0.12 }, c1 + 1.05);
+  S.lift('#sub12', c1 + 1.15, { dur: 0.7, dy: 50, tilt: 12 });
+  S.edge('#sub12', c1 + 1.4, { dur: 0.5 });
+  S.orbit('#list', c1, c2 + 0.1, { y0: -6, y1: 5, x0: 2, x1: -1 });
+  S.caustic(c1 + 0.9, { y: 1700, scale: 4.5 });
+
+  // scene 3: the name on a glass tile, glint, floor caustics
+  S.lift('#tile', c2 + 0.05, { dur: 0.9, dy: 70 });
+  S.edge('#tile', c2 + 0.4);
+  S.sheen('#tile', c2 + 0.5, { dur: 1.2 });
+  S.title('#logo', c2 + 0.2, { dur: 1.0, from: '0.3em', to: '0.04em', glintDur: 1.1 });
+  tl.fromTo('#tag', { autoAlpha: 0, letterSpacing: '0.7em', filter: 'blur(8px)' }, { autoAlpha: 1, letterSpacing: '0.34em', filter: 'blur(0px)', duration: 0.9, ease: 'expo.out', immediateRender: true }, c2 + 0.7);
+  S.orbit('#tile', c2, 6, { y0: -5, y1: 6 });
+  S.caustic(c2 + 0.5, { y: 1500, scale: 5, fade: 0.9 });
+  S.glint('#logo', 5.0, { dur: 0.9 });
+});
+</script></body></html>

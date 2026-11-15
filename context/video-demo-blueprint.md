@@ -9,13 +9,15 @@
 
 ### What is `brag-skill.zip` (`.agents/skills/brag/`)?
 Our in-repo `.agents/skills/brag/` skill (also installed globally at `~/.gemini/antigravity/skills/brag/` and `~/.claude/skills/brag/`) is a **self-contained, zero-cloud-dependency hybrid video engine** that merges two MIT-licensed open-source projects into one workflow:
-1. **`product-native` HTML/DOM Renderer (`runtime/timeline.js` + `tools/export-dom.mjs`)** from [latent-spaces/brag](https://github.com/latent-spaces/brag):
-   - Renders a real HTML/CSS/DOM stage (`composition/index.html`) where every frame is a pure function of time `t` (`window.seek(t)`, `BRAG.onFrame(t)`, `BRAG.p(t, t0, d, ease)`).
+1. **`product-native` & Motion-Style HTML/DOM Renderer (`runtime/gsap.js` + `runtime/timeline.js` + `runtime/motion.js` + `tools/ui-motion.mjs` + `tools/export-dom.mjs`)** from [latent-spaces/brag](https://github.com/latent-spaces/brag):
+   - Renders a real HTML/CSS/DOM stage (`composition/index.html`) where every frame is a pure function of time `t` driven by a paused GSAP 3.13 master timeline (`BRAG.build((tl, fx) => ...)`, `window.seek(t)`, `BRAG.onFrame(t)`, `BRAG.p(t, t0, d, ease)`).
+   - **Film Layer vs. Product UI Separation (`DECISIONS.md`)**: `tools/ui-motion.mjs` inventories the app's own CSS transitions, keyframes, and JS animations into `composition/ui-motion.js` (`fx.ui` / `fx.uiAnim`) so the real product UI moves strictly like the real app, while `runtime/motion.js` (`BRAG.fx`) drives the surrounding film layer (text effects, camera drift/push-ins, callouts, scene transitions) at the chosen `--energy` (`calm` / `lively` / `punchy` / `hype`).
+   - Also ships **14 HTML + GSAP motion styles** (`motion-styles/`: `dark-keynote`, `glass-product`, `living-screencast`, `swiss-motion`, `caption-news`, `game-show`, `halftone-dossier`, `blueprint`, `whiteboard`, `telestrator`, `kinetic-reel`, `chart-room`, `manim-explainer`, `morph-ui`) and a prebuilt moving style picker (`assets/style-previews/`).
    - Pauses all Web/CSS animations (`document.getAnimations()`), sets `a.currentTime = t * 1000`, synchronously seeks any embedded `<video data-start="...">` clips frame-accurately, captures PNG frames across 4 parallel headless Playwright Chromium workers (`--workers 4`), and mixes multi-track audio (`composition/audio.json`) via FFmpeg with **`sidechaincompress` voice auto-ducking** and **`-14 LUFS` `loudnorm`**.
 2. **Procedural 2D Canvas Engine (`engine/`)** from [cth9191/animate](https://github.com/cth9191/animate) (commit `7e5eb56feb2dd573f890e1b7b34748af43d58263`):
-   - Provides 7 hand-drawn/procedural 2D canvas styles (`cut-paper`, `crosshatch`, `riso`, `sketchbook`, `math`, `pixel`, `isometric`), shape-morph bridges (`kit/morph.js`), `faster-whisper` word alignment (`engine/tools/voice_words.py`), and automated text-overlap/LUFS QA (`engine/tools/review.mjs`).
-3. **Hard Visual Storyboard Gate (`tools/panels.mjs` + `tools/review-server.mjs`)**:
-   - Before spending time animating or rendering 1,500+ frames, `panels.mjs` renders settled keyframe JPEGs (`storyboard/panels/v1/pNN.jpg`) in ~2 seconds and `review-server.mjs` serves an interactive browser review UI (`http://127.0.0.1:4517/`) where you can edit on-screen copy inline, mark panels Keep / Change / Cut, and approve.
+   - Provides 7 hand-drawn/procedural 2D canvas styles (`cut-paper`, `crosshatch`, `riso`, `sketchbook`, `math`, `pixel`, `isometric`), shape-morph bridges (`kit/morph.js`), `faster-whisper` word alignment (`engine/tools/voice_words.py`), `omnivoice_takes.py`, and automated text-overlap/LUFS QA (`engine/tools/review.mjs`).
+3. **Hard Visual Storyboard Gate + Motion Strips (`tools/panels.mjs --strip` + `tools/review-server.mjs`)**:
+   - Before spending time animating or rendering 1,500+ frames, `panels.mjs` renders settled keyframe JPEGs (`storyboard/panels/v1/pNN.jpg`) plus optional 6-frame motion strips (`--strip`) in ~2 seconds and `review-server.mjs` serves an interactive browser review UI (`http://127.0.0.1:4517/`) where you can edit on-screen copy inline, mark panels Keep / Change / Cut, and approve.
 
 ### What is "OpenMontaz" (`calesthio/OpenMontage`)?
 - **"OpenMontaz"** is the phonetic/Greek (*μοντάζ* = montage) spelling of **OpenMontage** ([github.com/calesthio/OpenMontage](https://github.com/calesthio/OpenMontage), [openmontage.video](https://openmontage.video), AGPLv3 license).
@@ -228,18 +230,21 @@ All commands below run from the repository root (`/Users/kdimitropoulos/Document
 node -v && ffmpeg -version | head -n 1 && node -e "import('./.agents/skills/brag/tools/_pw.mjs').then(async m => { const b = await m.loadPlaywright().chromium.launch(); console.log('Playwright Chromium OK:', b.version()); await b.close(); })"
 ```
 
-### 2. Initialize Composition Directory & Copy `timeline.js` + VoxEye Assets
+### 2. Initialize Composition Directory, Extract App Motion (`ui-motion.mjs`) & Copy Runtime + Assets
 ```bash
 mkdir -p brag-output/storyboard brag-output/composition/assets
+cp .agents/skills/brag/runtime/gsap.js brag-output/composition/gsap.js
 cp .agents/skills/brag/runtime/timeline.js brag-output/composition/timeline.js
+cp .agents/skills/brag/runtime/motion.js brag-output/composition/motion.js
+node .agents/skills/brag/tools/ui-motion.mjs app/static --out brag-output/composition/ui-motion.js
 cp app/static/logo.png brag-output/composition/assets/logo.png
 cp app/static/icon-192.png brag-output/composition/assets/icon-192.png
 ```
 
-### 3. Render Storyboard Keyframe Panels (`panels.mjs`)
-Renders every panel's settled keyframe time `t` from `brag-output/composition/index.html` into `brag-output/storyboard/panels/v1/pNN.jpg` in ~2 seconds:
+### 3. Render Storyboard Keyframe Panels & Motion Strips (`panels.mjs --strip`)
+Renders every panel's settled keyframe time `t` (plus a 6-frame entrance-to-exit motion strip when `--strip` is passed) from `brag-output/composition/index.html` into `brag-output/storyboard/panels/v1/pNN.jpg` in ~2 seconds:
 ```bash
-node .agents/skills/brag/tools/panels.mjs brag-output/composition brag-output/storyboard/storyboard.json
+node .agents/skills/brag/tools/panels.mjs brag-output/composition brag-output/storyboard/storyboard.json --strip
 ```
 *(To re-render only specific modified panels on v2+: add `--only hook,depth-stop`)*
 

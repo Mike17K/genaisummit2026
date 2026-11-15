@@ -1,0 +1,118 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Kinetic Reel demo</title>
+<link rel="stylesheet" href="../style.css">
+<style>
+/* demo layout only */
+#a .kr-word, #b .kr-word, #c .kr-word { top: 50%; margin-top: -0.46em; }
+#d .kr-word { top: 112px; }
+#e .num { position: absolute; left: 90px; top: 50%; margin-top: -330px; font-family: var(--display); font-size: 760px; line-height: 1; color: var(--hot); }
+#e .stack { position: absolute; left: 1000px; top: 270px; font-family: var(--display); font-size: 168px; line-height: 0.98; text-transform: uppercase; color: var(--paper); }
+#g .kr-word { left: 96px; top: 250px; font-size: 184px; line-height: 0.98; text-align: left; }
+#g .kr-frame { left: 1010px; top: 150px; width: 740px; height: 780px; overflow: hidden; }
+#h .kr-word { top: 50%; margin-top: -0.5em; }
+/* the product UI: its own look, drawn static; it has no animations, so changes are instant */
+.app { position: absolute; inset: 0; font: 500 30px/1.2 'KRArchivo', Arial, sans-serif; color: #1c1c1c; background: #fff; }
+.app header { height: 104px; padding: 0 36px; display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #eee; font-weight: 800; font-size: 36px; }
+.app header span { font-weight: 600; font-size: 24px; color: #888; }
+.app .item { margin: 26px 32px 0; padding: 0 28px; height: 150px; border: 2px solid #ececec; border-radius: 22px; display: flex; align-items: center; justify-content: space-between; }
+.app .item b { font-size: 40px; font-weight: 700; display: block; }
+.app .item small { font-size: 24px; color: #999; }
+.app .pill { font-size: 26px; font-weight: 700; padding: 10px 20px; border-radius: 99px; background: #e8f5ec; color: #1d7a3c; }
+.app .pill.warn { background: #ffe9d9; color: #c24a00; }
+.app .cta { position: absolute; left: 32px; right: 32px; bottom: 32px; height: 96px; border-radius: 20px; background: #1c1c1c; color: #fff; font-weight: 700; display: flex; align-items: center; justify-content: center; font-size: 34px; }
+</style></head><body>
+<div id="stage" class="ms-kinetic-reel">
+  <section class="scene" id="a"><div class="inner">
+    <div class="kr-note" style="left:96px;top:72px"><b>Pantry</b> / kitchen app</div>
+    <div class="kr-note" style="right:96px;top:72px">01</div>
+    <h1 class="kr-word" data-w="1640">Your fridge</h1>
+  </div></section>
+  <section class="scene ink" id="b"><div class="inner"><h1 class="kr-word" data-w="1500">Knows</h1></div></section>
+  <section class="scene hot" id="c"><div class="inner"><h1 class="kr-word" data-w="1500">More</h1></div></section>
+  <section class="scene" id="d"><div class="inner">
+    <div class="kr-note" style="left:96px;top:72px"><b>Pantry</b> / kitchen app</div>
+    <h1 class="kr-word" id="d1" data-w="560" style="top:150px">Than</h1>
+    <h1 class="kr-word" id="d2" data-w="1560" style="top:440px">You do.</h1>
+    <svg class="kr-scribble" viewBox="0 0 1000 60" style="left:260px;top:900px;width:1400px;height:84px"><path id="scr" d="M10 36 C 160 6, 300 52, 470 24 S 800 10, 990 30"/></svg>
+  </div></section>
+  <section class="scene ink" id="e"><div class="inner">
+    <div class="kr-note" style="left:96px;top:72px"><b>03</b> / recipes</div>
+    <div class="num"><span id="n12">12</span></div>
+    <div class="stack"><span class="kr-line"><span>Recipes</span></span><span class="kr-line"><span>from your</span></span><span class="kr-line"><span style="color:var(--hot)">own fridge</span></span></div>
+  </div></section>
+  <section class="scene hot" id="f"><div class="inner">
+    <div class="kr-marq" style="top:0"><div class="track"><i>Cook</i>what<i class="o">you</i>have<i>*</i><i>Cook</i>what<i class="o">you</i>have<i>*</i><i>Cook</i>what<i class="o">you</i>have<i>*</i><i>Cook</i>what<i class="o">you</i>have<i>*</i></div></div>
+    <div class="kr-marq" style="top:216px"><div class="track"><i class="o">Cook</i>what<i>you</i>have<i>*</i><i class="o">Cook</i>what<i>you</i>have<i>*</i><i class="o">Cook</i>what<i>you</i>have<i>*</i><i class="o">Cook</i>what<i>you</i>have<i>*</i></div></div>
+    <div class="kr-marq" style="top:432px"><div class="track"><i>Cook</i>what<i class="o">you</i>have<i>*</i><i>Cook</i>what<i class="o">you</i>have<i>*</i><i>Cook</i>what<i class="o">you</i>have<i>*</i><i>Cook</i>what<i class="o">you</i>have<i>*</i></div></div>
+    <div class="kr-marq" style="top:648px"><div class="track"><i class="o">Cook</i>what<i>you</i>have<i>*</i><i class="o">Cook</i>what<i>you</i>have<i>*</i><i class="o">Cook</i>what<i>you</i>have<i>*</i><i class="o">Cook</i>what<i>you</i>have<i>*</i></div></div>
+    <div class="kr-marq" style="top:864px"><div class="track"><i>Cook</i>what<i class="o">you</i>have<i>*</i><i>Cook</i>what<i class="o">you</i>have<i>*</i><i>Cook</i>what<i class="o">you</i>have<i>*</i><i>Cook</i>what<i class="o">you</i>have<i>*</i></div></div>
+  </div></section>
+  <section class="scene" id="g"><div class="inner">
+    <div class="kr-note" style="left:96px;top:72px"><b>04</b> / expiring</div>
+    <h2 class="kr-word left"><span class="kr-line"><span>See what's</span></span><span class="kr-line"><span style="color:var(--hot)">expiring.</span></span></h2>
+    <div class="kr-frame" id="frame"><div class="app">
+      <header>Fridge <span>3 items</span></header>
+      <div class="item"><div><b>Greek yoghurt</b><small>opened Monday</small></div><span class="pill">2 days</span></div>
+      <div class="item"><div><b>Spinach</b><small>bagged salad</small></div><span class="pill" id="spin">4 days</span></div>
+      <div class="item"><div><b>Feta</b><small>block, sealed</small></div><span class="pill">9 days</span></div>
+      <div class="cta">Find a recipe</div>
+    </div></div>
+    <div class="kr-tag" id="tag" style="left:1010px;top:960px">Live app, as it is</div>
+  </div></section>
+  <section class="scene ink" id="h"><div class="inner">
+    <h1 class="kr-word" id="h1" data-w="1640" style="color:var(--paper)">Pantry<span style="color:var(--hot)">.</span></h1>
+    <div class="kr-note" id="h2" style="left:0;right:0;text-align:center;top:800px;font-size:30px;color:var(--paper)"><b>Cook what you have</b></div>
+  </div></section>
+</div>
+<script>window.TIMELINE = { width: 1920, height: 1080, fps: 30, duration: 10 };</script>
+<script src="../../../runtime/gsap.js"></script><script src="../../../runtime/timeline.js"></script><script src="../../../runtime/motion.js"></script>
+<script src="../kit.js"></script>
+<script>
+BRAG.build((tl, fx) => {
+  const S = BRAG.styles['kinetic-reel'];
+  document.querySelectorAll('.kr-word[data-w]').forEach((w) => S.fit(w, +w.dataset.w));
+  fx.scenes([
+    { el: '#a', start: 0,   end: 1.0, out: 'cut' },
+    { el: '#b', start: 1.0, end: 1.5, out: 'cut' },
+    { el: '#c', start: 1.5, end: 2.0, out: 'cut' },
+    { el: '#d', start: 2.0, end: 3.5, out: 'push-up', outDur: 0.35 },
+    { el: '#e', start: 3.5, end: 5.0, out: 'cut' },
+    { el: '#f', start: 5.0, end: 7.0, out: 'wipe', outDur: 0.35 },
+    { el: '#g', start: 7.0, end: 8.5, out: 'cut' },
+    { el: '#h', start: 8.5, end: 10.0 },
+  ]);
+  // 1-3: three beats, three colours
+  S.slam('#a .kr-word', 0.0, { from: 'top' });
+  tl.from('#a .kr-note', { autoAlpha: 0, y: -16, duration: 0.3, stagger: 0.1, immediateRender: true }, 0.25);
+  S.hold('#a .kr-word', 0.4, 1.0, { scale: 1.03 });
+  S.slam('#b .kr-word', 1.0, { from: 'bottom' });
+  S.slam('#c .kr-word', 1.5, { from: 'left' });
+  // 4: two lines and a scribble
+  S.slam('#d1', 2.0, { from: 'top' });
+  S.slam('#d2', 2.25, { from: 'bottom' });
+  S.scribble('#scr', 2.75, { dur: 0.4 });
+  S.hold('#d2', 2.8, 3.5, { scale: 1.03 });
+  // 5: number and stacked lines
+  fx.count('#n12', 12, 3.5, { dur: 0.7 });
+  tl.from('#e .num', { x: -140, autoAlpha: 0, duration: 0.3, ease: 'expo.out', immediateRender: true }, 3.5);
+  S.stack('#e .kr-line > span', 3.7, { dur: 0.45, stagger: 0.12 });
+  tl.from('#e .kr-note', { autoAlpha: 0, duration: 0.2, immediateRender: true }, 3.6);
+  S.hold('#e .num', 3.8, 5.0, { scale: 1.04 });
+  // 6: the marquee rows
+  document.querySelectorAll('#f .kr-marq').forEach((r, i) => {
+    S.marquee(r, 5.0, 7.0, { dir: i % 2 ? 1 : -1, offset: 160 * i });
+    tl.from(r, { xPercent: i % 2 ? 40 : -40, autoAlpha: 0, duration: 0.3, ease: 'expo.out', immediateRender: true }, 5.0 + 0.06 * i);
+  });
+  // 7: product artifact in a hard frame; the UI inside is not touched except by its own (instant) state change
+  S.stack('#g .kr-line > span', 7.0, { dur: 0.45, stagger: 0.12 });
+  S.block('#frame', 7.1, { from: 'right', dur: 0.4 });
+  tl.set('#spin', { innerText: 'tomorrow', className: 'pill warn' }, 7.9);
+  tl.from('#tag', { yPercent: 130, duration: 0.3, ease: 'expo.out', immediateRender: true }, 7.5);
+  tl.from('#g .kr-note', { autoAlpha: 0, duration: 0.2, immediateRender: true }, 7.1);
+  S.hold('#g .inner', 7.2, 8.5, { scale: 1.02 });
+  // 8: sign-off
+  S.slam('#h1', 8.5, { from: 'top' });
+  fx.shake('#h .inner', 8.5 + 0.16, { strength: 10, dur: 0.3 });
+  tl.from('#h2', { autoAlpha: 0, y: 24, duration: 0.4, ease: 'expo.out', immediateRender: true }, 9.0);
+  S.hold('#h1', 9.0, 10.0, { scale: 1.04 });
+});
+</script></body></html>

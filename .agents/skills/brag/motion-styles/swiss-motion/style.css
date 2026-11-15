@@ -1,0 +1,31 @@
+/* Swiss Motion: International Typographic Style. Paper, ink, grey, ONE signal colour. */
+@font-face { font-family: 'SwissArchivo'; src: url(assets/archivo.ttf); font-weight: 100 900; font-stretch: 62% 125%; }
+#stage.ms-swiss-motion {
+  --page: #EAE9E5; --paper: #FFFFFF; --ink: #111111; --signal: #E30613;
+  --grey1: #D9D8D3; --grey2: #B9B8B2; --grey3: #8A8983;
+  --mx: 72px; --gut: 24px; --col: 136px; --base: 24px;
+  font-family: 'SwissArchivo', 'Helvetica Neue', Arial, sans-serif; font-weight: 500;
+  background: var(--page); color: var(--ink); letter-spacing: -0.02em;
+}
+.ms-swiss-motion .scene { position: absolute; inset: 0; background: var(--page); overflow: hidden; }
+.ms-swiss-motion .inner { position: absolute; inset: 0; }
+.ms-swiss-motion .sw-grid { position: absolute; inset: 0; pointer-events: none; }
+.ms-swiss-motion .sw-grid i { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--grey1); transform-origin: 50% 0; }
+.ms-swiss-motion .sw-grid i.h { left: 0; right: 0; top: auto; bottom: auto; width: auto; height: 2px; transform-origin: 0 50%; }
+.ms-swiss-motion .note { position: absolute; font-size: 22px; line-height: 24px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; color: var(--grey3); font-stretch: 110%; }
+.ms-swiss-motion .note b { color: var(--ink); font-weight: 800; }
+.ms-swiss-motion .hl { position: absolute; left: var(--mx); font-weight: 800; font-stretch: 100%; line-height: 0.94; letter-spacing: -0.045em; margin: 0; }
+.ms-swiss-motion .rule { position: absolute; height: 6px; background: var(--ink); transform-origin: 0 50%; }
+.ms-swiss-motion .rule.thin { height: 2px; }
+.ms-swiss-motion .block { position: absolute; background: var(--ink); }
+.ms-swiss-motion .signal { background: var(--signal); }
+.ms-swiss-motion .paper { position: absolute; background: var(--paper); }
+.ms-swiss-motion .row { position: absolute; left: var(--mx); right: var(--mx); height: 168px; }
+.ms-swiss-motion .row .name { position: absolute; left: 0; top: 34px; font-size: 64px; font-weight: 700; letter-spacing: -0.035em; }
+.ms-swiss-motion .row .when { position: absolute; right: 0; top: 40px; font-size: 40px; font-weight: 600; font-stretch: 110%; font-variant-numeric: tabular-nums; }
+.ms-swiss-motion .row .bar { position: absolute; left: 0; bottom: 30px; height: 30px; background: var(--ink); transform-origin: 0 50%; }
+.ms-swiss-motion .row .bar.signal { background: var(--signal); }
+.ms-swiss-motion .row .track { position: absolute; left: 0; right: 0; bottom: 30px; height: 30px; background: var(--grey1); }
+.ms-swiss-motion .row .tick { position: absolute; bottom: 0; width: 2px; height: 14px; background: var(--grey3); }
+.ms-swiss-motion .num { position: absolute; left: calc(var(--mx) - 24px); font-weight: 900; font-stretch: 100%; letter-spacing: -0.07em; line-height: 0.8; color: var(--ink); }
+.ms-swiss-motion .cap { position: absolute; font-size: 64px; font-weight: 700; letter-spacing: -0.035em; line-height: 1.02; }

@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Blueprint demo</title>
+<link rel="stylesheet" href="../style.css">
+<style>
+  body { margin: 0; background: #0d1116; }
+  .h1pos { position: absolute; left: 80px; top: 150px; width: 920px; }
+  .figpos { position: absolute; left: 80px; top: 96px; }
+  .nm { position: absolute; width: 560px; font: 56px/1 var(--hand); }
+  #cta .tag { position: absolute; left: 80px; top: 440px; width: 920px; }
+  #cta .rev { position: absolute; left: 80px; top: 690px; width: 900px; }
+  #cta .rev em { font-style: normal; font-family: var(--mono); }
+  #cta .bp-stamp { left: 560px; top: 905px; }
+</style></head>
+<body>
+<div id="stage" class="ms-blueprint">
+
+  <section class="scene" id="hook"><div class="bp-inner" id="hook-in">
+    <svg class="bp-svg" id="svg1" viewBox="0 0 1080 1920"></svg>
+    <p class="bp-fig figpos" id="fig1">Fig. 1 &mdash; fridge, front elevation</p>
+    <h1 class="bp-h h1pos" id="h1">Your fridge knows more than you do.</h1>
+  </div></section>
+
+  <section class="scene" id="list"><div class="bp-inner" id="list-in">
+    <svg class="bp-svg" id="svg2" viewBox="0 0 1080 1920"></svg>
+    <p class="bp-fig figpos" id="fig2">Fig. 2 &mdash; shelf life, exploded</p>
+    <h1 class="bp-h h1pos" id="h2" style="width:760px">See what&rsquo;s expiring</h1>
+    <div class="nm" id="n1" style="left:380px;top:712px">Greek yoghurt</div>
+    <div class="nm" id="n2" style="left:380px;top:1012px">Spinach</div>
+    <div class="nm" id="n3" style="left:380px;top:1312px">Feta</div>
+  </div></section>
+
+  <section class="scene" id="cta"><div class="bp-inner" id="cta-in">
+    <svg class="bp-svg" id="svg3" viewBox="0 0 1080 1920"></svg>
+    <p class="bp-fig figpos" id="fig3">Fig. 3 &mdash; release</p>
+    <h1 class="bp-h" id="logo" style="position:absolute;left:80px;top:140px;font-size:230px;line-height:1.05">Pantry.</h1>
+    <h2 class="bp-h tag sm" id="tagline">Cook what you have.</h2>
+    <p class="bp-note rev" id="rev"><em>&Delta;B</em> 12 recipes from what you already have.</p>
+    <div class="bp-stamp" id="stampEl">Approved<small>FOR COOKING</small></div>
+  </div></section>
+
+  <!-- the sheet: stays put while the figures change -->
+  <div class="bp-frame">
+    <div class="bp-border"></div>
+    <i class="bp-tick t"></i><i class="bp-tick l"></i><i class="bp-tick r"></i>
+    <div class="bp-tb">
+      <div><small>TITLE</small><span class="v">PANTRY &middot; FRIDGE ASSY</span></div>
+      <div><small>DWG NO</small><span class="v mono">PT-0001</span></div>
+      <div><small>SHEET</small><span class="v mono" id="f-sheet"><b>1 / 3</b><b>2 / 3</b><b>3 / 3</b></span></div>
+      <div><small>UNITS</small><span class="v">days &amp; mm</span></div>
+      <div><small>REV</small><span class="v mono" id="f-rev"><b>A</b><b>B</b></span></div>
+      <div><small>STATUS</small><span class="v mono" id="f-status" style="font-size:26px"><b>FOR REVIEW</b><b>APPROVED</b></span></div>
+    </div>
+  </div>
+</div>
+
+<script>window.TIMELINE = { width: 1080, height: 1920, fps: 30, duration: 6 };</script>
+<script src="../../../runtime/gsap.js"></script>
+<script src="../../../runtime/timeline.js"></script>
+<script src="../../../runtime/motion.js"></script>
+<script src="../kit.js"></script>
+<script>
+BRAG.build((tl, fx) => {
+  const BP = BRAG.styles.blueprint, S = BP.S;
+  const svg1 = document.getElementById('svg1'), svg2 = document.getElementById('svg2'), svg3 = document.getElementById('svg3');
+  [svg1, svg2, svg3].forEach((s) => S('defs', {}, s));
+  BP.scenes([
+    { el: '#hook', start: 0, end: 2.4, out: 'push-left', outDur: 0.5 },
+    { el: '#list', start: 2.4, end: 4.3, out: 'wipe', outDur: 0.5 },
+    { el: '#cta', start: 4.3, end: 6 },
+  ]);
+
+
+  // ---------- scene 1: the fridge, drawn in drafting order ----------
+  const g1 = S('g', {}, svg1);
+  const cV = S('line', { x1: 540, y1: 600, x2: 540, y2: 1610, class: 'bp-centre' }, g1);
+  const cH = S('line', { x1: 290, y1: 1100, x2: 790, y2: 1100, class: 'bp-centre' }, g1);
+  const body = S('rect', { x: 330, y: 640, width: 420, height: 920, rx: 18, class: 'bp-heavy' }, g1);
+  const split = S('line', { x1: 330, y1: 970, x2: 750, y2: 970 }, g1);
+  const hd1 = S('rect', { x: 706, y: 892, width: 16, height: 56, rx: 4 }, g1);
+  const hd2 = S('rect', { x: 706, y: 1000, width: 16, height: 160, rx: 4 }, g1);
+  const plinth = S('rect', { x: 352, y: 1560, width: 376, height: 40, class: 'bp-thin' }, g1);
+  const hat = BP.hatch(g1, 352, 1560, 376, 40, 11);
+  const shelves = [1170, 1300, 1430].map((y) => S('line', { x1: 366, y1: y, x2: 714, y2: y, class: 'bp-hidden' }, g1));
+  const items = [[404, 1118, 56, 52], [520, 1248, 70, 52], [610, 1378, 66, 52]].map(([x, y, w, h]) => S('rect', { x, y, width: w, height: h, rx: 6, class: 'bp-hidden' }, g1));
+  const scan = S('line', { x1: 318, y1: 640, x2: 762, y2: 640, class: 'bp-scan' }, g1);
+  tl.set(scan, { autoAlpha: 0 }, 0);
+
+  let t = 0.05;
+  BP.letter('#h1', t, { cps: 30 });
+  tl.from('#fig1', { autoAlpha: 0, x: -30, duration: 0.5, ease: 'power3.out', immediateRender: true }, 0.05);
+  BP.dashed(cV, 0.25, 0.5); BP.dashed(cH, 0.35, 0.45);
+  t = BP.draw(body, 0.35, { dur: 0.75 });
+  BP.draw([split, hd1, hd2, plinth], 0.95, { speed: 1800 });
+  BP.draw(hat, 1.2, { parallel: true, span: 0.4, dur: 0.25, nib: false });
+  shelves.forEach((s, i) => BP.dashed(s, 1.3 + i * 0.1, 0.4));
+  items.forEach((s, i) => { tl.set(s, { autoAlpha: 0 }, 0); tl.set(s, { autoAlpha: 1 }, 1.5 + i * 0.1); tl.from(s, { scale: 0.2, svgOrigin: `${+s.getAttribute('x') + +s.getAttribute('width') / 2} ${+s.getAttribute('y') + +s.getAttribute('height')}`, duration: 0.3, ease: 'back.out(3)', immediateRender: false }, 1.5 + i * 0.1); });
+  BP.dimension(svg1, { x1: 330, y1: 640, x2: 750, y2: 640, off: -64, count: 600, suffix: ' mm', parent: g1 }, 1.25);
+  BP.dimension(svg1, { x1: 330, y1: 640, x2: 330, y2: 1560, off: 96, count: 1850, suffix: ' mm', parent: g1 }, 1.4);
+  BP.balloon(svg1, { x: 918, y: 790, tx: 722, ty: 830, n: 1, parent: g1 }, 1.75);
+  BP.balloon(svg1, { x: 918, y: 1090, tx: 722, ty: 1080, n: 2, parent: g1 }, 1.9);
+  // the "knowing": a scan line sweeps down the cabinet, items light up as it passes
+  tl.set(scan, { autoAlpha: 1 }, 1.85);
+  tl.fromTo(scan, { attr: { y1: 640, y2: 640 } }, { attr: { y1: 1560, y2: 1560 }, duration: 0.7, ease: 'power1.inOut', immediateRender: false }, 1.85);
+  tl.set(scan, { autoAlpha: 0 }, 2.56);
+  items.forEach((s, i) => tl.fromTo(s, { strokeWidth: 1.4 }, { strokeWidth: 4, duration: 0.14, yoyo: true, repeat: 1, ease: 'power2.out', immediateRender: false }, 1.85 + 0.7 * ((+s.getAttribute('y') + 26 - 640) / 920)));
+  fx.drift('#hook-in', 0, 2.7, { scale: 1.05, y: -14 });
+
+  // ---------- scene 2: three items, exploded, shelf life as dimension lines ----------
+  const g2 = S('g', {}, svg2);
+  const X0 = 380, DAY = 56, rows = [800, 1100, 1400];
+  const grid = [];
+  for (let k = 0; k <= 10; k++) {
+    grid.push(S('line', { x1: X0 + k * DAY, y1: 690, x2: X0 + k * DAY, y2: 1500, class: k % 2 ? 'bp-grid-odd bp-hair-line' : 'bp-hair-line' }, g2));
+    if (k % 2 === 0) { const tx = S('text', { x: X0 + k * DAY, y: 662, 'text-anchor': 'middle', style: 'font-size:24px;fill:rgba(231,240,249,.62)' }, g2); tx.textContent = k; tl.from(tx, { autoAlpha: 0, y: 8, duration: 0.3, immediateRender: true }, 2.55 + k * 0.02); }
+  }
+  const axis = S('text', { x: X0 + 10 * DAY + 4, y: 1540, 'text-anchor': 'end', style: 'font-size:22px;fill:rgba(231,240,249,.62)' }, g2); axis.textContent = 'SHELF LIFE (DAYS)';
+  tl.from(axis, { autoAlpha: 0, duration: 0.4, immediateRender: true }, 3.0);
+  BP.draw(grid, 2.5, { parallel: true, stagger: 0.03, dur: 0.4, nib: false, ease: 'power2.out' });
+
+  const asm = [930, 1080, 1230];                        // assembled stack (centre y), x = 225
+  const slot = asm.map((cy) => { const s = S('g', {}, g2); return s; });
+  const part = (i, fn) => { const p = S('g', { transform: `translate(235 ${asm[i]}) scale(1.35)` }, slot[i]); return fn(p); };
+  const cup = part(0, (p) => [
+    S('path', { d: 'M-58,-40 L58,-40 L46,50 L-46,50 Z', class: 'bp-heavy' }, p),
+    S('path', { d: 'M-66,-52 H66 V-40 H-66 Z' }, p),
+    S('path', { d: 'M-53,-8 H53 M-49,18 H49', class: 'bp-thin' }, p)]);
+  const bag = part(1, (p) => [
+    S('path', { d: 'M-52,-40 L52,-40 L58,52 L-58,52 Z', class: 'bp-heavy' }, p),
+    S('path', { d: 'M-52,-40 l9,-14 l9,14 l9,-14 l9,14 l9,-14 l9,14 l9,-14 l9,14 l9,-14 l9,14 l9,-14 l9,14', class: 'bp-thin' }, p),
+    S('path', { d: 'M-18,16 C-22,-12 16,-18 20,-10 C26,10 4,30 -18,16 Z M-18,16 L14,-6', class: 'bp-thin' }, p)]);
+  const feta = part(2, (p) => [
+    S('path', { d: 'M-62,-14 H58 V40 H-62 Z', class: 'bp-heavy' }, p),
+    S('path', { d: 'M-62,-14 L-34,-40 H86 L58,-14 M86,-40 V14 L58,40', class: 'bp-heavy' }, p),
+    ...[[-40, 6], [-8, 20], [24, 4], [38, 24]].map(([x, y]) => S('circle', { cx: x, cy: y, r: 6, class: 'bp-thin' }, p))]);
+  [cup, bag, feta].forEach((els, i) => BP.draw(els, 2.5 + i * 0.12, { speed: 1900 }));
+  const ends = BP.explode(slot.map((s, i) => ({ el: s, dx: 0, dy: rows[i] - asm[i], cx: 235, cy: asm[i] })), 3.05, { out: 0.65, hold: 0, back: 0, stagger: 0.07 });
+  BP.balloon(svg2, { x: 104, y: rows[0] - 82, tx: 172, ty: rows[0] - 46, n: 1, r: 26, parent: g2 }, 3.5);
+  BP.balloon(svg2, { x: 104, y: rows[1] - 82, tx: 172, ty: rows[1] - 46, n: 2, r: 26, parent: g2 }, 3.6);
+  BP.balloon(svg2, { x: 104, y: rows[2] - 82, tx: 166, ty: rows[2] - 50, n: 3, r: 26, parent: g2 }, 3.7);
+  BP.letter('#h2', 2.2, { cps: 30 });
+  tl.from('#fig2', { autoAlpha: 0, x: -30, duration: 0.5, immediateRender: true }, 2.2);
+  const specs = [
+    { n: '#n1', days: 2, label: null, count: 2, suffix: ' DAYS', at: 3.55 },
+    { n: '#n2', days: 1, label: 'TOMORROW', at: 3.7 },
+    { n: '#n3', days: 9, count: 9, suffix: ' DAYS', at: 3.85 },
+  ];
+  specs.forEach((s, i) => {
+    BP.letter(s.n, s.at - 0.15, { cps: 24 });
+    const y = rows[i] + 10;
+    const sp = { x1: X0, y1: y, x2: X0 + s.days * DAY, y2: y, off: 44, size: 32, parent: g2 };
+    if (s.count != null) { sp.count = s.count; sp.suffix = s.suffix; } else sp.label = s.label;
+    BP.dimension(svg2, sp, s.at, { dur: 0.55 });
+  });
+  fx.pulse('#n2', 4.1, { scale: 1.08 });
+  fx.drift('#list-in', 2.15, 4.6, { scale: 1.045, y: -10 });
+
+  // ---------- scene 3: release. revision cloud, rubber stamp ----------
+  const g3 = S('g', {}, svg3);
+  BP.letter('#logo', 4.1, { cps: 16 });
+  tl.from('#fig3', { autoAlpha: 0, x: -30, duration: 0.5, immediateRender: true }, 4.1);
+  BP.letter('#tagline', 4.45, { cps: 38 });
+  BP.cloud(g3, { x: 56, y: 428, w: 968, h: 150 }, 4.85, { r: 17, dur: 0.6, tag: 'B' });
+  BP.letter('#rev', 4.8, { cps: 62 });
+  // pot in section A-A
+  const potC = S('line', { x1: 540, y1: 1060, x2: 540, y2: 1560, class: 'bp-centre' }, g3);
+  const pot = [
+    S('path', { d: 'M404,1190 V1470 Q404,1486 420,1486 H660 Q676,1486 676,1470 V1190', class: 'bp-heavy' }, g3),
+    S('path', { d: 'M384,1190 H696 V1168 H384 Z M510,1168 V1138 H570 V1168', class: 'bp-heavy' }, g3),
+    S('path', { d: 'M404,1260 H346 V1316 H404 M676,1260 H734 V1316 H676', class: 'bp-heavy' }, g3)];
+  const potHat = [BP.hatch(g3, 404, 1190, 24, 296, 9), BP.hatch(g3, 652, 1190, 24, 296, 9), BP.hatch(g3, 428, 1462, 224, 24, 9)].flat();
+  const steam = [[470, 0], [540, 1], [610, 2]].map(([x, k]) => S('path', { d: `M${x},1120 c-26,-24 26,-44 0,-70 c-24,-22 22,-40 0,-64`, class: 'bp-thin' }, g3));
+  BP.dashed(potC, 4.5, 0.4);
+  BP.draw(pot, 4.5, { speed: 1800 });
+  BP.draw(potHat, 4.8, { parallel: true, span: 0.4, dur: 0.22, nib: false });
+  BP.draw(steam, 4.95, { parallel: true, stagger: 0.1, dur: 0.5, nib: false });
+  steam.forEach((s, i) => fx.float(s, 5.4, 6.0, { y: 8, period: 0.8, phase: i / 3 }));
+  BP.dimension(svg3, { x1: 404, y1: 1486, x2: 676, y2: 1486, off: 56, count: 12, suffix: ' RECIPES', size: 30, parent: g3 }, 4.9, { dur: 0.4 });
+  BP.stamp('#stampEl', 5.55);
+  fx.drift('#cta-in', 4.05, 6, { scale: 1.04, y: -10 });
+
+  // ---------- title block and scenes ----------
+  BP.cycle('#f-sheet', [0, 2.4, 4.3]);
+  BP.cycle('#f-rev', [0, 5.45]);
+  BP.cycle('#f-status', [0, 5.6]);
+  BP.sectionSweep(4.05, 0.5);
+});
+</script>
+</body></html>

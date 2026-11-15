@@ -1,0 +1,105 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Chart Room demo</title>
+<link rel="stylesheet" href="../style.css">
+<style>
+/* demo layout only */
+#s1 .cr-hero { left: 120px; top: 150px; font-size: 190px; }
+#s1 .cr-chip { left: 120px; top: 380px; }
+#s1 .cr-title { left: 1060px; top: 160px; width: 740px; font-size: 56px; color: var(--text); }
+#s1 .cr-title span { color: var(--mute); }
+#s2 .cr-title { left: 120px; top: 120px; font-size: 84px; width: 1100px; }
+#s3 .cr-title { left: 120px; top: 120px; font-size: 84px; width: 1100px; }
+#donut { left: 150px; top: 380px; }
+#donutN { position: absolute; left: 150px; top: 380px; width: 380px; line-height: 380px; text-align: center; font-size: 96px; font-weight: 600; letter-spacing: -0.05em; }
+#s4 .big { position: absolute; left: 120px; top: 200px; font-size: 180px; font-weight: 600; letter-spacing: -0.06em; line-height: 1; }
+#s4 .big i { font-style: normal; color: var(--accent); }
+.kpi { width: 480px; height: 250px; top: 690px; }
+.kpi .n { position: absolute; left: 36px; top: 70px; font-size: 100px; font-weight: 600; letter-spacing: -0.05em; font-variant-numeric: tabular-nums; }
+.kpi .l { position: absolute; left: 36px; top: 36px; }
+.kpi .d { position: absolute; left: 36px; bottom: 30px; font: 400 22px/1 var(--mono); color: var(--mute); }
+</style></head><body>
+<div id="stage" class="ms-chart-room">
+  <section class="scene" id="s1"><div class="inner">
+    <div class="cr-label" style="left:120px;top:90px"><b>01</b> &nbsp;Kitchens planning each week</div>
+    <div class="cr-hero" id="h1">0</div>
+    <div class="cr-chip" id="chip">+18% vs last month</div>
+    <h2 class="cr-title">Planned meals keep climbing <span>since the recipe finder shipped.</span></h2>
+    <div id="lc" style="left:210px;top:560px"></div>
+    <div class="cr-src" style="left:120px;top:1010px">Illustrative data for the demo. Real films use the real export.</div>
+  </div></section>
+  <section class="scene" id="s2"><div class="inner">
+    <div class="cr-label" style="left:120px;top:90px"><b>02</b> &nbsp;Plans created, by weekday</div>
+    <h2 class="cr-title">Sunday is planning day.</h2>
+    <div id="bc" style="left:210px;top:380px"></div>
+    <svg style="position:absolute;left:0;top:0;width:1920px;height:1080px;overflow:visible"><path id="lead" class="cr-leader" d="M1608 400 L1608 330"/></svg>
+    <div class="cr-callout" id="call" style="left:1440px;top:270px">Peak: 412 plans</div>
+  </div></section>
+  <section class="scene" id="s3"><div class="inner">
+    <div class="cr-label" style="left:120px;top:90px"><b>03</b> &nbsp;Groceries used before they expire</div>
+    <h2 class="cr-title">Less ends up in the bin.</h2>
+    <div id="donut"></div><div id="donutN">0%</div>
+    <div id="rows" style="position:absolute;left:760px;top:390px;width:1040px;height:500px">
+      <div class="cr-label" style="left:0;top:-50px">Share saved by category</div>
+      <div class="cr-hrow hi" style="top:0"><div class="nm">Dairy</div><div class="trk"><div class="fl"></div></div><div class="vl">0</div></div>
+      <div class="cr-hrow" style="top:110px"><div class="nm">Greens</div><div class="trk"><div class="fl"></div></div><div class="vl">0</div></div>
+      <div class="cr-hrow" style="top:220px"><div class="nm">Bread</div><div class="trk"><div class="fl"></div></div><div class="vl">0</div></div>
+      <div class="cr-hrow" style="top:330px"><div class="nm">Leftovers</div><div class="trk"><div class="fl"></div></div><div class="vl">0</div></div>
+    </div>
+  </div></section>
+  <section class="scene" id="s4"><div class="inner">
+    <div class="cr-label" style="left:120px;top:90px"><b>04</b> &nbsp;Pantry</div>
+    <div class="big">Cook what<br>you have<i>.</i></div>
+    <div class="cr-panel kpi" style="left:120px"><div class="cr-label l">Kitchens</div><div class="n" id="k1">0</div><div class="d">weekly active</div></div>
+    <div class="cr-panel kpi" style="left:640px"><div class="cr-label l">Plans</div><div class="n" id="k2">0</div><div class="d">this month</div></div>
+    <div class="cr-panel kpi" style="left:1160px"><div class="cr-label l">Saved</div><div class="n" id="k3">0%</div><div class="d">before expiry</div></div>
+  </div></section>
+</div>
+<script>window.TIMELINE = { width: 1920, height: 1080, fps: 30, duration: 10 };</script>
+<script src="../../../runtime/gsap.js"></script><script src="../../../runtime/timeline.js"></script><script src="../../../runtime/motion.js"></script>
+<script src="../kit.js"></script>
+<script>
+BRAG.build((tl, fx) => {
+  const S = BRAG.styles['chart-room'];
+  // the data (the demo's own numbers; a real video loads real ones)
+  const weekly = [610, 655, 700, 742, 810, 868, 905, 960, 1040, 1110, 1190, 1284];
+  const days = [212, 238, 251, 266, 301, 344, 412];
+  const cats = [84, 71, 63, 47];
+  const lc = S.lineChart('#lc', { w: 1600, h: 380, data: weekly, max: 1500, rows: 3, labels: weekly.map((_, i) => (i % 2 ? null : 'W' + (i + 1))) });
+  const bc = S.barChart('#bc', { w: 1500, h: 520, data: days, max: 500, rows: 5, hi: 6, labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] });
+  const dn = S.donut('#donut', { r: 150, share: 0.68 });
+
+  fx.scenes([
+    { el: '#s1', start: 0,   end: 2.8, out: 'push-left', outDur: 0.5 },
+    { el: '#s2', start: 2.8, end: 5.6, out: 'push-left', outDur: 0.5 },
+    { el: '#s3', start: 5.6, end: 8.0, out: 'fade',      outDur: 0.5 },
+    { el: '#s4', start: 8.0, end: 10 },
+  ]);
+  // 1: a number and the line behind it
+  S.rise('#s1 .cr-label', 0.1, { dur: 0.4 });
+  S.count('#h1', 1284, 0.2, { dur: 1.5 });
+  S.rise('#s1 .cr-title', 0.5);
+  S.axes(lc, 0.3);
+  S.drawLine(lc, 0.6, { dur: 1.6 });
+  S.rise('#chip', 1.9, { dur: 0.45 });
+  S.drift('#s1 .inner', 0.4, 2.8);
+  // 2: bars grow, the peak gets a callout
+  S.rise('#s2 .cr-label', 2.9, { dur: 0.4 });
+  S.rise('#s2 .cr-title', 3.0);
+  S.axes(bc, 3.0);
+  S.grow(bc, days, 3.3, { stagger: 0.08, dur: 0.8 });
+  S.callout('#call', 4.35, { leader: '#lead' });
+  S.drift('#s2 .inner', 3.2, 5.6);
+  // 3: share + ranked rows
+  S.rise('#s3 .cr-label', 5.7, { dur: 0.4 });
+  S.rise('#s3 .cr-title', 5.8);
+  S.sweepArc(dn, 6.0, { dur: 1.3, label: '#donutN' });
+  S.fill('#rows .cr-hrow', cats, 6.2, { vFmt: (v) => Math.round(v) + '%' });
+  S.drift('#s3 .inner', 6.0, 8.0);
+  // 4: the closing tiles
+  S.rise('#s4 .big', 8.1, { dur: 0.6, y: 40 });
+  S.rise('#s4 .kpi', 8.4, { dur: 0.5 });
+  S.count('#k1', 1284, 8.5, { dur: 1.1 });
+  S.count('#k2', 38210, 8.6, { dur: 1.1 });
+  S.count('#k3', 68, 8.7, { dur: 1.0, suffix: '%' });
+  S.drift('#s4 .inner', 8.4, 10);
+});
+</script></body></html>

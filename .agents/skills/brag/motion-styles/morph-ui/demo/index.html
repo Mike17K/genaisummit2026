@@ -1,0 +1,126 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Morph UI demo</title>
+<link rel="stylesheet" href="../style.css">
+<style>
+/* demo faces only */
+.f-pill span { font-size: 56px; font-weight: 600; letter-spacing: -0.03em; }
+.f-pill i { display: inline-block; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); margin-right: 22px; }
+.f-load svg { width: 120px; height: 120px; }
+.f-card { justify-content: flex-start; padding: 0 64px; gap: 40px; flex-direction: column; align-items: flex-start; padding-top: 62px; }
+.f-card h3 { margin: 0; font-size: 84px; letter-spacing: -0.045em; font-weight: 600; line-height: 1; }
+.f-card .meta { font-size: 30px; color: #9a978e; margin-top: -16px; }
+.f-card .chips { display: flex; gap: 16px; margin-top: 8px; }
+.f-card .chip { font-size: 30px; font-weight: 600; padding: 14px 28px; border-radius: 99px; border: 3px solid rgba(255,255,255,.28); }
+.f-card .chip.hot { background: var(--accent); border-color: var(--accent); color: #121212; }
+.f-tog .knob { position: absolute; left: 30px; top: 30px; width: 170px; height: 170px; border-radius: 50%; background: #fff; }
+.f-sl .lab { position: absolute; left: 64px; top: 0; bottom: 0; display: flex; align-items: center; font-size: 40px; font-weight: 600; }
+.f-sl .val { position: absolute; right: 64px; top: 0; bottom: 0; display: flex; align-items: center; font-size: 64px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.f-sl .trk { position: absolute; left: 330px; width: 600px; top: 78px; height: 14px; border-radius: 7px; background: rgba(255,255,255,.2); }
+.f-sl .fil { position: absolute; left: 330px; top: 78px; height: 14px; border-radius: 7px; background: #fff; width: 200px; }
+.f-sl .kn { position: absolute; left: 330px; top: 56px; width: 58px; height: 58px; margin-left: -29px; border-radius: 50%; background: #fff; }
+.f-chart .cap { position: absolute; left: 56px; top: 44px; font: 600 24px/1 var(--sans); letter-spacing: .06em; text-transform: uppercase; color: #9a978e; }
+.f-chart .base { position: absolute; left: 60px; right: 60px; bottom: 76px; height: 3px; background: rgba(255,255,255,.3); }
+.f-chart .b { position: absolute; bottom: 79px; width: 96px; border-radius: 10px 10px 0 0; background: rgba(255,255,255,.28); transform-origin: 50% 100%; }
+.f-chart .b.hot { background: var(--accent); }
+.f-chart .d { position: absolute; bottom: 30px; width: 96px; text-align: center; font: 500 24px/1 var(--sans); color: #9a978e; }
+.f-toast { gap: 28px; }
+.f-toast .ck { width: 100px; height: 100px; border-radius: 50%; background: var(--accent); display: flex; align-items: center; justify-content: center; }
+.f-toast .ck svg { width: 56px; height: 56px; }
+.f-toast span { font-size: 58px; font-weight: 600; letter-spacing: -0.035em; }
+.ms-morph-ui .f-win { inset: 16px; border-radius: 30px; overflow: hidden; background: #fff; color: #1c1c1c; display: block; }
+/* the product UI inside the window: its own look; it has no animations of its own, so changes are instant */
+.app { position: absolute; inset: 0; font: 500 30px/1.2 var(--sans); }
+.app header { height: 110px; padding: 0 44px; display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #eee; font-weight: 700; font-size: 38px; }
+.app header span { font-size: 26px; font-weight: 500; color: #888; }
+.app .item { margin: 26px 44px 0; padding: 0 32px; height: 132px; border: 2px solid #ececec; border-radius: 22px; display: flex; align-items: center; justify-content: space-between; }
+.app .item b { font-size: 40px; font-weight: 600; display: block; letter-spacing: -0.02em; }
+.app .item small { font-size: 24px; color: #999; }
+.app .pill { font-size: 26px; font-weight: 600; padding: 10px 22px; border-radius: 99px; background: #e8f5ec; color: #1d7a3c; }
+.app .pill.warn { background: #ffe9d9; color: #c24a00; }
+.app .cta { position: absolute; left: 44px; right: 44px; bottom: 36px; height: 100px; border-radius: 20px; background: #1c1c1c; color: #fff; font-weight: 600; display: flex; align-items: center; justify-content: center; font-size: 36px; }
+</style></head><body>
+<div id="stage" class="ms-morph-ui">
+  <div class="mu-world" id="world">
+    <div class="mu-dots"></div>
+    <div class="mu-shape" id="shape">
+      <div class="mu-face f-pill" id="fPill"><span><i></i>Cook tonight</span></div>
+      <div class="mu-face f-load" id="fLoad"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="44" fill="none" stroke="rgba(255,255,255,.2)" stroke-width="12"/><g id="spinner" style="transform-origin:60px 60px"><path d="M60 16 A44 44 0 0 1 104 60" fill="none" stroke="#FF5A1F" stroke-width="12" stroke-linecap="round"/></g></svg></div>
+      <div class="mu-face f-card" id="fCard"><h3>Spinach pie</h3><div class="meta">25 min &middot; 3 of 4 on hand</div><div class="chips"><span class="chip">egg</span><span class="chip">feta</span><span class="chip">spinach</span><span class="chip hot">+ dill</span></div></div>
+      <div class="mu-face f-tog" id="fTog"><div class="knob" id="knob"></div></div>
+      <div class="mu-face f-sl" id="fSl"><div class="lab">Servings</div><div class="trk"></div><div class="fil" id="fil"></div><div class="kn" id="kn"></div><div class="val" id="val">2</div></div>
+      <div class="mu-face f-chart" id="fChart"><div class="cap">Meals planned</div><div class="base"></div>
+        <div class="b" style="left:112px;height:120px"></div><div class="b" style="left:244px;height:170px"></div><div class="b" style="left:376px;height:210px"></div><div class="b" style="left:508px;height:260px"></div><div class="b hot" style="left:640px;height:330px"></div>
+        <div class="d" style="left:112px">Mon</div><div class="d" style="left:244px">Tue</div><div class="d" style="left:376px">Wed</div><div class="d" style="left:508px">Thu</div><div class="d" style="left:640px">Sun</div></div>
+      <div class="mu-face f-toast" id="fToast"><div class="ck"><svg viewBox="0 0 56 56"><path d="M12 29 L24 41 L45 16" fill="none" stroke="#121212" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></div><span>Added to your plan</span></div>
+      <div class="mu-face f-win" id="fWin"><div class="app">
+        <header>Fridge <span>3 items</span></header>
+        <div class="item"><div><b>Greek yoghurt</b><small>opened Monday</small></div><span class="pill">2 days</span></div>
+        <div class="item"><div><b>Spinach</b><small>bagged salad</small></div><span class="pill" id="spin">4 days</span></div>
+        <div class="item"><div><b>Feta</b><small>block, sealed</small></div><span class="pill">9 days</span></div>
+        <div class="cta">Find a recipe</div>
+      </div></div>
+    </div>
+    <div class="mu-ripple" id="rip"></div>
+    <svg class="mu-cursor" id="cur" viewBox="0 0 56 56"><path d="M10 6 L10 42 L19 34 L25 48 L32 45 L26 32 L38 32 Z" fill="#121212" stroke="#fff" stroke-width="3" stroke-linejoin="round"/></svg>
+  </div>
+</div>
+<script>window.TIMELINE = { width: 1920, height: 1080, fps: 30, duration: 10 };</script>
+<script src="../../../runtime/gsap.js"></script><script src="../../../runtime/timeline.js"></script><script src="../../../runtime/motion.js"></script>
+<script src="../kit.js"></script>
+<script>
+BRAG.build((tl, fx) => {
+  const S = BRAG.styles['morph-ui'];
+  const C = { x: 960, y: 540 };                 // world centre = the shape's centre
+  const cur = (x, y) => ({ x: C.x + x, y: C.y + y });
+  S.init('#shape', '#fPill', { w: 560, h: 180, r: 90 });
+  tl.set('#cur', { x: 1500, y: 860, transformOrigin: '10px 6px', immediateRender: true }, 0);
+  tl.set('#rip', { autoAlpha: 0, immediateRender: true }, 0);
+
+  // 0.0 pill, the cursor comes in and presses
+  S.camera('#world', 0, { scale: 1.2, dur: 0.001 });
+  S.camera('#world', 0.05, { scale: 1.0, dur: 0.9 });
+  S.cursorTo('#cur', C.x + 20, C.y + 10, 0.1, { dur: 0.7 });
+  S.click('#cur', '#rip', 0.85, { x: C.x + 20, y: C.y + 10 });
+  // 0.9 loader
+  S.morph('#shape', '#fLoad', { w: 220, h: 220, r: 110 }, 0.95);
+  S.camera('#world', 0.95, { scale: 1.35, dur: 0.8 });
+  S.cursorTo('#cur', C.x + 300, C.y + 250, 1.0, { dur: 0.7 });
+  S.spin('#spinner', 1.0, 2.1, { turns: 2 });
+  // 2.0 recipe card
+  S.morph('#shape', '#fCard', { w: 1040, h: 420, r: 56 }, 2.05);
+  S.camera('#world', 2.05, { scale: 1.0, dur: 0.8 });
+  S.items('#fCard h3, #fCard .meta, #fCard .chip', 2.5, { stagger: 0.07 });
+  S.cursorTo('#cur', C.x + 380, C.y + 130, 2.6, { dur: 0.6 });
+  S.click('#cur', '#rip', 3.0, { x: C.x + 380, y: C.y + 130 });
+  // 3.3 toggle, the cursor flips it
+  S.morph('#shape', '#fTog', { w: 460, h: 230, r: 115 }, 3.35);
+  S.camera('#world', 3.35, { scale: 1.3, dur: 0.8 });
+  S.cursorTo('#cur', C.x - 80, C.y + 20, 3.55, { dur: 0.6 });
+  S.click('#cur', '#rip', 4.05, { x: C.x - 80, y: C.y + 20 });
+  tl.to('#knob', { x: 230, duration: 0.3, ease: 'back.out(1.3)', immediateRender: false }, 4.08);
+  tl.to('#shape', { backgroundColor: '#FF5A1F', duration: 0.3, ease: 'power2.out', immediateRender: false }, 4.08);
+  // 4.6 slider, the cursor drags the knob from 2 to 4
+  S.morph('#shape', '#fSl', { w: 1160, h: 170, r: 85, bg: '#121212' }, 4.65);
+  S.camera('#world', 4.65, { scale: 0.95, dur: 0.8 });
+  S.cursorTo('#cur', C.x - 230, C.y + 30, 4.8, { dur: 0.5 });
+  S.click('#cur', '#rip', 5.3, { x: C.x - 230, y: C.y + 30 });
+  const st = { v: 0 };
+  tl.to('#kn', { x: 200, duration: 0.55, ease: 'power2.inOut', immediateRender: false }, 5.4);
+  tl.to('#fil', { width: 400, duration: 0.55, ease: 'power2.inOut', immediateRender: false }, 5.4);
+  tl.to('#cur', { x: C.x - 30, duration: 0.55, ease: 'power2.inOut', immediateRender: false }, 5.4);
+  tl.set('#val', { textContent: '3', immediateRender: false }, 5.6); tl.set('#val', { textContent: '4', immediateRender: false }, 5.8);
+  // 6.0 chart
+  S.morph('#shape', '#fChart', { w: 860, h: 560, r: 56 }, 6.05);
+  S.camera('#world', 6.05, { scale: 1.0, dur: 0.8 });
+  tl.to('#cur', { autoAlpha: 0, duration: 0.25, immediateRender: false }, 6.1);   // the cursor has done its job
+  tl.from('#fChart .b', { scaleY: 0, duration: 0.6, ease: 'expo.out', stagger: 0.07, immediateRender: true }, 6.55);
+  tl.from('#fChart .d, #fChart .cap', { autoAlpha: 0, duration: 0.3, stagger: 0.04, immediateRender: true }, 6.5);
+  // 7.3 toast: the shape drops low in the frame and the camera follows
+  S.morph('#shape', '#fToast', { w: 960, h: 190, r: 95, y: 200 }, 7.3);
+  S.camera('#world', 7.3, { scale: 1.12, y: -140, dur: 0.8 });
+  // 8.2 window: the shape grows into a bezel that holds the real UI, which keeps its own look
+  S.morph('#shape', '#fWin', { w: 1240, h: 780, r: 52, y: 0 }, 8.25, { dur: 0.65 });
+  S.camera('#world', 8.25, { scale: 0.9, y: 0, dur: 0.7 });
+  S.camera('#world', 9.0, { scale: 1.0, dur: 1.0, ease: 'none' });
+  tl.set('#spin', { textContent: 'tomorrow', className: 'pill warn', immediateRender: false }, 9.3);   // the app has no animation here: instant
+});
+</script></body></html>
