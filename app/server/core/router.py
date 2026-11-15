@@ -675,6 +675,19 @@ async def handle_gps(state: State, msg: dict) -> None:
 PTT_MAX_S = 30.0  # safety cap for one push-to-talk turn
 
 
+def pcm_level(pcm: bytes) -> dict:
+    """Loudness of a PCM16 turn for the trace: RMS and peak in dBFS (silence / too-quiet mic diagnosis)."""
+    import numpy as np
+
+    x = np.frombuffer(pcm[: len(pcm) - (len(pcm) % 2)], dtype=np.int16).astype(np.float32) / 32768.0
+    if x.size == 0:
+        return {"rms_dbfs": None, "peak_dbfs": None}
+    rms = float(np.sqrt(np.mean(x * x)))
+    peak = float(np.max(np.abs(x)))
+    db = lambda v: round(20 * np.log10(v), 1) if v > 1e-6 else -120.0
+    return {"rms_dbfs": db(rms), "peak_dbfs": db(peak)}
+
+
 async def ptt_start(state: State) -> None:
     """Push-to-talk pressed: stop everything VoxEye is saying or doing and start collecting the user's words."""
     from ..assistant import info_pipeline
@@ -705,7 +718,7 @@ async def ptt_end(state: State) -> None:
     state.turn_frame_jpeg = None
     held_s = round(time.time() - state.ptt_started_at, 1)
     trace.log("user_turn", state="end", mode="push_to_talk", held_s=held_s,
-              audio_s=round(len(pcm_bytes) / turns.BYTES_PER_S, 1))
+              audio_s=round(len(pcm_bytes) / turns.BYTES_PER_S, 1), **pcm_level(pcm_bytes))
     if len(pcm_bytes) >= MIN_VOICE_PCM_BYTES:
         info_pipeline.cancel_for_user(state)
         state.info_task = alerts.spawn(info_pipeline.answer_user_audio(state, pcm_bytes, frame_jpeg))

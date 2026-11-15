@@ -260,6 +260,7 @@ def _start_clause_tts(clause_text: str) -> tuple[asyncio.Queue, asyncio.Task]:
     return q, asyncio.create_task(_produce())
 
 
+SPEECH_PAD_S = 0.4  # silence added before/after each spoken turn sent to the model
 MAX_TOOL_ROUNDS = 3
 _KEY_RE = re.compile(r"(key=)[^&\s]+", re.IGNORECASE)
 _HEADER_PREFIXES = ("HEARD:", "INTENT:", "MEMORY:", "COMPASS:", "REPLY:")
@@ -669,7 +670,10 @@ async def answer_user_audio(state: State, pcm16_16k: bytes, frame_jpeg: bytes | 
     t0 = time.time()
     active = ActiveSpeech(kind="answer")
     state.active_speech = active
-    wav_bytes = pcm16_to_wav(pcm16_16k, 16000)
+    # Push-to-talk clips start on the very first syllable; the model then often transcribes NONE (verified:
+    # the same Greek clip is heard only with silence around it). Pad 0.4 s of silence on both sides.
+    pad = b"\x00" * int(16000 * 2 * SPEECH_PAD_S)
+    wav_bytes = pcm16_to_wav(pad + pcm16_16k + pad, 16000)
 
     contents: list = []
     for role, txt in list(state.chat_history)[-6:]:

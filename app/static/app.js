@@ -298,6 +298,7 @@ const SONAR_SETTINGS_KEY = "eyesSonarSettings";
 (function loadSonarSettings() {
   try {
     const saved = JSON.parse(localStorage.getItem(SONAR_SETTINGS_KEY) || "null");
+    if (saved && saved.pitchSmoothing === 0.6) delete saved.pitchSmoothing; // old default -> new lighter default
     if (saved) SpatialSonarLib.setSettings(saved);
   } catch (_) {}
   const q = new URLSearchParams(location.search);
@@ -324,6 +325,26 @@ try { if (localStorage.getItem("eyesSonar") === "0") sonarEnabled = false; } cat
 let sonarTimer = null;
 let sonarSentState = null;
 const smoothedSectors = { left: null, center: null, right: null };
+// WebXR Depth Sensing (Chrome + ARCore) is the automatic sonar source on phones that support it; ?xr=0 disables it.
+// ARCore then owns the camera, so question frames come from WebXR camera-access instead of getUserMedia.
+const XR_ALLOWED = new URLSearchParams(location.search).get("xr") !== "0";
+let xrSupported = null;   // null = still checking, then true / false
+let xrBroken = "";        // set when a session failed on this phone (later starts use the depth model)
+let xrSource = null;
+let xrStatus = "-";
+if (XR_ALLOWED && typeof XrDepthSource === "function") {
+  XrDepthSource.supported().then((ok) => { xrSupported = ok; }).catch(() => { xrSupported = false; });
+} else {
+  xrSupported = false;
+}
+// TEST: WebXR is taken out of the source selection (all WebXR functions are kept). To re-enable, restore the
+// commented line below and remove the `return false`.
+const XR_SELECTION_DISABLED_FOR_TEST = true;
+function xrUsable() {
+  // return XR_ALLOWED && xrSupported === true && !xrBroken && typeof XrDepthSource === "function";
+  return false;
+}
+
 // The inspected depth image + ear dividing lines, drawn behind the main button
 const depthView = new DepthView(document.getElementById("depthView"));
 function b64ToBytes(b64) {
@@ -447,6 +468,7 @@ function renderDebug() {
     ["user memory", esc(dbg.memory || "empty")],
     ["depth model", esc(`[${depthMode === "auto" ? "auto->" + depthDevice : depthMode}] ` + (dbg.depthModel || "-"))],
     ["center depth", esc(dbg.depth || "-")],
+    ["webxr depth", esc(XR_SELECTION_DISABLED_FOR_TEST ? `off for test (selection commented out; phone ${xrSupported === null ? "checking" : xrSupported ? "supports it" : "does not support it"})` : !XR_ALLOWED ? "disabled (?xr=0)" : xrSupported === null ? "checking..." : !xrSupported ? "not supported here (depth model used)" : xrBroken ? "failed: " + xrBroken : xrSource ? "ACTIVE: " + xrStatus : "supported (starts with the assistant)")],
     ["sonar settings", esc((() => {
       const c = SpatialSonarLib.getSettings(), e = (k) => `${c.ears[k].pitchHz}Hz vol ${Math.round(c.ears[k].maxVolume * 100)}% max ${c.ears[k].maxRateHz}/s`;
       return `L ${e("left")} · R ${e("right")} · range ${c.rangeM} m · sides ±${c.sideOffset} st · split ±${c.centerSplit} st · closer +${c.proximityRise} st`;
@@ -686,9 +708,9 @@ function ensureDepthEngine() {
       video: cam,
       onStatus: (s) => { if (depthDevice === "mobile") dbg.depthModel = s; },
       onDepth: (distM, backend, ms, _disp, sectors) => {
-        if (depthDevice === "mobile") updateDepthReading(distM, `${backend} ${ms}ms`, sectors);
+        if (depthDevice === "mobile" && !xrSource) updateDepthReading(distM, `${backend} ${ms}ms`, sectors);
       },
-      onDepthImage: (data, w, h) => { if (depthDevice === "mobile") depthView.setImage(data, w, h, "phone"); },
+      onDepthImage: (data, w, h) => { if (depthDevice === "mobile" && !xrSource) depthView.setImage(data, w, h, "phone"); },
       // Called on every frame: must stay cheap and must never (re)start the depth loop itself
       onPerfChange: () => evaluateDepthTarget(true),
     });
@@ -716,14 +738,14 @@ function depthWanted() {
 function syncDepthEngine() {
   const wanted = depthWanted();
   if (depthEngine) {
-    if (depthDevice === "mobile" && wanted) {
+    if (depthDevice === "mobile" && wanted && !xrSource) {
       depthEngine.setIntervalMs(SONAR_MOBILE_INTERVAL_MS);
       depthEngine.start();
     } else {
       depthEngine.stop();
     }
   }
-  const feed = sonarContinuous();
+  const feed = sonarContinuous() && !xrSource;
   if (feed && !sonarTimer) sonarTimer = setInterval(sonarTick, 60);
   else if (!feed && sonarTimer) { clearInterval(sonarTimer); sonarTimer = null; }
   if (wanted) sonar.start();
@@ -737,7 +759,7 @@ function syncDepthEngine() {
 
 // Continuous sonar feed between depth frames: laptop-ONNX probes, metric re-anchoring.
 function sonarTick() {
-  if (!sonarContinuous()) return;
+  if (!sonarContinuous() || xrSource) return;
   const now = Date.now();
   if (laptopInFlight && now - laptopSentAt > 800) laptopInFlight = false;
   const mobile = mobileDepthLive();
@@ -812,32 +834,81 @@ function updateDepthReading(rawM, src, sectors = null) {
   if (depthWanted()) sonar.update(smoothedSectors);
 }
 
+// Camera JPEG for a question/context frame: WebXR camera-access while AR runs, otherwise the <video> element.
+function grabFrameJpeg(width, quality) {
+  if (xrSource) return xrSource.captureJpeg(width, quality);
+  if (!cam.videoWidth) return Promise.resolve(null);
+  canvas.width = width;
+  canvas.height = Math.round(width * cam.videoHeight / cam.videoWidth);
+  canvas.getContext("2d").drawImage(cam, 0, 0, canvas.width, canvas.height);
+  return Promise.resolve(canvas.toDataURL("image/jpeg", quality).split(",")[1]);
+}
+
 function sendFrame(fresh = false) {
-  if (!cam.videoWidth || !socket || socket.readyState !== 1) return;
+  if (!socket || socket.readyState !== 1) return;
   const now = Date.now();
   if (fresh !== true && now - lastAnyFrameAt < 280) return;
-  const w = fresh === true ? 512 : 352;
-  canvas.width = w;
-  canvas.height = Math.round(w * cam.videoHeight / cam.videoWidth);
-  canvas.getContext("2d").drawImage(cam, 0, 0, canvas.width, canvas.height);
-  const data = canvas.toDataURL("image/jpeg", fresh === true ? 0.58 : 0.48).split(",")[1];
-  const imuSnap = imu.snapshot();
-  const pdafM = readPdafDistance();
-  if (pdafM !== null) {
-    imuSnap.focusDistM = pdafM;
-    if (!sonar.running) dbg.depth = `${pdafM.toFixed(2)} m (PDAF)`;
-  }
-  const msg = { type: "frame", data, imu: imuSnap };
-  if (fresh === true) msg.fresh = true;
-  socket.send(JSON.stringify(msg));
   lastAnyFrameAt = now;
-  lastImuPushAt = now;
-  if (imu.compassDeg !== null) lastPushedCompassDeg = imu.compassDeg;
-  dbg.sentFrames++;
-  if (fresh === true) dbg.sentInfoFrames++;
-  else dbg.sentWatchFrames++;
-  dbg.frameStamps.push(now);
-  while (dbg.frameStamps.length && now - dbg.frameStamps[0] > 3000) dbg.frameStamps.shift();
+  grabFrameJpeg(fresh === true ? 512 : 352, fresh === true ? 0.58 : 0.48).then((data) => {
+    if (!data || !socket || socket.readyState !== 1) return;
+    const imuSnap = imu.snapshot();
+    const pdafM = readPdafDistance();
+    if (pdafM !== null) imuSnap.focusDistM = pdafM;
+    const msg = { type: "frame", data, imu: imuSnap };
+    if (fresh === true) msg.fresh = true;
+    socket.send(JSON.stringify(msg));
+    lastImuPushAt = Date.now();
+    if (imu.compassDeg !== null) lastPushedCompassDeg = imu.compassDeg;
+    dbg.sentFrames++;
+    if (fresh === true) dbg.sentInfoFrames++;
+    else dbg.sentWatchFrames++;
+    dbg.frameStamps.push(Date.now());
+    while (dbg.frameStamps.length && Date.now() - dbg.frameStamps[0] > 3000) dbg.frameStamps.shift();
+  }).catch((err) => { dbg.camera = "frame failed: " + String((err && err.message) || err).slice(0, 60); });
+}
+
+// Start the WebXR source (call while the Start tap still counts as a user gesture).
+async function startXr() {
+  const src = new XrDepthSource({
+    overlayRoot: document.body,
+    onStatus: (st) => { xrStatus = st; },
+    onSectors: (sectors) => {
+      if (xrSource !== src) return;
+      const c = sectors.center ?? Math.min(...["left", "right"].map((k) => sectors[k] ?? Infinity));
+      updateDepthReading(Number.isFinite(c) ? c : null, "WebXR depth", sectors);
+    },
+    onThumb: (data, w, h) => { if (xrSource === src && depthWanted()) depthView.setImage(data, w, h, "webxr"); },
+  });
+  await src.start();
+  xrSource = src;
+  src.onEnded = () => {
+    if (xrSource !== src) return;
+    xrSource = null;
+    if (running) {
+      note("WebXR session ended: switching to the camera + depth model");
+      startCameraFallback();
+    }
+  };
+}
+
+// Normal camera + depth model (no WebXR, or the AR session ended while running).
+async function startCameraFallback() {
+  try {
+    const v = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", focusMode: { ideal: "continuous" } } });
+    const track = v.getVideoTracks()[0];
+    if (!stream) stream = new MediaStream();
+    for (const old of stream.getVideoTracks()) { stream.removeTrack(old); old.stop(); }
+    stream.addTrack(track);
+    cam.srcObject = stream;
+    await cam.play().catch(() => {});
+    videoTrack = track;
+    videoCaps = typeof track.getCapabilities === "function" ? track.getCapabilities() : {};
+    dbg.camera = "ok";
+  } catch (err) {
+    dbg.camera = "blocked (" + ((err && err.name) || err) + ")";
+  }
+  ensureDepthEngine();
+  syncDepthEngine();
 }
 
 function scheduleReconnect() {
@@ -926,12 +997,12 @@ function openLiveSocket(isInitial = false) {
           const rttTag = laptopRttEmaMs ? ` (rtt ${Math.round(laptopRttEmaMs)}ms)` : "";
           dbg.depthModel = `${laptopProvider}, ${m.ms} ms/frame${rttTag}${laptopCalibrator.anchored ? " [cal]" : ""}`;
         }
-        if (depthWanted() && !mobileDepthLive() && typeof m.depth_thumb === "string") {
+        if (depthWanted() && !mobileDepthLive() && !xrSource && typeof m.depth_thumb === "string") {
           const bytes = b64ToBytes(m.depth_thumb);
           const side = Math.round(Math.sqrt(bytes.length));
           if (side * side === bytes.length) depthView.setImage(bytes, side, side, "laptop");
         }
-        if (depthWanted() && distM !== null && !mobileDepthLive()) {
+        if (depthWanted() && distM !== null && !mobileDepthLive() && !xrSource) {
           const sd = Array.isArray(m.sector_disp) ? m.sector_disp : null;
           const toM = (v) => (typeof v === "number" && v > 0 ? laptopCalibrator.toMeters(v) : null);
           const sectors = sd ? { left: toM(sd[0]), center: toM(sd[1]), right: toM(sd[2]) } : null;
@@ -1024,20 +1095,35 @@ async function start() {
   dbg.audioCtx = ctx.state;
   ctx.onstatechange = () => { dbg.audioCtx = ctx.state; note("audio context: " + ctx.state); };
 
-  note("asking for camera and microphone");
+  if (xrSupported === null && XR_ALLOWED && typeof XrDepthSource === "function") {
+    xrSupported = await XrDepthSource.supported().catch(() => false);
+  }
+  if (xrUsable()) {
+    try {
+      await startXr();
+      note("WebXR depth sensing running (sonar + camera from AR)");
+    } catch (err) {
+      xrBroken = String((err && err.message) || err).slice(0, 80);
+      xrStatus = "unavailable: " + xrBroken;
+      note("WebXR unavailable, using camera + depth model: " + xrBroken);
+    }
+  }
+  note(xrSource ? "asking for the microphone" : "asking for camera and microphone");
   // If mic permission was already granted, pick the built-in mic BEFORE opening anything (never the BT default)
   try { if (earphoneMode) { const m = await pickBuiltInMic(); if (m) micDeviceId = m.deviceId; } } catch (_) {}
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: micConstraints(micDeviceId),
-      video: { facingMode: "environment", focusMode: { ideal: "continuous" } },
-    });
+    stream = await navigator.mediaDevices.getUserMedia(xrSource
+      ? { audio: micConstraints(micDeviceId) }   // ARCore owns the camera: frames come from WebXR camera-access
+      : { audio: micConstraints(micDeviceId), video: { facingMode: "environment", focusMode: { ideal: "continuous" } } });
   } catch (err) {
     dbg.camera = dbg.mic = "blocked (" + err.name + ")";
+    if (xrSource) xrSource.stop();
     throw err;
   }
-  cam.srcObject = stream;
-  await cam.play();
+  if (!xrSource) {
+    cam.srcObject = stream;
+    await cam.play();
+  }
   videoTrack = stream.getVideoTracks()[0] || null;
   videoCaps = (videoTrack && typeof videoTrack.getCapabilities === "function") ? videoTrack.getCapabilities() : {};
   if (videoTrack && typeof videoTrack.applyConstraints === "function") {
@@ -1050,8 +1136,8 @@ async function start() {
   }
   const initPdaf = readPdafDistance();
   dbg.depth = initPdaf !== null ? `${initPdaf.toFixed(2)} m (PDAF)` : "waiting for the sonar";
-  dbg.camera = "ok";
-  note(`camera: ${cam.videoWidth}x${cam.videoHeight}, pdaf: ${videoCaps.focusDistance ? "supported" : "fallback"}`);
+  dbg.camera = xrSource ? "ok (WebXR camera-access)" : "ok";
+  if (!xrSource) note(`camera: ${cam.videoWidth}x${cam.videoHeight}, pdaf: ${videoCaps.focusDistance ? "supported" : "fallback"}`);
 
   // Permission + device choice now, then close the mic: it only opens while the user holds the button
   const firstMicWasDefault = !micDeviceId;
@@ -1062,7 +1148,7 @@ async function start() {
   note("audio: " + describeAudio());
   sendAudioDiag("assistant_started");
   setFrameRate(1);
-  ensureDepthEngine(); // Pre-load & pre-compile WebGPU Depth-Anything-V2-Small in background worker (fallback)
+  if (!xrSource) ensureDepthEngine(); // WebGPU Depth-Anything-V2-Small (fallback when WebXR depth is not available)
   try { wakeLock = await navigator.wakeLock?.request("screen"); note("screen wake lock on"); } catch (_) { note("screen wake lock unavailable"); }
 
   running = true;
@@ -1080,6 +1166,7 @@ function stop(announce = true) {
   if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
   pttPending = pttActive = pttReleasing = false;
   running = false;
+  if (xrSource) { const x = xrSource; xrSource = null; x.stop(); }
   reconnecting = false;
   reconnectAttempts = 0;
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
@@ -1140,6 +1227,7 @@ const SONAR_FIELDS = [
   { group: "Both", path: ["sideOffset"], label: "side pitch offset", unit: "st", limit: "sideOffset" },
   { group: "Both", path: ["centerSplit"], label: "center split", unit: "st", limit: "centerSplit" },
   { group: "Both", path: ["proximityRise"], label: "closer pitch rise", unit: "st", limit: "proximityRise" },
+  { group: "Both", path: ["pitchSmoothing"], label: "pitch smoothing", unit: "%", limit: "pitchSmoothing", pct: true },
 ];
 const readPath = (obj, path) => path.reduce((o, k) => o[k], obj);
 function settingsPatch(path, value) {

@@ -91,4 +91,16 @@ ok("range limit and clamping", () => {
   assert.strictEqual(c.proximityRise, L.LIMITS.proximityRise[1]);
   assert.deepStrictEqual(L.resetSettings(), JSON.parse(JSON.stringify(L.DEFAULTS)));
 });
+ok("pitch smoothing: no sudden jumps, converges, 0 = instant", () => {
+  L.resetSettings();
+  let f = 440;
+  const steps = [];
+  for (let i = 0; i < 25; i++) { const nf = L.smoothFreq(f, 880); steps.push(12 * Math.log2(nf / f)); f = nf; }
+  assert.ok(Math.max(...steps) <= 0.5 + 4 * (1 - L.DEFAULTS.pitchSmoothing) + 0.01, "per-beep step capped (0.1 Hz rounding)");
+  assert.ok(steps[0] < 12, "an octave jump is spread over several beeps");
+  assert.strictEqual(f, 880, "reaches the target");
+  L.setSettings({ pitchSmoothing: 0 });
+  assert.strictEqual(L.smoothFreq(440, 880), 880);
+  L.resetSettings();
+});
 console.log(`${n} passed`);
