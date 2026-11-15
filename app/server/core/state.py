@@ -1,4 +1,4 @@
-"""Per-connection runtime state shared between the voice assistant and the depth emergency-stop pipeline."""
+"""Per-connection runtime state for the voice assistant, compass/places guidance and the hold-to-scan depth sonar."""
 import asyncio
 from collections import deque
 from dataclasses import dataclass, field
@@ -9,14 +9,12 @@ from fastapi import WebSocket
 from ..assistant import turns
 from .memory import UserMemory
 
-ALERT_MODES = ("normal", "urgent_only", "off")
-
 
 @dataclass
 class ActiveSpeech:
     """Tracks clause-by-clause playback timing while the assistant is speaking."""
 
-    kind: str  # "answer" | "depth_stop"
+    kind: str  # "answer"
     user_question: str = ""
     generated_text: str = ""
     # List of [play_start_epoch, play_end_epoch, clause_text]
@@ -35,7 +33,6 @@ class State:
 
     # Camera, sensors & compass guidance
     frames: deque = field(default_factory=lambda: deque(maxlen=12))
-    alert_mode: str = "normal"
     imu: dict | None = None
     imu_at: float = 0.0
     target_bearing_deg: float | None = None
@@ -51,12 +48,6 @@ class State:
     geo_places: list = field(default_factory=list)  # last places results, to resolve "the second one"
     target_place: dict | None = None  # {"name","lat","lon"} while guide_to_place is active
 
-    # Depth-triggered emergency stop: while active, the answering pipeline is blocked
-    emergency_active: bool = False
-    emergency_task: asyncio.Task | None = None
-    last_emergency_at: float = 0.0
-    stop_phrase_until: float = 0.0  # only the "Stop!" itself cannot be talked over; everything after it can
-
     # Streaming information pipeline & turn state
     turn: turns.TurnTracker = field(default_factory=turns.TurnTracker)
     mic_turn_pcm: bytearray = field(default_factory=bytearray)
@@ -68,9 +59,8 @@ class State:
     expect_interrupt: bool = False
     model_speaking: bool = False
     audible_until: float = 0.0
-    explaining_alert: bool = False
-    explain_lock_until: float = 0.0
     depth_mode_active: bool = False
+    sonar_active: bool = False  # phone runs the always-on stereo depth sonar (needs depth probes answered)
     depth_device: str = "mobile"
     depth_probes_inflight: int = 0
     depth_probe_latest_seq: int = 0
@@ -88,12 +78,8 @@ class State:
         return now < self.audible_until
 
     def mic_blocked(self, now: float) -> bool:
-        """User speech is ignored only while holding the depth scan or while "Stop!" itself plays."""
-        return self.depth_mode_active or now < self.stop_phrase_until
-
-    def alert_locked(self, now: float) -> bool:
-        """True while a depth emergency stop + its guidance are generating/playing (plus a short tail)."""
-        return self.emergency_active or self.explaining_alert or now < self.explain_lock_until
+        """User speech is ignored only while the user holds the depth-sonar scan."""
+        return self.depth_mode_active
 
     def reset_mic_turn(self) -> None:
         """Clear any partial user voice turn so pre-alert speech or speaker echo cannot cut explanations."""

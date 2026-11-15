@@ -36,17 +36,6 @@ SILENCE_MS = int(os.environ.get("EYES_SILENCE_MS", "400"))
 DEPTH_PROBE_MODEL = os.environ.get("GEMINI_DEPTH_PROBE_MODEL", os.environ.get("GEMINI_WATCH_MODEL", "gemini-3.5-flash-lite"))
 DEPTH_PROBE_THINKING = os.environ.get("GEMINI_DEPTH_PROBE_THINKING", "MINIMAL")
 
-# ---- Depth-triggered emergency stop ----
-# The phone (WebGPU) or laptop (ONNX) depth model watches the camera center continuously; when the calibrated
-# distance drops to DEPTH_STOP_M the client sends one image + compass, the server says "Stop!", blocks the
-# answering pipeline and asks the model what the user should do.
-DEPTH_STOP_M = float(os.environ.get("EYES_DEPTH_STOP_M", "0.9"))
-DEPTH_STOP_URGENT_M = float(os.environ.get("EYES_DEPTH_STOP_URGENT_M", "0.6"))  # threshold in "urgent_only" mode
-DEPTH_STOP_COOLDOWN_S = float(os.environ.get("EYES_DEPTH_STOP_COOLDOWN_S", "4.0"))
-DEPTH_STOP_GUIDE_TIMEOUT_S = float(os.environ.get("EYES_DEPTH_STOP_GUIDE_TIMEOUT_S", "8.0"))
-GUIDE_SPEECH_RATE = float(os.environ.get("EYES_GUIDE_SPEECH_RATE", "1.35"))  # pitch-preserving speed-up of stop guidance
-EXPLAIN_POST_WINDOW_S = float(os.environ.get("EYES_EXPLAIN_POST_WINDOW_S", "0.15"))
-
 # ---- Places / maps (tour guide) ----
 # Google Maps Platform key with Places API (New), Geocoding API and Routes API enabled. Without it the free
 # OpenStreetMap fallback (Nominatim + Overpass) is used. EYES_GEO_PROVIDER=osm forces the fallback.

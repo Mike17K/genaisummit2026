@@ -2,7 +2,7 @@
 
 - `core`: session state, explicit user memory, centralized command/risk router, WebSocket lifecycle
 - `assistant`: multimodal command/answer streaming, turn-taking, tools, legacy session helpers
-- `safety`: depth-triggered emergency stop (image + compass -> model guidance) and compass guidance cues
+- `safety`: background speech (compass guidance cues, arrival notices)
 - `depth`: local server ONNX Depth-Anything-V2-Small engine and Gemini center-crop metric anchor
 - `audio`: ElevenLabs / fal.ai TTS synthesis, PCM streaming, English/Greek standard navigation phrases
 - `utils`: environment config and JSONL tracing

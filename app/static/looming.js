@@ -116,21 +116,7 @@
   }
 
   // Map centre-view distance (metres) to haptic motor power (PWM pulse width + cadence) and WebAudio beep volume.
-  function depthFeedback(distM) {
-    if (typeof distM !== "number" || !Number.isFinite(distM) || distM <= 0) return null;
-    const d = Math.max(0.15, Math.min(3.5, distM));
-    const proximity = (3.5 - d) / (3.5 - 0.15); // 0.0 at >=3.5m .. 1.0 at <=0.15m
-    const power = proximity * proximity;         // perceptual quadratic curve
-    return {
-      distM: Number(d.toFixed(2)),
-      proximity: Number(proximity.toFixed(3)),
-      power: Number(power.toFixed(3)),
-      volume: Number((0.015 + 0.305 * power).toFixed(3)), // 0.015 whisper -> 0.320 loud
-      vibeMs: Math.round(12 + 108 * power),               // 12ms micro-tick -> 120ms full motor power
-      intervalMs: Math.round(460 - 325 * proximity),      // 460ms slow -> 135ms rapid buzz
-      freqHz: Math.round(520 + 360 * proximity),          // 520Hz -> 880Hz
-    };
-  }
+
 
   // Extract 75th-percentile inverse depth (disparity) inside the central 20%x20% crosshair of a Depth-Anything-V2 map.
   function extractCenterDisparity(data, width, height) {
@@ -170,24 +156,20 @@
       this.defaultScaleK = defaultScaleK;
       this.scaleK = defaultScaleK;
       this.anchored = false;
-      this.epoch = 0; // bumps when the metric scale jumps (>8%), so distance history before it is not comparable
     }
     reset() {
       this.scaleK = this.defaultScaleK;
       this.anchored = false;
-      this.epoch++;
     }
     anchor(dispAtCapture, metricMeters) {
       if (!(dispAtCapture > 0.05) || !(metricMeters >= 0.10 && metricMeters <= 8.0)) return false;
       const obsK = Math.max(0.25, Math.min(120.0, dispAtCapture * metricMeters));
-      const prev = this.scaleK;
       if (!this.anchored) {
         this.scaleK = obsK;
         this.anchored = true;
       } else {
         this.scaleK = 0.65 * this.scaleK + 0.35 * obsK;
       }
-      if (Math.abs(this.scaleK - prev) / prev > 0.08) this.epoch++;
       return true;
     }
     toMeters(centerDisp) {
@@ -203,51 +185,6 @@
   // Decide whether depth inference runs on "mobile" or "laptop".
   // In "auto" mode (default), keeps "mobile" unless the phone's steady-state benchmark or live EMA exceeds MOBILE_SLOW_MS
   // (or mobile WebGPU/WASM errors out), provided the laptop round-trip isn't even slower.
-  // Is the camera-center surface getting CLOSER (the user walking toward it, or it toward the user)?
-  // Standing still in front of a wall gives a flat distance line and never counts. Uses a least-squares slope
-  // over the recent window plus a minimum total drop, so a single noisy reading cannot trigger it.
-  class ApproachDetector {
-    constructor({ windowMs = 1500, minSpanMs = 450, minDropM = 0.25, minSpeedMps = 0.2, minSamples = 3 } = {}) {
-      Object.assign(this, { windowMs, minSpanMs, minDropM, minSpeedMps, minSamples });
-      this.samples = [];
-      this.epoch = null;
-    }
-    reset() { this.samples = []; this.epoch = null; }
-    push(distM, now, epoch = 0) {
-      if (this.epoch !== epoch) { this.samples = []; this.epoch = epoch; }
-      this.samples.push({ d: distM, t: now });
-      while (this.samples.length && this.samples[0].t < now - this.windowMs) this.samples.shift();
-      return this.state();
-    }
-    state() {
-      const s = this.samples;
-      const none = { approaching: false, dropM: 0, speedMps: 0 };
-      if (s.length < this.minSamples || s[s.length - 1].t - s[0].t < this.minSpanMs) return none;
-      const n = s.length;
-      const mt = s.reduce((a, x) => a + x.t, 0) / n, md = s.reduce((a, x) => a + x.d, 0) / n;
-      let num = 0, den = 0;
-      for (const x of s) { num += (x.t - mt) * (x.d - md); den += (x.t - mt) ** 2; }
-      const slopeMps = den > 0 ? (num / den) * 1000 : 0; // metres per second (negative = closer)
-      const k = Math.max(1, Math.floor(n / 3));
-      const oldAvg = s.slice(0, k).reduce((a, x) => a + x.d, 0) / k;
-      const newAvg = s.slice(n - k).reduce((a, x) => a + x.d, 0) / k;
-      const dropM = oldAvg - newAvg;
-      return {
-        approaching: slopeMps <= -this.minSpeedMps && dropM >= this.minDropM,
-        dropM: Number(dropM.toFixed(2)),
-        speedMps: Number((-slopeMps).toFixed(2)),
-      };
-    }
-  }
-
-  // Stop decision from distance + approach: close and closing in, with an earlier trigger for faster approaches
-  // (time-to-contact) so a brisk walker is warned before the plain distance threshold.
-  function shouldStop(distM, a, stopM, { ttcS = 1.4, maxFactor = 2.0 } = {}) {
-    if (!a || !a.approaching || !(distM > 0)) return false;
-    if (distM <= stopM) return true;
-    return distM <= stopM * maxFactor && a.speedMps > 0 && distM / a.speedMps <= ttcS;
-  }
-
   function chooseDepthTarget({
     mode = "auto",
     mobileBenchMs = null,
@@ -276,7 +213,7 @@
   }
 
   const api = {
-    ImuState, ApproachDetector, shouldStop, parseFocusDistance, depthFeedback, extractCenterDisparity, DepthCalibrator,
+    ImuState, parseFocusDistance, extractCenterDisparity, DepthCalibrator,
     MOBILE_SLOW_MS, chooseDepthTarget, cardinalFromDeg, compassHeadingFromEuler,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;

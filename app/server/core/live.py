@@ -11,7 +11,7 @@ from ..depth import local_depth
 from ..safety import alerts
 from ..utils import config, trace
 from . import memory, router
-from .state import ALERT_MODES, State
+from .state import State
 
 __all__ = ["State", "run"]
 
@@ -70,15 +70,6 @@ async def _serve(socket: WebSocket, conn_id: str) -> None:
     asyncio.create_task(speak.warm_common())
     asyncio.create_task(local_depth.warm())
 
-    def set_alert_mode(mode: str) -> dict:
-        """Change the depth emergency stop. mode: 'normal', 'urgent_only' (closer threshold) or 'off'."""
-        if mode not in ALERT_MODES:
-            return {"error": f"mode must be one of {ALERT_MODES}"}
-        state.alert_mode = mode
-        trace.log("alert_mode", mode=mode, by="voice")
-        asyncio.get_running_loop().create_task(state.send({"type": "mode", "mode": mode}))
-        return {"status": "ok", "mode": mode}
-
     def set_language(language: str) -> dict:
         """Switch and remember the spoken language. Only 'English' and 'Greek' are supported."""
         if not phrases.is_supported_lang(language):
@@ -103,7 +94,6 @@ async def _serve(socket: WebSocket, conn_id: str) -> None:
         return {"status": "ok", "bearing_deg": deg, "code": code, "en": en_l, "el": el_l}
 
     state.extra_funcs = {
-        "set_alert_mode": set_alert_mode,
         "set_language": set_language,
         "set_compass_direction": set_compass_direction,
     }
@@ -113,8 +103,6 @@ async def _serve(socket: WebSocket, conn_id: str) -> None:
         "conn": conn_id,
         "lang": state.lang,
         "memory": state.memory.to_dict(),
-        "depth_stop_m": config.DEPTH_STOP_M,
-        "depth_stop_urgent_m": config.DEPTH_STOP_URGENT_M,
     })
     # A persisted goal such as "να πάω νότια" restores compass guidance toward that bearing on reconnect
     await router.sync_goal_compass_target(state, by="goal")
@@ -141,7 +129,5 @@ async def _serve(socket: WebSocket, conn_id: str) -> None:
             pass
     finally:
         watcher.cancel()
-        if state.emergency_task is not None and not state.emergency_task.done():
-            state.emergency_task.cancel()
         info_pipeline.cancel_for_user(state)
         trace.log("live_input_totals", mic_kb=round(mic_bytes / 1024), frames=frame_count)

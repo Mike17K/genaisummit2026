@@ -36,7 +36,28 @@ function extractCenterStats(data, width, height) {
   sample.sort((a, b) => a - b);
   const p10 = sample.length ? sample[Math.floor(sample.length * 0.10)] : centerDisp;
   const p90 = sample.length ? sample[Math.floor(sample.length * 0.90)] : centerDisp;
-  return { centerDisp, p10, p90 };
+  return { centerDisp, p10, p90, sectorDisp: sectorDisparities(data, width, height) };
+}
+
+// LEFT / CENTER / RIGHT thirds of a horizontal band (floor and ceiling skipped): 75th percentile disparity =
+// the nearest surface in each third (disparity grows as things get closer).
+function sectorDisparities(data, width, height) {
+  const y0 = Math.floor(height * 0.18), y1 = Math.ceil(height * 0.68);
+  const out = [];
+  for (let s = 0; s < 3; s++) {
+    const x0 = Math.floor((width * s) / 3), x1 = Math.floor((width * (s + 1)) / 3);
+    const vals = [];
+    for (let y = y0; y < y1; y += 2) {
+      const row = y * width;
+      for (let x = x0; x < x1; x += 2) {
+        const v = Number(data[row + x]);
+        if (Number.isFinite(v) && v > 0) vals.push(v);
+      }
+    }
+    vals.sort((a, b) => a - b);
+    out.push(vals.length >= 8 ? vals[Math.min(vals.length - 1, Math.floor(vals.length * 0.75))] : null);
+  }
+  return out;
 }
 
 async function detectGpu() {

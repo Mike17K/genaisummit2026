@@ -1,20 +1,17 @@
-"""Streaming multimodal command/answer pipeline + depth emergency-stop guidance."""
+"""Streaming multimodal command/answer pipeline with tool calls (places, compass, memory) and barge-in."""
 import asyncio
 from dataclasses import dataclass
 import io
-import json
 import re
 import time
 import wave
 
 from google.genai import types
-from PIL import Image
 
 from ..audio import phrases, speak
 from ..core import memory, router
 from ..core.state import ActiveSpeech, State
 from ..geo import service as geo_service
-from ..safety import steering
 from ..utils import config, trace
 from . import agent, geo_tools, tools
 
@@ -39,7 +36,7 @@ STRICT LANGUAGE RULE:
 DECISION & RESPONSE RULES:
 - Decide `INTENT:` for every turn:
   * `ANSWER` when the user asks a question, greets you, or asks what is visible / readable — you MUST answer clearly aloud!
-  * `COMMAND` when the user gives an explicit goal, asks to remember/forget something, or changes settings (alerts / language) — execute and confirm aloud!
+  * `COMMAND` when the user gives an explicit goal, asks to remember/forget something, or changes the language — execute and confirm aloud!
   * `IGNORE` ONLY when `HEARD: NONE` (background noise with no user speech).
 - Whenever `INTENT` is `ANSWER` or `COMMAND`, NEVER output `SILENT` — ALWAYS give a helpful spoken `REPLY:`.
 - Start with a short, natural 4-7 word opening clause followed by a comma or period so speech starts fast.
@@ -77,22 +74,6 @@ INTENT: <ANSWER | COMMAND | IGNORE>
 MEMORY: <NONE | GOAL: ... | NOTE: ... | CLEAR_GOAL | CLEAR>
 COMPASS: <NONE | N | NE | E | SE | S | SW | W | NW | 0..359 | CLEAR>
 REPLY: <your spoken reply in English or Greek, or SILENT ONLY if HEARD is NONE>"""
-
-DEPTH_STOP_SYSTEM = """You are the eyes of a blind pedestrian's phone. The depth sensor found something very close at the
-CENTER of the camera image; the user has been told "Stop!". Report ONLY what you SEE. Do NOT decide the turn and do
-NOT do any compass math: the phone computes the turn from your answer.
-Image coordinates: x = 0.0 is the LEFT edge of the image (the user's left), 0.5 the center, 1.0 the RIGHT edge.
-Fields:
-- "a": "turn" (default), "wait" (a person, animal or vehicle that is moving and will clear by itself), or "stay"
-  (no walkable floor anywhere and nothing will clear).
-- "left": x (0.0-0.5) of the nearest open walkable floor wide enough for a person on the LEFT of the obstacle,
-  0.0 if open floor continues past the left edge, null if the left side is blocked.
-- "right": x (0.5-1.0) of the nearest such open floor on the RIGHT of the obstacle, 1.0 if it continues past the
-  right edge, null if the right side is blocked.
-- "more_open": "left" or "right": which side looks more open overall (used when both are blocked in view).
-- "what": what is ahead and how far, at most 5 words, in the requested Language (English or Greek), e.g.
-  "Box one step ahead." / "Κουτί ένα βήμα μπροστά." (1 step is about 0.7 m). Never invent details.
-Output ONLY JSON: {"a":"turn","left":null,"right":0.85,"more_open":"right","what":"Box one step ahead."}"""
 
 _SENTENCE_END = re.compile(r"([.!?]+)(?:\s+|$)")
 _CLAUSE_SEP = re.compile(r"([,;:·—–-]+)\s+")
@@ -236,19 +217,14 @@ def _compute_spoken_so_far(active: ActiveSpeech, now: float) -> str:
 def interrupt_everything(state: State, reason: str) -> bool:
     """The user started talking: cancel EVERYTHING the assistant is saying or doing so it can listen.
 
-    Cuts the answer stream (thinking or speaking), stop guidance after "Stop!", compass cues and any queued audio.
+    Cuts the answer stream (thinking or speaking), compass cues, notices and any queued audio.
     Returns True if something was actually cut.
     """
     now = time.time()
     cut = cancel_for_user(state)
-    emergency = state.emergency_task
-    if emergency is not None and not emergency.done() and now >= state.stop_phrase_until:
-        emergency.cancel()
-        cut = True
-    if state.audible(now) or state.explain_lock_until > now:
+    if state.audible(now):
         cut = True
     state.audible_until = 0.0
-    state.explain_lock_until = 0.0
     if cut:
         trace.log("barge_in", reason=reason)
     return cut
@@ -261,7 +237,6 @@ def cancel_for_user(state: State) -> bool:
         state.info_task.cancel()
     state.info_task = None
     state.active_speech = None
-    state.explaining_alert = False
     state.model_speaking = False
     state.audible_until = 0.0
     return was_active
@@ -330,7 +305,7 @@ async def _model_pieces(state: State, contents: list, cfg: types.GenerateContent
     """Stream model text; run tool calls, feed results back and keep streaming the continuation.
 
     Yields text pieces, plus a `ToolPending` marker whenever tools run. Instant side-effect tools (language,
-    alert mode, compass, remember) that came with a spoken reply do not trigger a second model round.
+    compass, remember) that came with a spoken reply do not trigger a second model round.
     """
     client = agent._get_client()
     contents = list(contents)
@@ -453,26 +428,20 @@ async def _stream_clauses_and_speak(
     active: ActiveSpeech,
     *,
     parse_heard_header: bool = False,
-    gate_audio_on: asyncio.Event | None = None,
-    lock_why_mode: str | None = None,
     t0: float,
 ) -> tuple[str, str]:
     """Consume LLM text stream, evaluate centralized command/memory decision, and stream clause TTS."""
-    clause_queue: asyncio.Queue[tuple[str, asyncio.Queue, asyncio.Task, bool] | None] = asyncio.Queue()
+    clause_queue: asyncio.Queue[tuple[str, asyncio.Queue, asyncio.Task] | None] = asyncio.Queue()
     producer_tasks: list[asyncio.Task] = []
     first_audio_logged = False
 
     async def _consumer() -> None:
         nonlocal first_audio_logged
-        if gate_audio_on is not None:
-            await gate_audio_on.wait()
         while True:
             item = await clause_queue.get()
             if item is None:
                 break
-            c_text, pcm_q, _, is_why_clause = item
-            if lock_why_mode in ("first_sentence", "until_continue") and not is_why_clause:
-                state.explaining_alert = False
+            c_text, pcm_q, _ = item
             timeline_entry: list | None = None
             while True:
                 chunk = await pcm_q.get()
@@ -480,11 +449,6 @@ async def _stream_clauses_and_speak(
                     break
                 if isinstance(chunk, Exception):
                     trace.log("clause_tts_failed", clause=c_text[:60], error=str(chunk)[:140])
-                    if is_why_clause:
-                        est_s = max(1.0, len(c_text.split()) / 2.6)
-                        state.explain_lock_until = max(
-                            state.explain_lock_until, time.time() + est_s + config.EXPLAIN_POST_WINDOW_S
-                        )
                     await state.send({"type": "speak_text", "text": c_text})
                     break
                 if not state.assistant_enabled:
@@ -496,10 +460,6 @@ async def _stream_clauses_and_speak(
                 play_start = max(state.audible_until, now)
                 state.model_speaking = True
                 state.sent_audio(len(chunk), now)
-                if is_why_clause:
-                    state.explain_lock_until = max(
-                        state.explain_lock_until, state.audible_until + config.EXPLAIN_POST_WINDOW_S
-                    )
                 if timeline_entry is None:
                     timeline_entry = [play_start, state.audible_until, c_text]
                     active.clause_timeline.append(timeline_entry)
@@ -516,20 +476,6 @@ async def _stream_clauses_and_speak(
     aborted_noise = False
     deterministic = False
     is_first_clause = True
-    still_in_why = lock_why_mode in ("all", "first_sentence", "until_continue")
-    _resume_re = re.compile(r"^(continuing|συνεχίζοντας)\b", re.IGNORECASE)
-
-    def _next_is_why(clause_str: str) -> bool:
-        nonlocal still_in_why
-        if not still_in_why:
-            return False
-        if lock_why_mode == "until_continue" and _resume_re.search(clause_str.strip()):
-            still_in_why = False
-            return False
-        if lock_why_mode == "first_sentence" and clause_str.rstrip().endswith((".", "!", "?")):
-            still_in_why = False
-        return True
-
     def _split_ready_buffer(buf: str) -> tuple[str, str]:
         expanded = phrases.expand_codes(buf, state.lang)
         last_open = expanded.rfind("[")
@@ -548,7 +494,7 @@ async def _stream_clauses_and_speak(
                     is_first_clause = False
                     pcm_q, p_task = _start_clause_tts(filler)
                     producer_tasks.append(p_task)
-                    await clause_queue.put((filler, pcm_q, p_task, False))
+                    await clause_queue.put((filler, pcm_q, p_task))
                 if held_for_tools is not None:
                     if held_for_tools.strip():
                         trace.log("pre_tool_text_dropped", text=held_for_tools.strip()[:100])
@@ -612,7 +558,7 @@ async def _stream_clauses_and_speak(
                             if sentence.strip():
                                 pcm_q, p_task = _start_clause_tts(sentence.strip())
                                 producer_tasks.append(p_task)
-                                await clause_queue.put((sentence.strip(), pcm_q, p_task, False))
+                                await clause_queue.put((sentence.strip(), pcm_q, p_task))
                         reply_buf = ""
                         deterministic = True
                         break
@@ -640,10 +586,9 @@ async def _stream_clauses_and_speak(
                 if not clause:
                     continue
                 is_first_clause = False
-                is_why = _next_is_why(clause)
                 pcm_q, p_task = _start_clause_tts(clause)
                 producer_tasks.append(p_task)
-                await clause_queue.put((clause, pcm_q, p_task, is_why))
+                await clause_queue.put((clause, pcm_q, p_task))
             reply_buf = ready_part + held_bracket
 
         if aborted_noise:
@@ -668,10 +613,9 @@ async def _stream_clauses_and_speak(
             tail_clause = _clean_clause(reply_buf, state.lang)
             if tail_clause and not tail_clause.upper().startswith("SILENT"):
                 is_first_clause = False
-                is_why = _next_is_why(tail_clause)
                 pcm_q, p_task = _start_clause_tts(tail_clause)
                 producer_tasks.append(p_task)
-                await clause_queue.put((tail_clause, pcm_q, p_task, is_why))
+                await clause_queue.put((tail_clause, pcm_q, p_task))
             elif decision is not None and decision.should_answer and is_first_clause:
                 # Guarantee a spoken answer whenever the user asked a question or gave a command
                 guaranteed = router.fallback_reply(decision, state.lang)
@@ -679,7 +623,7 @@ async def _stream_clauses_and_speak(
                     active.generated_text = guaranteed
                     pcm_q, p_task = _start_clause_tts(guaranteed)
                     producer_tasks.append(p_task)
-                    await clause_queue.put((guaranteed, pcm_q, p_task, False))
+                    await clause_queue.put((guaranteed, pcm_q, p_task))
 
         await clause_queue.put(None)
         await consumer_task
@@ -775,134 +719,6 @@ async def answer_user_audio(state: State, pcm16_16k: bytes, frame_jpeg: bytes | 
             await state.send({"type": "heard_ignored", "reason": "error"})
         except Exception:
             pass
-    finally:
-        if state.active_speech is active:
-            state.active_speech = None
-
-
-async def _send_speech(state: State, pcm: bytes, active: ActiveSpeech, text: str) -> None:
-    """Queue already-synthesized PCM right after whatever is playing and record it on the clause timeline."""
-    if not pcm or not state.assistant_enabled:
-        return
-    now = time.time()
-    play_start = max(state.audible_until, now)
-    state.sent_audio(len(pcm), now)
-    active.clause_timeline.append([play_start, state.audible_until, text])
-    state.explain_lock_until = max(state.explain_lock_until, state.audible_until + config.EXPLAIN_POST_WINDOW_S)
-    for i in range(0, len(pcm), 9600):
-        await state.socket.send_bytes(pcm[i:i + 9600])
-
-
-def _parse_guidance(raw_text: str) -> dict:
-    raw = json.loads((raw_text or "{}").strip())
-    if isinstance(raw, list):
-        raw = raw[0] if raw and isinstance(raw[0], dict) else {}
-    return raw if isinstance(raw, dict) else {}
-
-
-async def guide_after_depth_stop(
-    state: State,
-    frame_jpeg: bytes | None,
-    dist_m: float,
-    stop_audio_done: asyncio.Event,
-) -> str:
-    """After a depth stop: ask the model (image + compass) for a turn in degrees + what is ahead, then speak
-    FIRST the degrees ("Turn right 30 degrees.", pre-cached) and THEN what is ahead, both at a fast pace.
-
-    Runs while `state.emergency_active` blocks the answering pipeline. Returns the spoken text ("" on failure).
-    """
-    t0 = time.time()
-    lang = normalize_lang(state.lang)
-    state.lang = lang
-    active = ActiveSpeech(kind="depth_stop")
-    state.active_speech = active
-
-    steps = max(0.5, round(dist_m / 0.7 * 2) / 2)
-    img_w = img_h = None
-    if frame_jpeg:
-        try:
-            with Image.open(io.BytesIO(frame_jpeg)) as im:
-                img_w, img_h = im.size
-        except Exception:
-            pass
-    hfov = steering.hfov_for(img_w, img_h)
-    compass_deg = router.current_compass_deg(state, t0, max_age_s=config.SENSOR_MAX_AGE_S)
-    target_deg = state.target_bearing_deg
-    # The model only reports perception; no compass numbers so it cannot "help" with the math
-    prompt = (
-        f"Language: {lang} ONLY.\n"
-        f"Depth sensor: surface at the image center is about {dist_m:.1f} m (~{steps:g} steps) away.\n"
-        + ("Camera image attached (what the user is facing)." if frame_jpeg else "No camera image available.")
-    )
-    parts: list = []
-    if frame_jpeg:
-        parts.append(types.Part.from_bytes(data=frame_jpeg, mime_type="image/jpeg"))
-    parts.append(types.Part.from_text(text=prompt))
-    cfg = types.GenerateContentConfig(
-        system_instruction=DEPTH_STOP_SYSTEM,
-        temperature=0.1,
-        response_mime_type="application/json",
-        media_resolution=types.MediaResolution.MEDIA_RESOLUTION_MEDIUM,
-        thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.MINIMAL),
-    )
-    try:
-        resp = await agent._get_client().aio.models.generate_content(
-            model=config.MODEL, contents=[types.Content(role="user", parts=parts)], config=cfg
-        )
-        g = _parse_guidance(resp.text)
-        model_ms = round((time.time() - t0) * 1000)
-        turn = steering.decide_turn(g, hfov=hfov, compass_deg=compass_deg, target_deg=target_deg)
-        code = turn.code
-        turn_text = phrases.code_phrase(code, lang)
-        what = _clean_clause(str(g.get("what", "")), lang)[:60].strip()
-        if what and not what.endswith((".", "!", "?")):
-            what += "."
-
-        # Degrees first (pre-cached, sped up), "what" synthesized in parallel and queued right after
-        what_task = asyncio.create_task(speak.synthesize_fast(what)) if what else None
-        try:
-            turn_pcm = await speak.synthesize_fast(turn_text)
-            await stop_audio_done.wait()
-            await _send_speech(state, turn_pcm, active, turn_text)
-            first_ms = round((time.time() - t0) * 1000)
-            spoken = turn_text
-            if what_task is not None:
-                try:
-                    what_pcm = await asyncio.wait_for(what_task, 4.0)
-                    await _send_speech(state, what_pcm, active, what)
-                    spoken = f"{turn_text} {what}"
-                except Exception as exc:
-                    trace.log("clause_tts_failed", clause=what, error=f"{type(exc).__name__}: {exc}"[:140])
-                    await state.send({"type": "speak_text", "text": what})
-                    spoken = f"{turn_text} {what}"
-        finally:
-            if what_task is not None and not what_task.done():
-                what_task.cancel()
-
-        active.generated_text = spoken
-        state.chat_history.append(("model", spoken))
-        trace.log(
-            "depth_stop_guide",
-            outcome="spoken",
-            code=code,
-            side=turn.side or None,
-            deg=turn.deg,
-            why=turn.reason,
-            seen={k: g.get(k) for k in ("a", "left", "right", "more_open")},
-            compass_deg=round(compass_deg) if compass_deg is not None else None,
-            target_deg=round(target_deg) if target_deg is not None else None,
-            hfov=hfov,
-            text=spoken,
-            dist_m=round(dist_m, 2),
-            model_ms=model_ms,
-            first_audio_ms=first_ms,
-            speech_rate=config.GUIDE_SPEECH_RATE,
-        )
-        await state.send({"type": "reply", "text": spoken, "turn_code": code})
-        return spoken
-    except asyncio.CancelledError:
-        trace.log("info_stream_cancelled", mode="depth_stop")
-        raise
     finally:
         if state.active_speech is active:
             state.active_speech = None

@@ -101,7 +101,20 @@ def extract_center_disparity_np(depth_2d: np.ndarray) -> dict | None:
         "center_disp": round(center_disp, 4),
         "p10": round(p10, 4),
         "p90": round(p90, 4),
+        "sector_disp": sector_disparities_np(depth_2d),
     }
+
+
+def sector_disparities_np(depth_2d: np.ndarray) -> list[float | None]:
+    """LEFT / CENTER / RIGHT thirds of a horizontal band (floor/ceiling skipped): 75th-percentile disparity each."""
+    h, w = depth_2d.shape
+    band = depth_2d[int(h * 0.18): int(np.ceil(h * 0.68))]
+    out: list[float | None] = []
+    for s in range(3):
+        part = band[:, int(w * s / 3): int(w * (s + 1) / 3)]
+        valid = part[np.isfinite(part) & (part > 0)]
+        out.append(round(float(np.percentile(valid, 75)), 4) if valid.size >= 8 else None)
+    return out
 
 
 def _infer_sync(jpeg_bytes: bytes) -> dict | None:

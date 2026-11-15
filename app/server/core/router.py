@@ -7,12 +7,8 @@
      never on routine visual questions).
    - Guarantees every valid question or command receives a spoken answer (`should_answer=True` + fallback).
 
-2. Depth Emergency Stop (`safety.alerts.depth_emergency_stop`):
-   - The browser's depth model (phone WebGPU or laptop ONNX) triggers a single `depth_stop` with an image +
-     compass when something is within the stop distance; while it is handled the answering pipeline is blocked.
-
-3. Session Event Dispatch (`handle_audio_chunk`, `handle_client_message`):
-   - Routes incoming WebSocket audio chunks, camera frames, IMU telemetry, depth probes and depth stops
+2. Session Event Dispatch (`handle_audio_chunk`, `handle_client_message`):
+   - Routes incoming WebSocket audio chunks, camera frames, IMU/GPS telemetry and hold-scan depth probes
      across `assistant`, `safety`, and `depth` modules.
 """
 import base64
@@ -25,7 +21,7 @@ from ..audio import phrases
 from ..depth import center_probe, local_depth
 from ..utils import config, trace
 from . import memory
-from .state import ALERT_MODES, State
+from .state import State
 
 MIN_VOICE_PCM_BYTES = 4800  # ~150 ms of 16 kHz mono PCM16
 MIN_VOICED_S = 0.20         # Ignore sub-200 ms room clicks/blips
@@ -38,21 +34,6 @@ OTHER_SCRIPT_RE = re.compile(
 _REPEATED_NONE_RE = re.compile(r"^(?:NONE[\s,.;:-]*)+", re.IGNORECASE)
 
 # Deterministic voice command & explicit memory patterns (English + Greek)
-_MODE_OFF_RE = re.compile(
-    r"\b(turn\s+off\s+alerts?|disable\s+alerts?|alerts?\s+off|stop\s+alerts?)\b|"
-    r"(κλείσε\s+τις\s+ειδοποιήσεις|απενεργοποίησε\s+τις\s+ειδοποιήσεις|ειδοποιήσεις\s+κλειστές)",
-    re.IGNORECASE,
-)
-_MODE_URGENT_RE = re.compile(
-    r"\b(urgent\s+alerts?\s+only|only\s+urgent\s+alerts?|alerts?\s+urgent\s+only)\b|"
-    r"(μόνο\s+επείγοντα|μόνο\s+επείγουσες\s+ειδοποιήσεις)",
-    re.IGNORECASE,
-)
-_MODE_NORMAL_RE = re.compile(
-    r"\b(turn\s+on\s+alerts?|enable\s+alerts?|normal\s+alerts?|alerts?\s+normal)\b|"
-    r"(άνοιξε\s+τις\s+ειδοποιήσεις|κανονικές\s+ειδοποιήσεις|ενεργοποίησε\s+τις\s+ειδοποιήσεις)",
-    re.IGNORECASE,
-)
 _LANG_GREEK_RE = re.compile(
     r"\b(speak\s+(?:in\s+)?greek|switch\s+to\s+greek|in\s+greek\s+please)\b|"
     r"(μίλα\s+(?:μου\s+)?ελληνικά|γύρνα\s+(?:το\s+)?στα\s+ελληνικά|στα\s+ελληνικά\s+παρακαλώ)",
@@ -395,16 +376,10 @@ def compass_context_text(state: State, now: float | None = None) -> str:
 
 
 def detect_system_action(heard_text: str) -> str:
-    """Detect explicit alert-mode or language control commands in English or Greek."""
+    """Detect explicit language-switch commands in English or Greek."""
     txt = (heard_text or "").strip()
     if not txt:
         return ""
-    if _MODE_OFF_RE.search(txt):
-        return "mode:off"
-    if _MODE_URGENT_RE.search(txt):
-        return "mode:urgent_only"
-    if _MODE_NORMAL_RE.search(txt):
-        return "mode:normal"
     if _LANG_GREEK_RE.search(txt):
         return "lang:Greek"
     if _LANG_ENGLISH_RE.search(txt):
@@ -499,19 +474,6 @@ def fallback_reply(decision: CommandDecision, lang: str = "English") -> str:
     if not decision.should_answer:
         return ""
     is_gr = phrases.normalize_lang(lang) == "Greek"
-    if decision.action.startswith("mode:"):
-        mode_val = decision.action.split(":", 1)[1]
-        if is_gr:
-            return {
-                "off": "Οι ειδοποιήσεις έκλεισαν.",
-                "urgent_only": "Μόνο επείγουσες ειδοποιήσεις ενεργές.",
-                "normal": "Κανονικές ειδοποιήσεις ενεργές.",
-            }.get(mode_val, "Εντάξει.")
-        return {
-            "off": "Alerts turned off.",
-            "urgent_only": "Urgent alerts only.",
-            "normal": "Normal alerts active.",
-        }.get(mode_val, "Done.")
     if decision.action.startswith("lang:"):
         target = decision.action.split(":", 1)[1]
         return "Μιλάω ελληνικά τώρα." if target == "Greek" else "Switched to English."
@@ -579,13 +541,7 @@ async def apply_command_decision(state: State, decision: CommandDecision) -> boo
     if decision.intent == "ignore":
         return False
 
-    if decision.action.startswith("mode:"):
-        mode_val = decision.action.split(":", 1)[1]
-        if mode_val in ALERT_MODES and state.alert_mode != mode_val:
-            state.alert_mode = mode_val
-            trace.log("alert_mode", mode=mode_val, by="voice_router")
-            await state.send({"type": "mode", "mode": mode_val})
-    elif decision.action.startswith("lang:"):
+    if decision.action.startswith("lang:"):
         target_lang = phrases.normalize_lang(decision.action.split(":", 1)[1])
         changed_lang = state.lang != target_lang
         state.lang = target_lang
@@ -629,8 +585,8 @@ async def run_depth_probe(state: State, b64_data: str, seq: int = 0, disp: float
     """Metric center-crop anchor / fast pipelined fallback (up to 3 concurrent staggered calls)."""
 
     def wanted() -> bool:
-        # Hold scan, or the always-on stop guard re-anchoring its metric scale
-        return state.depth_mode_active or state.alert_mode != "off"
+        # Hold-to-scan, or the always-on stereo sonar
+        return state.depth_mode_active or state.sonar_active
 
     if state.depth_probes_inflight >= 3 or not wanted():
         return
@@ -645,7 +601,7 @@ async def run_depth_probe(state: State, b64_data: str, seq: int = 0, disp: float
                 return
             if seq:
                 state.depth_probe_latest_seq = seq
-            trace.log("depth_probe", dist_m=dist, ms=ms, seq=seq or None, guard=not state.depth_mode_active)
+            trace.log("depth_probe", dist_m=dist, ms=ms, seq=seq or None, hold=state.depth_mode_active)
             payload: dict = {"type": "depth_result", "dist_m": dist, "source": "center-crop", "ms": ms}
             if seq:
                 payload["seq"] = seq
@@ -657,10 +613,11 @@ async def run_depth_probe(state: State, b64_data: str, seq: int = 0, disp: float
 
 
 async def run_local_depth_probe(state: State, b64_data: str, seq: int = 0) -> None:
-    """Run Depth-Anything-V2-Small locally on the laptop/server via ONNX Runtime (hold scan or stop guard)."""
+    """Run Depth-Anything-V2-Small locally on the laptop/server via ONNX Runtime (hold-to-scan sonar)."""
 
     def wanted() -> bool:
-        return state.depth_mode_active or state.alert_mode != "off"
+        # Hold-to-scan, or the always-on stereo sonar
+        return state.depth_mode_active or state.sonar_active
 
     if not wanted():
         await state.send({"type": "depth_local_skip", "seq": seq})
@@ -674,7 +631,7 @@ async def run_local_depth_probe(state: State, b64_data: str, seq: int = 0) -> No
         if stats is None:
             await state.send({"type": "depth_local_skip", "seq": seq, "provider": provider})
             return
-        if state.depth_mode_active:
+        if state.depth_mode_active:  # continuous sonar would flood the trace at ~4 Hz
             trace.log("depth_local", center_disp=stats["center_disp"], provider=provider, ms=ms, seq=seq or None)
         await state.send({
             "type": "depth_local",
@@ -682,6 +639,7 @@ async def run_local_depth_probe(state: State, b64_data: str, seq: int = 0) -> No
             "center_disp": stats["center_disp"],
             "p10": stats["p10"],
             "p90": stats["p90"],
+            "sector_disp": stats.get("sector_disp"),
             "provider": provider,
             "ms": ms,
         })
@@ -722,11 +680,11 @@ async def handle_audio_chunk(state: State, chunk: bytes) -> None:
         return
     now_c = time.time()
     if state.mic_blocked(now_c):
-        # Hold-scan, or the "Stop!" phrase itself is playing
+        # The user is holding the depth-sonar scan
         state.reset_mic_turn()
         return
     info_generating = state.info_task is not None and not state.info_task.done()
-    assistant_busy = state.audible(now_c) or state.model_speaking or info_generating or state.emergency_active
+    assistant_busy = state.audible(now_c) or state.model_speaking or info_generating
     for action in state.turn.feed(chunk, now_c, assistant_busy):
         if action[0] == "start":
             # The user is talking: stop whatever the assistant is saying or doing and listen
@@ -761,7 +719,7 @@ async def handle_audio_chunk(state: State, chunk: bytes) -> None:
 
 
 async def handle_client_message(state: State, msg: dict, frame_count: int) -> int:
-    """Route JSON control, camera frames, IMU, depth probes and depth emergency stops from the browser."""
+    """Route JSON control, camera frames, IMU/GPS and hold-scan depth probes from the browser."""
     from ..assistant import info_pipeline
     from ..safety import alerts
 
@@ -788,12 +746,6 @@ async def handle_client_message(state: State, msg: dict, frame_count: int) -> in
         await handle_gps(state, msg)
     elif kind == "imu" and isinstance(msg.get("imu"), dict):
         state.imu, state.imu_at = msg["imu"], time.time()
-    elif kind == "depth_stop":
-        if not state.emergency_active:
-            alerts.spawn(alerts.depth_emergency_stop(state, msg))
-    elif kind == "mode" and msg.get("mode") in ALERT_MODES:
-        state.alert_mode = msg["mode"]
-        trace.log("alert_mode", mode=msg["mode"], by="button")
     elif kind == "assistant":
         enabled = bool(msg.get("enabled", True))
         state.assistant_enabled = enabled
@@ -812,6 +764,9 @@ async def handle_client_message(state: State, msg: dict, frame_count: int) -> in
             if info_pipeline.cancel_for_user(state):
                 await state.send({"type": "interrupted"})
             state.reset_mic_turn()
+    elif kind == "sonar":
+        state.sonar_active = bool(msg.get("active", False))
+        trace.log("sonar", active=state.sonar_active)
     elif kind == "depth_device" and msg.get("device") in ("auto", "mobile", "laptop"):
         dev = str(msg["device"])
         mode = str(msg.get("mode") or dev)

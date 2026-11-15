@@ -1,8 +1,7 @@
 // Main-thread controller for on-phone WebGPU Depth-Anything-V2-Small (`depth_worker.js`).
 //
-// One self-scheduling loop with exactly ONE pending step at a time (in-flight frame, timer or animation frame):
-// - `setIntervalMs(0)`   -> full speed (Hold > 1s depth scan)
-// - `setIntervalMs(180)` -> throttled always-on emergency-stop guard (~5 fps)
+// Runs while the user holds the depth-sonar scan. One self-scheduling loop with exactly ONE pending step at a time
+// (in-flight frame, timer or animation frame); `setIntervalMs(ms)` throttles it (0 = full speed).
 // `start()` / `setIntervalMs()` are idempotent, so callers may sync state as often as they like without
 // ever doubling the loop. A watchdog recovers a frame the worker never answered, and transient frame errors
 // back off instead of killing the loop. Disparity -> metres via Looming.DepthCalibrator.
@@ -106,7 +105,14 @@
         this._setStatus(`${m.backend}, ${m.ms} ms/frame (avg ${Math.round(this.emaMs)} ms)`);
         if (this.onPerfChange) this.onPerfChange();
         const distM = this.calibrator.toMeters(m.centerDisp);
-        if (this.active && distM !== null && this.onDepth) this.onDepth(distM, m.backend, m.ms, m.centerDisp);
+        const sectors = Array.isArray(m.sectorDisp)
+          ? {
+              left: m.sectorDisp[0] != null ? this.calibrator.toMeters(m.sectorDisp[0]) : null,
+              center: m.sectorDisp[1] != null ? this.calibrator.toMeters(m.sectorDisp[1]) : null,
+              right: m.sectorDisp[2] != null ? this.calibrator.toMeters(m.sectorDisp[2]) : null,
+            }
+          : null;
+        if (this.active && distM !== null && this.onDepth) this.onDepth(distM, m.backend, m.ms, m.centerDisp, sectors);
       } else if (m.type === "skipped") {
         if (m.seq !== this.seq) return;
         this._frameDone();

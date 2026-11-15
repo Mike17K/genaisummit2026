@@ -19,7 +19,7 @@ Rules:
 - If the picture is blurry, dark, cut off, or you are not sure, say so and say what to do: move closer, add light, hold still. Never guess.
 - Never state the current time or date: you do not know them. Never invent details that are not visible or audible.
 - Never say a road or crossing is safe. You support a cane or guide dog, you do not replace them.
-- Tools: remember_place, recall_places, call_contact, set_alert_mode. Use call_contact only if asked to call someone. If a tool result says simulated, say it is a demo call.
+- Tools: remember_place, recall_places, call_contact. Use call_contact only if asked to call someone. If a tool result says simulated, say it is a demo call.
 - Reply in the language the user speaks (Greek or English)."""
 
 GREEK = re.compile(r"[Ͱ-Ͽ]")
