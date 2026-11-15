@@ -12,8 +12,9 @@
     * { box-sizing: border-box; }
     html, body { height: 100%; margin: 0; background: #000; color: #fff; font-family: system-ui, sans-serif; }
     body { display: flex; flex-direction: column; }
-    #go { flex: 1; min-height: 40%; border: 0; font-size: 2rem; background: #0b5fff; color: #fff; }
+    #go { flex: 1; min-height: 40%; border: 0; font-size: 2rem; background: #0b5fff; color: #fff; padding: 0 1rem; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; transition: background .12s ease; }
     #go[aria-pressed="true"] { background: #1a7f37; }
+    #go[data-state="depth"] { background: #0e7490; }
     #go[data-state="error"] { background: #b42318; }
     #top { display: flex; align-items: center; gap: .6rem; padding: .45rem .8rem; font-size: 1.1rem; background: #1f1c2f; border-bottom: 1px solid #33304a; min-height: 3.2rem; }
     #logo { height: 30px; width: 30px; border-radius: 7px; flex: none; }
@@ -21,6 +22,7 @@
     #badge { display: inline-block; padding: .1rem .55rem; border-radius: 1rem; font-weight: 700; margin-right: .5rem; background: #444; }
     #badge.listening { background: #1a7f37; } #badge.hearing { background: #0b5fff; }
     #badge.thinking { background: #9a6700; } #badge.speaking { background: #8250df; }
+    #badge.depth { background: #0e7490; }
     #badge.error { background: #b42318; } #badge.connecting, #badge.starting { background: #6e7681; }
     #debug { font: 12px/1.35 ui-monospace, monospace; background: #0d1117; color: #c9d1d9; padding: .5rem .8rem; max-height: 38%; overflow: auto; }
     #debug table { border-collapse: collapse; width: 100%; }
@@ -39,7 +41,7 @@
 </head>
 <body>
   <div id="top" aria-live="off"><img id="logo" src="/static/logo.png" width="30" height="30" alt="VoxEye"><span id="badge">idle</span><span id="status">Tap the button to start</span></div>
-  <button id="go" aria-pressed="false" aria-label="Start assistant. Tap again to stop.">Tap to start</button>
+  <button id="go" aria-pressed="false" aria-label="Start assistant. When running, tap to stop or hold 1 second for center depth mode.">Tap to start</button>
   <div id="gatebar" class="bar" aria-hidden="true">
     <span>voice gate (higher = must speak louder)</span>
     <button id="gateDown" type="button">&minus;</button><b id="gateVal">0.030</b><button id="gateUp" type="button">+</button>
@@ -55,9 +57,9 @@
   <div id="debug" aria-hidden="true"></div>
   <video id="cam" playsinline muted></video>
   <canvas id="canvas" hidden></canvas>
-  <script src="/static/micgate.js?v=2"></script>
-  <script src="/static/looming.js?v=2"></script>
-  <script src="/static/spatial.js?v=2"></script>
-  <script src="/static/app.js?v=2"></script>
+  <script src="/static/micgate.js?v=4"></script>
+  <script src="/static/looming.js?v=4"></script>
+  <script src="/static/spatial.js?v=4"></script>
+  <script src="/static/app.js?v=4"></script>
 </body>
 </html>

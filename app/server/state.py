@@ -8,6 +8,7 @@ from fastapi import WebSocket
 
 from . import turns
 from .attention import Attention
+from .memory import UserMemory
 from .policy import AlertPolicy
 
 
@@ -70,8 +71,11 @@ class State:
     audible_until: float = 0.0
     explaining_alert: bool = False
     explain_lock_until: float = 0.0
+    depth_mode_active: bool = False
+    depth_probe_busy: bool = False
     drop_audio_since: float = 0.0
     lang: str = "English"
+    memory: UserMemory = field(default_factory=UserMemory)
     extra_funcs: dict = field(default_factory=dict)
     client_tts: bool = True
 

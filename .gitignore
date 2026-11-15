@@ -6,4 +6,5 @@ server.pid
 app/debug_triggers/
 app/trigger_logs/
 app/.last_lang
+app/.user_memory.json
 

@@ -21,7 +21,7 @@ import wave
 
 from google.genai import types
 
-from . import agent, compose, config, phrases, speak, tools, trace
+from . import agent, compose, config, memory, phrases, speak, tools, trace
 from .policy import WatchDecision
 from .state import ActiveSpeech, InterruptedSpeech, State
 
@@ -50,8 +50,16 @@ Rules:
 - {STANDARD_CODES_DOC}
 - Read text verbatim when asked to read. If the image is dark or blurry, say so and suggest how to aim.
 - Never claim a street crossing is safe. Never invent details not visible.
-- Output format MUST be two sections:
+- Use `Current user memory` naturally as background context (for example, if the user is trying to find a door or keys and you see it, mention it first; do NOT repeat their memory back to them unless relevant).
+- MINIMAL EXPLICIT MEMORY RULE:
+  Keep `MEMORY:` strictly minimal — ONLY record what the user EXPLICITLY tells you when they state something worth remembering:
+  * `GOAL: <=10 words` ONLY when the user explicitly tells you what they are trying to do, find, or reach (e.g., "I'm looking for the exit", "Ψάχνω την κουζίνα").
+  * `NOTE: <=10 words` ONLY when the user explicitly tells you a fact, item location, or preference worth keeping (e.g., "Remember my bag is by the couch", "Avoid stairs").
+  * `CLEAR_GOAL` when the user explicitly says they found/finished their goal, or `CLEAR` when they ask to forget everything.
+  * `NONE` for ALL normal visual questions ("What is ahead?", "Read this", "What color?"), greetings, "OK", "Thanks", or anything guessed from the camera that the user did not explicitly state.
+- Output format MUST be three sections in order:
 HEARD: <exact transcription in English or Greek, or NONE if only noise/silence>
+MEMORY: <NONE | GOAL: ... | NOTE: ... | CLEAR_GOAL | CLEAR>
 REPLY: <your spoken reply in English or Greek, or SILENT if nothing to say>"""
 
 EXPLAIN_SYSTEM = f"""You are Eyes, the laconic navigation voice guide for a blind pedestrian who was just told to stop or slow down.
@@ -71,7 +79,8 @@ Style & Standard Code Rules:
   Κολώνα μπροστά, δύο βήματα. [SLIGHT_LEFT]
   Τοίχος μπροστά. [TURN_RIGHT]
   Σκαλιά μπροστά. [CHECK_CANE]
-- Safety: NEVER direct into unseen space, stairs, drop-offs, or traffic — use [TURN_BACK] or [CHECK_CANE] when no clear bypass is visible."""
+- Safety: NEVER direct into unseen space, stairs, drop-offs, or traffic — use [TURN_BACK] or [CHECK_CANE] when no clear bypass is visible.
+- If `User context` states what the person is trying to do or avoid, prefer a safe standard redirect code aligned with that context."""
 
 _SENTENCE_END = re.compile(r"([.!?]+)(?:\s+|$)")
 _CLAUSE_SEP = re.compile(r"([,;:·—–-]+)\s+")
@@ -117,6 +126,17 @@ def is_valid_en_el_heard(text: str) -> bool:
     if OTHER_SCRIPT.search(text):
         return False
     return bool(GREEK.search(text) or LATIN.search(text))
+
+
+def parse_header_block(head_part: str) -> tuple[str, str]:
+    """Parse `HEARD:` and optional `MEMORY:` from the pre-`REPLY:` header block."""
+    if "MEMORY:" in head_part:
+        heard_raw, mem_raw = head_part.split("MEMORY:", 1)
+    else:
+        heard_raw, mem_raw = head_part, "NONE"
+    heard_text = heard_raw.replace("HEARD:", "").strip()
+    mem_directive = mem_raw.strip()
+    return heard_text, mem_directive
 
 
 def pcm16_to_wav(pcm: bytes, rate: int = 16000) -> bytes:
@@ -355,7 +375,19 @@ async def _stream_clauses_and_speak(
                             piece += part.text
                         elif getattr(part, "function_call", None):
                             fc = part.function_call
-                            await state.send({"type": "tool", "name": fc.name, "args": dict(fc.args or {})})
+                            f_args = dict(fc.args or {})
+                            tool_map = {f.__name__: f for f in [*tools.ALL, *state.extra_funcs.values()]}
+                            fn = tool_map.get(fc.name)
+                            if fn is not None:
+                                try:
+                                    fn(**f_args)
+                                except Exception as exc:
+                                    trace.log("tool_error", tool=fc.name, error=str(exc)[:120])
+                            if fc.name == "remember_place" and f_args.get("name"):
+                                if state.memory.add_note(f"{f_args.get('name')}: {f_args.get('note', '')}"):
+                                    memory.save_persisted(state.memory)
+                                    await state.send({"type": "memory", **state.memory.to_dict()})
+                            await state.send({"type": "tool", "name": fc.name, "args": f_args})
             if not piece:
                 continue
 
@@ -363,7 +395,7 @@ async def _stream_clauses_and_speak(
                 raw_buf += piece
                 if "REPLY:" in raw_buf:
                     head_part, after = raw_buf.split("REPLY:", 1)
-                    heard_text = head_part.replace("HEARD:", "").strip()
+                    heard_text, mem_directive = parse_header_block(head_part)
                     if not is_valid_en_el_heard(heard_text):
                         aborted_noise = True
                         break
@@ -372,6 +404,10 @@ async def _stream_clauses_and_speak(
                     active.user_question = heard_text
                     trace.log("heard", text=heard_text)
                     await state.send({"type": "heard", "text": heard_text})
+                    if state.memory.apply_directive(mem_directive, heard_text):
+                        memory.save_persisted(state.memory)
+                        trace.log("memory_update", **state.memory.to_dict())
+                        await state.send({"type": "memory", **state.memory.to_dict()})
                     in_reply = True
                     reply_buf = after.lstrip()
                     active.generated_text = reply_buf
@@ -457,13 +493,18 @@ async def answer_user_audio(state: State, pcm16_16k: bytes, frame_jpeg: bytes | 
 
     lang = normalize_lang(state.lang)
     state.lang = lang
+    mem_ctx = state.memory.context_text(tools.peek_places())
     user_parts: list = []
     if frame_jpeg:
         user_parts.append(types.Part.from_bytes(data=frame_jpeg, mime_type="image/jpeg"))
     user_parts.append(types.Part.from_bytes(data=wav_bytes, mime_type="audio/wav"))
     user_parts.append(
         types.Part.from_text(
-            text=f"Default language: {lang}. Transcribe ONLY in English or Greek, and reply ONLY in English or Greek."
+            text=(
+                f"Default language: {lang}. Current user memory: {mem_ctx or 'none'}. "
+                "Transcribe ONLY in English or Greek, update MEMORY only if the user explicitly stated a goal/note worth keeping (otherwise NONE), "
+                "and reply ONLY in English or Greek."
+            )
         )
     )
     contents.append(types.Content(role="user", parts=user_parts))
@@ -538,6 +579,8 @@ async def explain_after_alert(
     if sensors_desc:
         motion_bits.append(sensors_desc)
     motion_line = f"Person movement/heading: {'; '.join(motion_bits)}.\n" if motion_bits else ""
+    mem_ctx = state.memory.context_text(tools.peek_places())
+    mem_line = f"User context: {mem_ctx}.\n" if mem_ctx else ""
     is_guidance_alert = d.action_code in phrases.GUIDANCE_CODES or d.steer in ("left", "right")
     next_hint = f" Watcher suggested redirect code: [{d.next_code}]." if d.next_code else ""
     hazard_desc = f"{d.hazard_key or 'obstacle'}" + (f" ({d.reason})" if d.reason else "")
@@ -554,6 +597,7 @@ async def explain_after_alert(
             f"Language: {lang} ONLY (strictly English or Greek, never any other language).\n"
             f"Visual input: {visual_note}\n"
             f"{motion_line}"
+            f"{mem_line}"
             f'Alert spoken: "{d.message}" (code={d.action_code or "-"}, level {d.danger_level}/5) for: {hazard_desc}.{next_hint}\n'
             f'Interrupted question: "{interrupted.user_question}".\n'
             f'Already heard by user: "{interrupted.spoken_so_far or "(none yet)"}".\n'
@@ -567,6 +611,7 @@ async def explain_after_alert(
             f"Language: {lang} ONLY (strictly English or Greek, never any other language).\n"
             f"Visual input: {visual_note}\n"
             f"{motion_line}"
+            f"{mem_line}"
             f'Alert spoken: "{d.message}" (code={d.action_code or "-"}, level {d.danger_level}/5) for: {hazard_desc}.{next_hint}\n'
             "Output ONLY: <obstacle + clock/steps in <= 6 words>. <[STANDARD_CODE]> (never custom sliding/turning words)."
         )

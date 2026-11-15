@@ -1,5 +1,8 @@
 // On-device looming logic. Run: node tests/test_looming.js   (Node is needed only for this test)
-const { RollingBaseline, ImuState, LoomingTracker, zone, distanceMeters, lumaMotion } = require("../static/looming.js");
+const {
+  RollingBaseline, ImuState, LoomingTracker, zone, distanceMeters, lumaMotion,
+  parseFocusDistance, depthFeedback,
+} = require("../static/looming.js");
 
 let pass = 0, fail = 0;
 function check(name, cond, detail = "") {
@@ -149,6 +152,22 @@ check("a tiny box gives no distance", distanceMeters("car", 0.005) === null);
   check("a different size or missing picture gives null, not a guess", lumaMotion(a, new Float32Array(100)) === null && lumaMotion(null, a) === null);
   const noisy = new Float32Array(256); for (let i = 0; i < 256; i++) noisy[i] = 0.5 + (i % 2 ? 0.004 : -0.004);
   check("camera noise (+-0.004) stays well under the 0.012 'still' threshold", lumaMotion(a, noisy) < 0.012, lumaMotion(a, noisy));
+}
+
+// ---- Approach 1 Web PDAF focusDistance & Depth Identification Mode feedback
+{
+  check("standard W3C focusDistance in metres is read directly", parseFocusDistance({ focusDistance: 0.85 }, { focusDistance: { min: 0.1, max: 5.0 } }) === 0.85);
+  check("legacy Android Camera2 diopter HAL (min=0, max>=8) converts 1/diopters to metres", parseFocusDistance({ focusDistance: 2.0 }, { focusDistance: { min: 0, max: 10 } }) === 0.5);
+  check("missing or uncalibrated zero focusDistance returns null", parseFocusDistance({}, {}) === null && parseFocusDistance({ focusDistance: 0 }, { focusDistance: { min: 0, max: 10 } }) === null);
+  check("extreme focusDistance is clamped to [0.08, 6.0] m", parseFocusDistance({ focusDistance: 25 }, { focusDistance: { min: 0.1, max: 50 } }) === 6.0 && parseFocusDistance({ focusDistance: 0.02 }, {}) === 0.08);
+
+  const far = depthFeedback(3.5);
+  const mid = depthFeedback(1.2);
+  const near = depthFeedback(0.2);
+  check("depthFeedback returns null on invalid distance", depthFeedback(null) === null && depthFeedback(0) === null && depthFeedback(-1) === null);
+  check("beep volume increases strictly as object gets closer", far.volume < mid.volume && mid.volume < near.volume, `${far.volume} < ${mid.volume} < ${near.volume}`);
+  check("vibration power (vibeMs) increases strictly as object gets closer", far.vibeMs < mid.vibeMs && mid.vibeMs < near.vibeMs, `${far.vibeMs} < ${mid.vibeMs} < ${near.vibeMs}`);
+  check("pulse interval shortens strictly as object gets closer", far.intervalMs > mid.intervalMs && mid.intervalMs > near.intervalMs, `${far.intervalMs} > ${mid.intervalMs} > ${near.intervalMs}`);
 }
 
 console.log(`\n${pass}/${pass + fail} passed`);

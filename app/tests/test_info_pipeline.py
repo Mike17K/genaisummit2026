@@ -227,6 +227,114 @@ def run():
     check("detect_text_lang switches to Greek on Greek speech", info_pipeline.detect_text_lang("Πού να πάω;", "English") == "Greek")
     check("detect_text_lang switches to English on English speech", info_pipeline.detect_text_lang("Where is the door?", "Greek") == "English")
 
+    # 9. Approach 1 Web PDAF sensor note + Hold > 1s Depth Identification Mode gating
+    from server import live, watch
+    s_txt = watch.sensors_text({"walking": True, "angularSpeed": 12, "focusDistM": 0.85})
+    check("sensors_text includes Web PDAF focus distance when reported", "pdaf focus 0.85m" in s_txt, s_txt)
+
+    async def test_depth_mode_gating():
+        class _DummySock:
+            async def send_json(self, _p):
+                pass
+
+        st = State(socket=_DummySock())
+        st.frames.append((100.0, b"f1"))
+        st.frames.append((100.6, b"f2"))
+        await live._handle_json_message(st, {"type": "depth_mode", "active": True, "pdaf": True}, 2)
+        check("depth_mode JSON message activates state.depth_mode_active", st.depth_mode_active is True)
+        ran = await alerts.watch_once(st, 100.7)
+        check("watcher does not fire spoken alerts while Hold > 1s depth mode is active", ran is False)
+        await live._handle_json_message(st, {"type": "depth_mode", "active": False}, 2)
+        check("releasing button deactivates state.depth_mode_active", st.depth_mode_active is False)
+
+    asyncio.run(test_depth_mode_gating())
+
+    # 10. Minimal explicit user memory & context propagation across agents
+    from server import memory as mem_mod
+    um = mem_mod.UserMemory()
+    check("routine question MEMORY: NONE leaves memory empty", um.apply_directive("NONE", "What is in front of me?") is False and um.is_empty())
+    check("single-word 'OK' cannot accidentally write a goal", um.apply_directive("GOAL: something", "OK") is False and um.is_empty())
+    check("explicit goal is saved", um.apply_directive("GOAL: find the kitchen", "I am trying to find the kitchen") is True and um.goal == "find the kitchen")
+    check("new explicit goal replaces previous goal cleanly", um.apply_directive("GOAL: reach the exit", "Now help me reach the exit") is True and um.goal == "reach the exit")
+    check("explicit note worth remembering is stored", um.apply_directive("NOTE: avoid stairs", "Please remember I want to avoid stairs") is True and um.notes == ["avoid stairs"])
+    check("duplicate note is ignored", um.apply_directive("NOTE: Avoid stairs", "Remember avoid stairs") is False and len(um.notes) == 1)
+    for idx in range(5):
+        um.apply_directive(f"NOTE: item {idx}", f"Remember item {idx}")
+    check("notes stay minimal and bounded to MAX_NOTES (4)", len(um.notes) == mem_mod.MAX_NOTES)
+    ctx_str = um.context_text({"front door": "handle on right"})
+    check("context_text formats goal + remembered notes concisely", "trying to=reach the exit" in ctx_str and "front door: handle on right" in ctx_str, ctx_str)
+    w_contents = watch.build_contents([(100.0, b"a"), (100.5, b"b")], [], "English", sensors="user walking", sheet=b"sheet", user_context=ctx_str)
+    w_prompt = w_contents[0].parts[-1].text
+    check("watcher build_contents receives User context", "User context: trying to=reach the exit" in w_prompt, w_prompt)
+    check("CLEAR_GOAL drops finished goal while keeping notes", um.apply_directive("CLEAR_GOAL", "I found the exit") is True and um.goal == "" and len(um.notes) == mem_mod.MAX_NOTES)
+    check("CLEAR wipes all memory", um.apply_directive("CLEAR", "Forget everything") is True and um.is_empty())
+
+    with tempfile.TemporaryDirectory() as tmpd:
+        mfile = Path(tmpd) / ".user_memory.json"
+        m1 = mem_mod.UserMemory()
+        m1.set_goal("find pharmacy", now=1000.0)
+        m1.add_note("bag on blue chair")
+        mem_mod.save_persisted(m1, mfile)
+        loaded_fresh = mem_mod.load_persisted(mfile, now=1500.0)
+        check("persisted memory reloads active goal and note", loaded_fresh.goal == "find pharmacy" and loaded_fresh.notes == ["bag on blue chair"])
+        loaded_stale = mem_mod.load_persisted(mfile, now=1000.0 + mem_mod.GOAL_TTL_S + 10.0)
+        check("expired goal (>2h) drops automatically while explicit note stays", loaded_stale.goal == "" and loaded_stale.notes == ["bag on blue chair"])
+
+        async def test_stream_header_memory():
+            orig_mfile = mem_mod.MEMORY_FILE
+            orig_tts = speak.stream_tts
+            mem_mod.MEMORY_FILE = mfile
+
+            async def silent_tts(_t):
+                yield b"\x00" * 4800
+
+            speak.stream_tts = silent_tts
+            sent_events = []
+
+            class _MemSock:
+                async def send_json(self, p):
+                    sent_events.append(p)
+
+                async def send_bytes(self, _b):
+                    pass
+
+            try:
+                st_m = State(socket=_MemSock())
+
+                async def tok_goal():
+                    yield SimpleNamespace(
+                        candidates=[
+                            SimpleNamespace(
+                                content=SimpleNamespace(
+                                    parts=[
+                                        SimpleNamespace(
+                                            text="HEARD: Ψάχνω τα κλειδιά μου.\nMEMORY: GOAL: εύρεση κλειδιών\nREPLY: Εντάξει, ας κοιτάξουμε στο τραπέζι.",
+                                            function_call=None,
+                                        )
+                                    ]
+                                )
+                            )
+                        ]
+                    )
+
+                act_m = ActiveSpeech(kind="answer")
+                heard_m, rep_m = await info_pipeline._stream_clauses_and_speak(
+                    st_m, tok_goal(), act_m, parse_heard_header=True, t0=time.time()
+                )
+                check(
+                    "streaming HEARD+MEMORY+REPLY saves explicit Greek goal and speaks only REPLY",
+                    heard_m == "Ψάχνω τα κλειδιά μου."
+                    and st_m.memory.goal == "εύρεση κλειδιών"
+                    and "MEMORY" not in rep_m
+                    and any(ev.get("type") == "memory" and ev.get("goal") == "εύρεση κλειδιών" for ev in sent_events),
+                    (heard_m, st_m.memory.to_dict(), rep_m, sent_events),
+                )
+            finally:
+                mem_mod.MEMORY_FILE = orig_mfile
+                speak.stream_tts = orig_tts
+
+        asyncio.run(test_stream_header_memory())
+
     print(f"\n{sum(results)}/{len(results)} passed")
     return all(results)
 

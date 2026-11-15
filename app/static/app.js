@@ -62,15 +62,38 @@ let running = false;
 let nextPlayTime = 0;
 const playing = new Set();
 
+// Approach 1 (Web PDAF focusDistance) + Hold > 1s Center Depth Identification Mode state
+const HOLD_DEPTH_MS = 1000;
+let videoTrack = null;
+let videoCaps = {};
+let holdTimer = null;
+let activePointerId = null;
+let depthScanActive = false;
+let suppressNextClick = false;
+let suppressClickUntil = 0;
+let smoothedDepthM = null;
+let depthSource = "-";
+let depthPollTimer = null;
+let depthPulseTimer = null;
+let lastDepthProbeAt = 0;
+
 const dbg = {
   state: "idle", camera: "-", mic: "-", audioCtx: "-", ws: "-", gemini: "-",
   micLevel: 0, micPeak: 0, sentKB: 0, sentFrames: 0, recvKB: 0, recvChunks: 0,
   lastHeard: "", lastReply: "", lastEvent: "", lastModelAudioAt: 0, lastSpeechAt: 0,
   error: "", startedAt: 0, log: [],
-  watch: "-", lastAlert: "-", alertMode: "normal", alerts: 0, conn: "-", fps: 2, attention: "normal", frameStamps: [], voiceOpen: false, effGate: 0,
+  watch: "-", lastAlert: "-", alertMode: "normal", alerts: 0, conn: "-", fps: 2, attention: "normal", frameStamps: [], voiceOpen: false, effGate: 0, depth: "-", memory: "empty",
 };
 const hideDebug = new URLSearchParams(location.search).get("debug") === "0";
 if (hideDebug) debugEl.style.display = "none";
+
+function formatMemory(mem) {
+  if (!mem) return "empty";
+  const parts = [];
+  if (mem.goal) parts.push(`trying to: ${mem.goal}`);
+  if (Array.isArray(mem.notes) && mem.notes.length) parts.push(`notes: ${mem.notes.join("; ")}`);
+  return parts.length ? parts.join(" | ") : "empty";
+}
 
 function note(msg) {
   const t = new Date().toLocaleTimeString([], { hour12: false });
@@ -112,7 +135,9 @@ function renderDebug() {
     ["received", `${dbg.recvKB.toFixed(0)} KB in ${dbg.recvChunks} chunks, last audio ${sinceAudio}`],
     ["you said", esc(dbg.lastHeard || "-")],
     ["eyes said", esc(dbg.lastReply || "-")],
+    ["user memory", esc(dbg.memory || "empty")],
     ["on-device", esc(spatial ? spatial.summary() : (ON_DEVICE ? "waiting to start" : "off (add ?ondevice=1 to try it)"))],
+    ["center depth", esc(dbg.depth || "-")],
     ["phone motion", esc(imu.panning ? "panning" : imu.walking === true ? "walking" : imu.walking === false ? "stationary" : "movement unknown") + `  gyro ${imu.angularSpeed} deg/s, pitch ${imu.pitchDeg ?? "?"}`],
     ["watcher", esc(dbg.watch) + "  (mode: " + esc(dbg.alertMode) + ")"],
     ["last alert", (dbg.alerts ? dbg.alerts + " so far. " : "") + esc(dbg.lastAlert)],
@@ -124,7 +149,7 @@ function renderDebug() {
 }
 
 function updateLiveState() {
-  if (!running) return;
+  if (!running || depthScanActive) return;
   const now = Date.now();
   if (dbg.voiceOpen && assistantEnabled) dbg.lastSpeechAt = now;
   const speaking = playing.size > 0 || (dbg.lastModelAudioAt && now - dbg.lastModelAudioAt < 700);
@@ -238,7 +263,7 @@ function startMic() {
     for (let i = 0; i < input.length; i++) sum += input[i] * input[i];
     dbg.micLevel = Math.sqrt(sum / input.length);
     dbg.micPeak = Math.max(dbg.micPeak * 0.995, dbg.micLevel);
-    if (!socket || socket.readyState !== 1 || !assistantEnabled) {
+    if (!socket || socket.readyState !== 1 || !assistantEnabled || depthScanActive) {
       dbg.voiceOpen = false;
       return;
     }
@@ -282,6 +307,136 @@ function frameMotion() {
   } catch (_) { return null; }
 }
 
+function readPdafDistance() {
+  if (!videoTrack || typeof videoTrack.getSettings !== "function") return null;
+  try {
+    return Looming.parseFocusDistance(videoTrack.getSettings(), videoCaps);
+  } catch (_) {
+    return null;
+  }
+}
+
+const depthCanvas = document.createElement("canvas");
+depthCanvas.width = depthCanvas.height = 192;
+const depthCtx = depthCanvas.getContext("2d");
+
+function sendCenterDepthProbe() {
+  if (!depthScanActive || !cam.videoWidth || !socket || socket.readyState !== 1) return;
+  const now = Date.now();
+  if (now - lastDepthProbeAt < 420) return;
+  lastDepthProbeAt = now;
+  const vw = cam.videoWidth, vh = cam.videoHeight;
+  const cw = Math.round(vw * 0.4), ch = Math.round(vh * 0.4);
+  const sx = Math.round((vw - cw) / 2), sy = Math.round((vh - ch) / 2);
+  depthCtx.drawImage(cam, sx, sy, cw, ch, 0, 0, 192, 192);
+  const data = depthCanvas.toDataURL("image/jpeg", 0.55).split(",")[1];
+  socket.send(JSON.stringify({ type: "depth_probe", data }));
+}
+
+function updateDepthReading(rawM, src) {
+  if (typeof rawM !== "number" || !Number.isFinite(rawM) || rawM <= 0) return;
+  smoothedDepthM = smoothedDepthM === null ? rawM : Number((0.45 * smoothedDepthM + 0.55 * rawM).toFixed(2));
+  depthSource = src;
+  dbg.depth = `${smoothedDepthM.toFixed(2)} m (${src})${depthScanActive ? " [HOLD]" : ""}`;
+  if (depthScanActive) {
+    statusEl.textContent = `Center depth: ${smoothedDepthM.toFixed(2)} m (${src})`;
+    go.textContent = `Depth: ${smoothedDepthM.toFixed(2)} m · Release to exit`;
+  }
+}
+
+function depthBeep(freqHz, volume) {
+  if (!ctx || !(volume > 0)) return;
+  if (ctx.state === "suspended") ctx.resume().catch(() => {});
+  const t0 = ctx.currentTime;
+  const dur = 0.05;
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  o.type = "triangle";
+  o.frequency.setValueAtTime(freqHz, t0);
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(volume, t0 + 0.006);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g).connect(ctx.destination);
+  o.start(t0);
+  o.stop(t0 + dur + 0.005);
+}
+
+function depthPulseTick() {
+  if (!depthScanActive) return;
+  const fb = smoothedDepthM !== null ? Looming.depthFeedback(smoothedDepthM) : null;
+  if (!fb) {
+    depthBeep(440, 0.02);
+    depthPulseTimer = setTimeout(depthPulseTick, 200);
+    return;
+  }
+  let vibrated = false;
+  try {
+    if (typeof navigator.vibrate === "function") vibrated = navigator.vibrate(fb.vibeMs);
+  } catch (_) {}
+  depthBeep(fb.freqHz, vibrated ? Number((fb.volume * 0.85).toFixed(3)) : fb.volume);
+  depthPulseTimer = setTimeout(depthPulseTick, fb.intervalMs);
+}
+
+function startDepthScan() {
+  if (!running || depthScanActive) return;
+  depthScanActive = true;
+  stopPlayback();
+  micGate.reset();
+  dbg.voiceOpen = false;
+  lastDepthProbeAt = 0;
+
+  const d0 = readPdafDistance();
+  if (d0 !== null) {
+    smoothedDepthM = d0;
+    depthSource = "PDAF";
+    dbg.depth = `${d0.toFixed(2)} m (PDAF) [HOLD]`;
+  } else {
+    smoothedDepthM = null;
+    depthSource = "scanning";
+    if (spatial && spatial.latest && Array.isArray(spatial.latest.objects)) {
+      const centerObj = spatial.latest.objects.find((o) => o.inPath && typeof o.distM === "number");
+      if (centerObj) {
+        smoothedDepthM = centerObj.distM;
+        depthSource = "on-device";
+      }
+    }
+  }
+
+  if (socket && socket.readyState === 1) {
+    socket.send(JSON.stringify({ type: "depth_mode", active: true, pdaf: d0 !== null }));
+  }
+  setState("depth", smoothedDepthM !== null ? `Center depth: ${smoothedDepthM.toFixed(2)} m (${depthSource})` : "Scanning center depth...");
+  go.textContent = smoothedDepthM !== null ? `Depth: ${smoothedDepthM.toFixed(2)} m · Release to exit` : "Scanning depth · Release to exit";
+  note(`depth mode ON (${d0 !== null ? "Web PDAF " + d0.toFixed(2) + "m" : "center-crop fallback"})`);
+
+  if (d0 === null) sendCenterDepthProbe();
+  depthPollTimer = setInterval(() => {
+    const d = readPdafDistance();
+    if (d !== null) updateDepthReading(d, "PDAF");
+    else sendCenterDepthProbe();
+  }, 80);
+  depthPulseTick();
+}
+
+function stopDepthScan(notifyServer = true) {
+  if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+  if (!depthScanActive) return;
+  depthScanActive = false;
+  suppressClickUntil = Date.now() + 450;
+  clearInterval(depthPollTimer); depthPollTimer = null;
+  clearTimeout(depthPulseTimer); depthPulseTimer = null;
+  try { navigator.vibrate?.(0); } catch (_) {}
+  alertMuteUntil = Math.max(alertMuteUntil, Date.now() + 250);
+  if (notifyServer && socket && socket.readyState === 1) {
+    socket.send(JSON.stringify({ type: "depth_mode", active: false }));
+  }
+  note("depth mode OFF");
+  if (running) {
+    go.textContent = "Listening. Tap to stop · Hold 1s for depth";
+    setState("listening", assistantEnabled ? "Listening. Ask me anything." : "Safety watcher active (assistant off).");
+  }
+}
+
 function sendFrame(fresh = false) {
   if (!cam.videoWidth || !socket || socket.readyState !== 1) return;
   const w = fresh === true ? 640 : 384;
@@ -290,7 +445,13 @@ function sendFrame(fresh = false) {
   canvas.getContext("2d").drawImage(cam, 0, 0, canvas.width, canvas.height);
   const data = canvas.toDataURL("image/jpeg", fresh === true ? 0.6 : 0.5).split(",")[1];
   const motion = frameMotion();
-  const msg = { type: "frame", data, imu: imu.snapshot() };
+  const imuSnap = imu.snapshot();
+  const pdafM = readPdafDistance();
+  if (pdafM !== null) {
+    imuSnap.focusDistM = pdafM;
+    if (!depthScanActive) dbg.depth = `${pdafM.toFixed(2)} m (PDAF)`;
+  }
+  const msg = { type: "frame", data, imu: imuSnap };
   if (motion !== null) msg.motion = Number(motion.toFixed(4));
   if (fresh === true) msg.fresh = true;
   socket.send(JSON.stringify(msg));
@@ -325,8 +486,20 @@ async function start() {
   }
   cam.srcObject = stream;
   await cam.play();
+  videoTrack = stream.getVideoTracks()[0] || null;
+  videoCaps = (videoTrack && typeof videoTrack.getCapabilities === "function") ? videoTrack.getCapabilities() : {};
+  if (videoTrack && typeof videoTrack.applyConstraints === "function") {
+    if (Array.isArray(videoCaps.focusMode) && videoCaps.focusMode.includes("continuous")) {
+      await videoTrack.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(() => {});
+    }
+    if (videoCaps.pointsOfInterest) {
+      await videoTrack.applyConstraints({ advanced: [{ pointsOfInterest: [{ x: 0.5, y: 0.5 }] }] }).catch(() => {});
+    }
+  }
+  const initPdaf = readPdafDistance();
+  dbg.depth = initPdaf !== null ? `${initPdaf.toFixed(2)} m (PDAF)` : (videoCaps.focusDistance ? "PDAF ready" : "hold 1s (center-crop)");
   dbg.camera = "ok";
-  note(`camera: ${cam.videoWidth}x${cam.videoHeight}`);
+  note(`camera: ${cam.videoWidth}x${cam.videoHeight}, pdaf: ${videoCaps.focusDistance ? "supported" : "fallback"}`);
 
   setState("connecting", "Connecting to the assistant...");
   const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -335,7 +508,7 @@ async function start() {
   note(`wait after you stop talking: ${SILENCE_WAIT_MS} ms`);
   socket.binaryType = "arraybuffer";
   socket.onmessage = (e) => {
-    if (e.data instanceof ArrayBuffer) { playPcm(e.data); return; }
+    if (e.data instanceof ArrayBuffer) { if (!depthScanActive) playPcm(e.data); return; }
     const m = JSON.parse(e.data);
     dbg.lastEvent = m.type + (m.name ? ":" + m.name : "");
     if (m.type === "ready") {
@@ -343,9 +516,14 @@ async function start() {
         sessionLang = m.lang;
         try { localStorage.setItem("eyesLang", sessionLang); } catch (_) {}
       }
+      if (m.memory) dbg.memory = formatMemory(m.memory);
       dbg.gemini = "ready"; dbg.conn = m.conn || "-"; chime(); note(`gemini session ready, id ${dbg.conn} (${sessionLang || "English"})`);
       socket.send(JSON.stringify({ type: "mode", mode: dbg.alertMode }));
       socket.send(JSON.stringify({ type: "assistant", enabled: assistantEnabled }));
+    }
+    else if (m.type === "memory") {
+      dbg.memory = formatMemory(m);
+      note("memory -> " + dbg.memory);
     }
     else if (m.type === "lang") {
       if (m.lang === "English" || m.lang === "Greek") {
@@ -360,7 +538,13 @@ async function start() {
     else if (m.type === "tool") note("tool call: " + m.name + " " + JSON.stringify(m.args || {}));
     else if (m.type === "error") { dbg.gemini = "error"; fail("server", m.text); chime(330); stop(false); }
     else if (m.type === "go_away") note("server says the session will end soon");
+    else if (m.type === "depth_result") {
+      if (depthScanActive && typeof m.dist_m === "number" && readPdafDistance() === null) {
+        updateDepthReading(m.dist_m, m.source || "center-crop");
+      }
+    }
     else if (m.type === "alert") {
+      if (depthScanActive) return;
       stopPlayback();
       micGate.reset();
       dbg.voiceOpen = false;
@@ -408,13 +592,18 @@ async function start() {
   running = true;
   dbg.startedAt = Date.now();
   go.setAttribute("aria-pressed", "true");
-  go.textContent = "Listening. Tap to stop.";
+  go.textContent = "Listening. Tap to stop · Hold 1s for depth";
   setState("listening", assistantEnabled ? "Listening. Ask me anything." : "Safety watcher active (assistant off).");
 }
 
 function stop(announce = true) {
   const wasError = dbg.state === "error";
+  stopDepthScan(false);
   running = false;
+  videoTrack = null;
+  videoCaps = {};
+  smoothedDepthM = null;
+  dbg.depth = "-";
   if (spatial) { spatial.stop(); spatial = null; }
   clearInterval(frameTimer);
   stopPlayback();
@@ -471,9 +660,47 @@ agentBtn.addEventListener("click", () => {
   note(`assistant is now ${assistantEnabled ? "on" : "off"}`);
 });
 
-go.addEventListener("click", () => {
+go.addEventListener("contextmenu", (e) => e.preventDefault());
+
+go.addEventListener("pointerdown", (e) => {
+  if (e.button != null && e.button !== 0) return;
+  suppressNextClick = false;
+  suppressClickUntil = 0;
+  activePointerId = e.pointerId;
+  try { go.setPointerCapture(e.pointerId); } catch (_) {}
+  if (!running) return;
+  if (holdTimer) clearTimeout(holdTimer);
+  holdTimer = setTimeout(() => {
+    holdTimer = null;
+    if (!running) return;
+    suppressNextClick = true;
+    startDepthScan();
+  }, HOLD_DEPTH_MS);
+});
+
+function releaseGoHold(e) {
+  if (e && activePointerId !== null && e.pointerId != null && e.pointerId !== activePointerId) return;
+  activePointerId = null;
+  if (holdTimer) {
+    clearTimeout(holdTimer);
+    holdTimer = null;
+  }
+  if (depthScanActive) stopDepthScan(true);
+}
+
+window.addEventListener("pointerup", releaseGoHold);
+window.addEventListener("pointercancel", releaseGoHold);
+window.addEventListener("blur", () => releaseGoHold(null));
+document.addEventListener("visibilitychange", () => { if (document.hidden) releaseGoHold(null); });
+
+go.addEventListener("click", (e) => {
+  if (suppressNextClick || Date.now() < suppressClickUntil) {
+    suppressNextClick = false;
+    e.preventDefault();
+    return;
+  }
   if (running) stop();
-  else start().catch((e) => { fail("start", e); stop(false); });
+  else start().catch((err) => { fail("start", err); stop(false); });
 });
 
 debugTimer = setInterval(() => { updateLiveState(); renderDebug(); }, 200);

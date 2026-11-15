@@ -152,7 +152,40 @@
     return d / cur.length;
   }
 
-  const api = { KNOWN_WIDTHS_M, DEFAULTS, distanceMeters, zone, RollingBaseline, ImuState, LoomingTracker, lumaMotion };
+  // Approach 1 (Web PDAF): read center-weighted hardware lens focus distance from MediaStreamTrack.getSettings().
+  // W3C ImageCapture reports focusDistance in metres; legacy Camera2 HALs with min===0 && max>=8 report diopters (1/m).
+  function parseFocusDistance(settings, capabilities) {
+    const raw = settings && typeof settings.focusDistance === "number" ? settings.focusDistance : null;
+    if (raw === null || !Number.isFinite(raw) || raw <= 0) return null;
+    const cap = capabilities && capabilities.focusDistance;
+    const isDiopters = !!(cap && cap.min === 0 && typeof cap.max === "number" && cap.max >= 8);
+    const meters = isDiopters ? 1 / raw : raw;
+    if (!Number.isFinite(meters) || meters <= 0) return null;
+    const clamped = Math.max(0.08, Math.min(6.0, meters));
+    return Number(clamped.toFixed(2));
+  }
+
+  // Map centre-view distance (metres) to haptic motor power (PWM pulse width + cadence) and WebAudio beep volume.
+  function depthFeedback(distM) {
+    if (typeof distM !== "number" || !Number.isFinite(distM) || distM <= 0) return null;
+    const d = Math.max(0.15, Math.min(3.5, distM));
+    const proximity = (3.5 - d) / (3.5 - 0.15); // 0.0 at >=3.5m .. 1.0 at <=0.15m
+    const power = proximity * proximity;         // perceptual quadratic curve
+    return {
+      distM: Number(d.toFixed(2)),
+      proximity: Number(proximity.toFixed(3)),
+      power: Number(power.toFixed(3)),
+      volume: Number((0.015 + 0.305 * power).toFixed(3)), // 0.015 whisper -> 0.320 loud
+      vibeMs: Math.round(12 + 108 * power),               // 12ms micro-tick -> 120ms full motor power
+      intervalMs: Math.round(460 - 325 * proximity),      // 460ms slow -> 135ms rapid buzz
+      freqHz: Math.round(520 + 360 * proximity),          // 520Hz -> 880Hz
+    };
+  }
+
+  const api = {
+    KNOWN_WIDTHS_M, DEFAULTS, distanceMeters, zone, RollingBaseline, ImuState, LoomingTracker,
+    lumaMotion, parseFocusDistance, depthFeedback,
+  };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else Object.assign(root, { Looming: api });
 })(typeof window !== "undefined" ? window : globalThis);

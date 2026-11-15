@@ -69,6 +69,7 @@ def state_has_no_shared_defaults():
     check("frames buffers are separate", a.frames is not b.frames)
     check("alert policies are separate", a.policy is not b.policy)
     check("recent alert lists are separate", a.recent_alerts is not b.recent_alerts)
+    check("user memories are separate", a.memory is not b.memory and a.memory.notes is not b.memory.notes)
     check("extra tool maps are separate", a.extra_funcs is not b.extra_funcs)
     a.policy.mode = "off"
     a.frames.append((1.0, b"x"))

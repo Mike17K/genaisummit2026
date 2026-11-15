@@ -4,6 +4,7 @@ import time
 from dataclasses import dataclass, field
 
 from . import config, tools, trace
+from .memory import UserMemory
 
 SYSTEM = """You are Eyes, a voice assistant for a blind or low-vision person. They cannot see your reply, they only hear it.
 Rules:
@@ -37,6 +38,7 @@ class Session:
     frame: bytes | None = None
     frame_time: float = 0.0
     history: list[tuple[str, str]] = field(default_factory=list)  # (role, text)
+    memory: UserMemory = field(default_factory=UserMemory)
 
     def set_frame(self, jpeg: bytes) -> None:
         self.frame, self.frame_time = jpeg, time.time()
@@ -93,6 +95,9 @@ async def decide(session: Session, user_text: str | None) -> str | None:
     note = ""
     if session.frame is None or (age is not None and age > FRAME_MAX_AGE_S):
         note = "\n(No fresh camera image is available. If the question needs sight, say you cannot see right now.)"
+    mem_ctx = session.memory.context_text(tools.peek_places())
+    if mem_ctx:
+        note += f"\n(User context: {mem_ctx})"
     user_parts = [types.Part.from_text(text=user_text + note)]
     if session.frame is not None and not note:
         user_parts.insert(0, types.Part.from_bytes(data=session.frame, mime_type="image/jpeg"))

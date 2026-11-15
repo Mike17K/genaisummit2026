@@ -2,7 +2,7 @@
 import asyncio
 import time
 
-from . import config, debug_report, info_pipeline, phrases, speak, trace, watch
+from . import config, debug_report, info_pipeline, phrases, speak, tools, trace, watch
 from .state import State
 
 _watch_slots: asyncio.Semaphore | None = None
@@ -147,6 +147,8 @@ async def fire_alert(
 
 async def local_alert(state: State, msg: dict) -> None:
     """Handle an optional on-device looming alert."""
+    if state.depth_mode_active:
+        return
     label = str(msg.get("label", "object"))[:30]
     key, text = phrases.local_alert(label, state.lang)
     now = time.time()
@@ -225,8 +227,9 @@ async def watch_once(state: State, look_started_at: float) -> bool:
             await announce_rate(state, "alerts off")
         return False
 
-    # Do not trigger stopping again while explaining why to stop (+ 0.5 s post-explanation window).
-    if state.alert_locked(look_started_at):
+    # Do not trigger stopping again while explaining why to stop (+ 0.5 s post-explanation window),
+    # or while the user is holding the main button in manual Depth Identification Mode.
+    if state.depth_mode_active or state.alert_locked(look_started_at):
         return False
 
     n_frames = min(3, config.COMPOSE_FRAMES if config.WATCH_COMPOSE else config.WATCH_FRAMES)
@@ -264,12 +267,15 @@ async def watch_once(state: State, look_started_at: float) -> bool:
 
     moving = watch.user_moving(imu)
     sensors_desc = watch.sensors_text(imu)
+    user_ctx = state.memory.context_text(tools.peek_places())
     state.last_judged_frame = frames[-1][0]
     state.last_look_at = look_started_at
 
     t0 = time.time()
     async with _watch_slots:
-        d, info = await watch.judge(frames, list(state.recent_alerts), state.lang, sensors_desc)
+        d, info = await watch.judge(
+            frames, list(state.recent_alerts), state.lang, sensors_desc, user_context=user_ctx
+        )
     model_ms = round((time.time() - t0) * 1000, 1)
 
     now_after = time.time()

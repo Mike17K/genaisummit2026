@@ -38,6 +38,11 @@ def recall_places() -> dict:
     return {"places": dict(places)}
 
 
+def peek_places() -> dict[str, str]:
+    """Read-only snapshot of remembered places for agent context without emitting a tool trace."""
+    return dict(_places())
+
+
 def call_contact(name: str, message: str) -> dict:
     """Call a contact (for example a pharmacy) and say the given message. DEMO ONLY: no real call is placed."""
     trace.log("tool", tool="call_contact", name=name, message=message, simulated=True)

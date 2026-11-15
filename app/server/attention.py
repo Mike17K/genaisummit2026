@@ -84,6 +84,9 @@ def sensors_text(imu: dict | None) -> str:
         bits.append(f"gyro {speed} deg/s")
     if imu.get("pitchDeg") is not None:
         bits.append(f"phone pitch {imu['pitchDeg']} deg")
+    focus_d = imu.get("focusDistM")
+    if isinstance(focus_d, (int, float)) and focus_d > 0:
+        bits.append(f"pdaf focus {focus_d:.2f}m")
     return ", ".join(bits)
 
 

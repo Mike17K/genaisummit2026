@@ -12,7 +12,7 @@ import uuid
 
 from fastapi import WebSocket
 
-from . import alerts, config, info_pipeline, phrases, speak, tools, trace, turns, watch
+from . import alerts, config, info_pipeline, memory, phrases, speak, tools, trace, turns, watch
 from .state import State
 
 __all__ = ["State", "run"]
@@ -46,7 +46,7 @@ async def _handle_audio_chunk(state: State, chunk: bytes) -> None:
     if not state.assistant_enabled:
         return
     now_c = time.time()
-    if state.alert_locked(now_c):
+    if state.depth_mode_active or state.alert_locked(now_c):
         state.reset_mic_turn()
         return
     assistant_busy = state.audible(now_c) or state.model_speaking
@@ -77,6 +77,23 @@ async def _handle_audio_chunk(state: State, chunk: bytes) -> None:
                 state.info_task = alerts.spawn(
                     info_pipeline.answer_user_audio(state, pcm_bytes, frame_jpeg)
                 )
+
+
+async def _run_depth_probe(state: State, b64_data: str) -> None:
+    """Fallback center-crop distance probe when hardware Web PDAF focusDistance is unavailable."""
+    if state.depth_probe_busy or not state.depth_mode_active:
+        return
+    state.depth_probe_busy = True
+    try:
+        jpeg = base64.b64decode(b64_data)
+        t0 = time.time()
+        dist = await watch.estimate_center_distance(jpeg)
+        ms = round((time.time() - t0) * 1000)
+        if state.depth_mode_active and dist is not None:
+            trace.log("depth_probe", dist_m=dist, ms=ms)
+            await state.send({"type": "depth_result", "dist_m": dist, "source": "center-crop", "ms": ms})
+    finally:
+        state.depth_probe_busy = False
 
 
 async def _handle_json_message(state: State, msg: dict, frame_count: int) -> int:
@@ -110,6 +127,21 @@ async def _handle_json_message(state: State, msg: dict, frame_count: int) -> int
             await state.send({"type": "interrupted"})
     elif kind == "lang" and phrases.is_supported_lang(msg.get("lang")):
         await info_pipeline.update_session_lang(state, msg["lang"], source="client")
+    elif kind == "depth_mode":
+        active = bool(msg.get("active", False))
+        state.depth_mode_active = active
+        trace.log("depth_mode", active=active, pdaf=msg.get("pdaf"))
+        if active:
+            if info_pipeline.cancel_for_user(state):
+                await state.send({"type": "interrupted"})
+            state.reset_mic_turn()
+    elif kind == "depth_probe" and msg.get("data"):
+        alerts.spawn(_run_depth_probe(state, str(msg["data"])))
+    elif kind == "memory_clear":
+        if state.memory.clear():
+            memory.save_persisted(state.memory)
+            trace.log("memory_update", **state.memory.to_dict(), by="clear")
+            await state.send({"type": "memory", **state.memory.to_dict()})
     return frame_count
 
 
@@ -137,7 +169,7 @@ async def _serve(socket: WebSocket, conn_id: str) -> None:
         await socket.close()
         return
 
-    state = State(socket=socket, conn_id=conn_id, lang=initial_lang)
+    state = State(socket=socket, conn_id=conn_id, lang=initial_lang, memory=memory.load_persisted())
     state.client_tts = socket.query_params.get("client_tts", "1") != "0"
     state.turn = turns.TurnTracker(end_wait=silence_ms / 1000)
     asyncio.create_task(speak.warm_common())
@@ -163,7 +195,9 @@ async def _serve(socket: WebSocket, conn_id: str) -> None:
 
     state.extra_funcs = {"set_alert_mode": set_alert_mode, "set_language": set_language}
 
-    await socket.send_json({"type": "ready", "conn": conn_id, "lang": state.lang})
+    await socket.send_json(
+        {"type": "ready", "conn": conn_id, "lang": state.lang, "memory": state.memory.to_dict()}
+    )
     await alerts.announce_rate(state, "start")
     watcher = asyncio.create_task(alerts.watch_loop(state))
     mic_bytes = frame_count = 0
