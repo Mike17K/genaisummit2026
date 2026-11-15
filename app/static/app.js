@@ -344,6 +344,17 @@ function xrUsable() {
   // return XR_ALLOWED && xrSupported === true && !xrBroken && typeof XrDepthSource === "function";
   return false;
 }
+// Native ARCore Depth API (VoxEye Android app only, window.VoxNative bridge): preferred over every other source
+// when available; ?native=0 disables it. If it fails or ends, the camera + depth model path takes over.
+const NATIVE_ALLOWED = new URLSearchParams(location.search).get("native") !== "0";
+let nativeBroken = "";
+function nativeAvailability() {
+  if (typeof NativeDepthSource !== "function") return null;
+  return NativeDepthSource.availability();
+}
+function nativeUsable() {
+  return NATIVE_ALLOWED && !nativeBroken && nativeAvailability() === "ok";
+}
 
 // The inspected depth image + ear dividing lines, drawn behind the main button
 const depthView = new DepthView(document.getElementById("depthView"));
@@ -468,7 +479,15 @@ function renderDebug() {
     ["user memory", esc(dbg.memory || "empty")],
     ["depth model", esc(`[${depthMode === "auto" ? "auto->" + depthDevice : depthMode}] ` + (dbg.depthModel || "-"))],
     ["center depth", esc(dbg.depth || "-")],
-    ["webxr depth", esc(XR_SELECTION_DISABLED_FOR_TEST ? `off for test (selection commented out; phone ${xrSupported === null ? "checking" : xrSupported ? "supports it" : "does not support it"})` : !XR_ALLOWED ? "disabled (?xr=0)" : xrSupported === null ? "checking..." : !xrSupported ? "not supported here (depth model used)" : xrBroken ? "failed: " + xrBroken : xrSource ? "ACTIVE: " + xrStatus : "supported (starts with the assistant)")],
+    ["native AR depth", esc((() => {
+      const av = nativeAvailability();
+      if (av === null) return "not in the VoxEye app";
+      if (!NATIVE_ALLOWED) return "disabled (?native=0)";
+      if (xrSource && xrSource.label) return "ACTIVE: " + xrSource.status();
+      if (nativeBroken) return "failed: " + nativeBroken + " (depth model used)";
+      return av === "ok" ? "supported (starts with the assistant)" : "unavailable: " + av;
+    })())],
+    ["webxr depth", esc(XR_SELECTION_DISABLED_FOR_TEST ? `off for test (selection commented out; phone ${xrSupported === null ? "checking" : xrSupported ? "supports it" : "does not support it"})` : !XR_ALLOWED ? "disabled (?xr=0)" : xrSupported === null ? "checking..." : !xrSupported ? "not supported here (depth model used)" : xrBroken ? "failed: " + xrBroken : (xrSource && !xrSource.label) ? "ACTIVE: " + xrStatus : "supported (starts with the assistant)")],
     ["sonar settings", esc((() => {
       const c = SpatialSonarLib.getSettings(), e = (k) => `${c.ears[k].pitchHz}Hz vol ${Math.round(c.ears[k].maxVolume * 100)}% max ${c.ears[k].maxRateHz}/s`;
       return `L ${e("left")} · R ${e("right")} · range ${c.rangeM} m · sides ±${c.sideOffset} st · split ±${c.centerSplit} st · closer +${c.proximityRise} st`;
@@ -867,25 +886,27 @@ function sendFrame(fresh = false) {
   }).catch((err) => { dbg.camera = "frame failed: " + String((err && err.message) || err).slice(0, 60); });
 }
 
-// Start the WebXR source (call while the Start tap still counts as a user gesture).
-async function startXr() {
-  const src = new XrDepthSource({
+// Start an AR depth source that owns the camera: native ARCore (app) or WebXR (Chrome).
+// Call while the Start tap still counts as a user gesture.
+async function startXr(SourceClass = XrDepthSource, label = "WebXR depth", thumbTag = "webxr") {
+  const src = new SourceClass({
     overlayRoot: document.body,
     onStatus: (st) => { xrStatus = st; },
     onSectors: (sectors) => {
       if (xrSource !== src) return;
       const c = sectors.center ?? Math.min(...["left", "right"].map((k) => sectors[k] ?? Infinity));
-      updateDepthReading(Number.isFinite(c) ? c : null, "WebXR depth", sectors);
+      updateDepthReading(Number.isFinite(c) ? c : null, label, sectors);
     },
-    onThumb: (data, w, h) => { if (xrSource === src && depthWanted()) depthView.setImage(data, w, h, "webxr"); },
+    onThumb: (data, w, h) => { if (xrSource === src && depthWanted()) depthView.setImage(data, w, h, thumbTag); },
   });
   await src.start();
   xrSource = src;
-  src.onEnded = () => {
+  src.onEnded = (why) => {
     if (xrSource !== src) return;
     xrSource = null;
     if (running) {
-      note("WebXR session ended: switching to the camera + depth model");
+      if (src.label) nativeBroken = String(why || "session ended").slice(0, 120);
+      note(`${label} ended${why ? " (" + why + ")" : ""}: switching to the camera + depth model`);
       startCameraFallback();
     }
   };
@@ -1098,7 +1119,17 @@ async function start() {
   if (xrSupported === null && XR_ALLOWED && typeof XrDepthSource === "function") {
     xrSupported = await XrDepthSource.supported().catch(() => false);
   }
-  if (xrUsable()) {
+  if (nativeBroken.startsWith("no depth")) nativeBroken = ""; // tracking loss is environmental: try ARCore again
+  if (nativeUsable()) {
+    try {
+      await startXr(NativeDepthSource, "ARCore depth", "arcore");
+      note("native ARCore depth running (sonar + camera from ARCore)");
+    } catch (err) {
+      nativeBroken = String((err && err.message) || err).slice(0, 80);
+      note("native ARCore depth unavailable, falling back: " + nativeBroken);
+    }
+  }
+  if (!xrSource && xrUsable()) {
     try {
       await startXr();
       note("WebXR depth sensing running (sonar + camera from AR)");
@@ -1136,7 +1167,7 @@ async function start() {
   }
   const initPdaf = readPdafDistance();
   dbg.depth = initPdaf !== null ? `${initPdaf.toFixed(2)} m (PDAF)` : "waiting for the sonar";
-  dbg.camera = xrSource ? "ok (WebXR camera-access)" : "ok";
+  dbg.camera = xrSource ? (xrSource.label ? "ok (ARCore camera, native)" : "ok (WebXR camera-access)") : "ok";
   if (!xrSource) note(`camera: ${cam.videoWidth}x${cam.videoHeight}, pdaf: ${videoCaps.focusDistance ? "supported" : "fallback"}`);
 
   // Permission + device choice now, then close the mic: it only opens while the user holds the button

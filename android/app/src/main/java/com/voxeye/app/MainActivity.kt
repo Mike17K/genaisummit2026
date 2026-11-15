@@ -25,6 +25,11 @@ import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.JavascriptInterface
+import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import org.json.JSONObject
 
 /**
  * VoxEye native shell: full-screen WebView around the web client served by the
@@ -36,6 +41,9 @@ class MainActivity : Activity() {
     private lateinit var web: WebView
     private var pendingWebPerm: PermissionRequest? = null
     private var pendingGeo: Pair<String, GeolocationPermissions.Callback>? = null
+    private val main = Handler(Looper.getMainLooper())
+    @Volatile private var pageOrigin = ""
+    private lateinit var ar: ArDepth
 
     private val perms = arrayOf(
         Manifest.permission.CAMERA,
@@ -81,7 +89,15 @@ class MainActivity : Activity() {
             cacheMode = WebSettings.LOAD_DEFAULT
             setGeolocationEnabled(true)
         }
+        ar = ArDepth(this,
+            emit = { json -> main.post { web.evaluateJavascript("window.__voxNative&&window.__voxNative.onDepth($json)", null) } },
+            ended = { why -> main.post { web.evaluateJavascript("window.__voxNative&&window.__voxNative.onEnded(${JSONObject.quote(why)})", null) } })
+        web.addJavascriptInterface(Bridge(), "VoxNative")
         web.webViewClient = object : WebViewClient() {
+            override fun onPageStarted(v: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                ar.stop() // a new page never inherits a running AR session
+                pageOrigin = origin(url)
+            }
             override fun onReceivedError(v: WebView, r: WebResourceRequest, e: WebResourceError) {
                 if (r.isForMainFrame) askUrl("Can't load ${r.url}\n${e.description}\n\nEnter server URL:")
             }
@@ -147,6 +163,26 @@ class MainActivity : Activity() {
     }
 
     companion object { const val KEY = "url" }
+
+    private fun origin(u: String?): String = try { Uri.parse(u ?: "").let { "${it.scheme}://${it.authority}" } } catch (_: Throwable) { "" }
+
+    /** Native ARCore depth for the page; only the configured server's page may use it. */
+    inner class Bridge {
+        private fun allowed() = pageOrigin.isNotEmpty() && pageOrigin == origin(prefs().getString(KEY, null))
+        @JavascriptInterface fun arAvailable(): String = if (!allowed()) "not allowed for this page" else ar.availability()
+        @JavascriptInterface fun arStart(): String = when {
+            !allowed() -> "not allowed for this page"
+            checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED -> "no camera permission"
+            else -> ar.start()
+        }
+        @JavascriptInterface fun arStop() { ar.stop() }
+        @JavascriptInterface fun arStatus(): String = "${ar.status}, ${ar.tracking}, depth ${ar.depthSize.ifEmpty { "-" }}, ${ar.depthFrames} frames"
+        @JavascriptInterface fun captureJpeg(width: Int, quality: Int): String = if (!allowed()) "" else ar.captureJpeg(width, quality) ?: ""
+    }
+
+    override fun onPause() { super.onPause(); if (::ar.isInitialized) ar.onPause() }
+    override fun onResume() { super.onResume(); if (::ar.isInitialized) ar.onResume() }
+    override fun onDestroy() { if (::ar.isInitialized) ar.stop(); super.onDestroy() }
 
     private fun missing() = perms.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
 
