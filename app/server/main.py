@@ -72,19 +72,7 @@ async def download_apk() -> FileResponse:
     )
 
 
-@app.api_route("/video/v9.mp4", methods=["GET", "HEAD"], include_in_schema=False)
-@app.api_route("/video/v8.mp4", methods=["GET", "HEAD"], include_in_schema=False)
-async def video_hero() -> FileResponse:
-    """Serve the v9 (ElevenLabs v3 voiceover) hand-drawn sketchbook story hero video."""
-    for candidate in (
-        "voxeye-sketchbook-story-v9-elevenlabs-voice.mp4",
-        "voxeye-sketchbook-story.mp4",
-        "voxeye-sketchbook-story-v8.mp4",
-    ):
-        video_path = BRAG_DIR / candidate
-        if video_path.exists():
-            return FileResponse(video_path, media_type="video/mp4")
-    raise HTTPException(status_code=404, detail="Video not found")
+# The pitch video is hosted on YouTube (embedded in landing.html), not served from the repo.
 
 
 @app.api_route("/video/v9-poster.jpg", methods=["GET", "HEAD"], include_in_schema=False)

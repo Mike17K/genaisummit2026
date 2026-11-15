@@ -679,6 +679,24 @@
       border-radius: 14px;
       overflow: hidden;
     }
+    .video-yt-link {
+      display: inline-block;
+      margin-top: 10px;
+      font-family: var(--font-hand);
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--terra-dark);
+      text-decoration: none;
+    }
+    .video-yt-link:hover { text-decoration: underline; }
+    .video-viewport iframe {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: 0;
+      display: block;
+    }
     .video-viewport video {
       width: 100%;
       height: 100%;
@@ -1406,7 +1424,6 @@
       <div class="nav-links">
         <a href="#sonar-playground" class="nav-link">Interactive Sonar</a>
         <a href="#the-problem" class="nav-link">The Problem</a>
-        <a href="#storyboard" class="nav-link">v9 Storyboard</a>
         <a href="#architecture" class="nav-link">System 1 + 2</a>
         <a href="#get-voxeye" class="nav-link">Download APK</a>
         <a href="/panel" class="nav-link trace-pill" title="Open Live Judges Telemetry Trace">
@@ -1480,17 +1497,6 @@
               </a>
             </div>
 
-            <!-- Interactive WebApp URL Bar (Open from any tunnel / LAN URL) -->
-            <div class="url-launcher-bar" aria-label="Launch WebApp from custom URL">
-              <label for="webappUrlInput">WebApp URL:</label>
-              <div class="url-input-group">
-                <input type="url" id="webappUrlInput" value="" aria-label="VoxEye WebApp URL" spellcheck="false">
-              </div>
-              <div class="url-bar-actions">
-                <button type="button" id="openCustomUrlBtn" class="btn btn-hilite btn-sm">Launch URL ↗</button>
-                <button type="button" id="copyUrlBtn" class="btn btn-secondary btn-sm" title="Copy WebApp URL to clipboard">Copy</button>
-              </div>
-            </div>
           </div>
 
           <!-- Right Column: Taped Sketchbook Window with v9 Video -->
@@ -1505,79 +1511,20 @@
                 <span>✏️</span> what it sees vs what you hear (v9 pitch)
               </div>
               <div class="window-badges">
-                <span class="window-badge">60s · 1080p</span>
-                <span class="window-badge" style="background:var(--green-soft);color:var(--green-dark)">ElevenLabs v3 + Stereo Sonar</span>
+                <span class="window-badge">60s pitch</span>
               </div>
             </div>
 
             <div class="video-viewport">
-              <video
-                id="heroVideo"
-                playsinline
-                autoplay
-                muted
-                loop
-                preload="auto"
-                poster="/video/v9-poster.jpg"
-                aria-label="VoxEye v9 Sketchbook Story Video: Blindfolded mascot demonstrating stereo depth sonar, bilingual Greek and English voice memory, and compass guidance with ElevenLabs v3 voiceover"
-              >
-                <source src="/video/v9.mp4" type="video/mp4">
-                <source src="brag-output/voxeye-sketchbook-story-v9-elevenlabs-voice.mp4" type="video/mp4">
-              </video>
-
-              <button type="button" id="videoUnmuteOverlay" class="video-sound-overlay" aria-label="Unmute and play video with voiceover and stereo sonar audio">
-                <span id="unmuteIcon">🔇</span>
-                <span id="unmuteText">Tap to Unmute Voiceover &amp; Stereo Sonar</span>
-              </button>
+              <iframe
+                src="https://www.youtube-nocookie.com/embed/sIo0kuK4dTA?rel=0&modestbranding=1&playsinline=1"
+                title="VoxEye — what it sees vs what you hear (60 s pitch video)"
+                loading="lazy"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                referrerpolicy="strict-origin-when-cross-origin"
+                allowfullscreen></iframe>
             </div>
-
-            <!-- Sketchbook Video Transport Controls -->
-            <div class="video-controls-bar">
-              <div class="vc-left">
-                <button type="button" id="vcPlayBtn" class="vc-btn" aria-label="Play or pause video">⏸ Pause</button>
-                <button type="button" id="vcMuteBtn" class="vc-btn" aria-label="Mute or unmute video">🔇 Unmute</button>
-                <button type="button" id="vcRestartBtn" class="vc-btn" title="Restart from 0:00 with sound">↺ Replay w/ Sound</button>
-              </div>
-              <div class="vc-progress-wrap" id="vcProgressWrap" role="slider" aria-label="Video timeline seek bar" aria-valuemin="0" aria-valuemax="60" aria-valuenow="0" tabindex="0">
-                <div class="vc-progress-bar" id="vcProgressBar"></div>
-              </div>
-              <div class="vc-right">
-                <span id="vcTimeLabel">0:00 / 1:00</span>
-                <button type="button" id="vcFullBtn" class="vc-btn" aria-label="Fullscreen video">⛶</button>
-              </div>
-            </div>
-
-            <!-- 7-Beat Interactive Storyboard Scrubber (Exact v8 SHOTS timestamps) -->
-            <div class="chapter-scrubber" role="tablist" aria-label="Jump to video chapter">
-              <button type="button" class="chapter-pill active" data-seek="0.0" data-end="6.8">
-                <span class="chapter-time">0:00 · Beat 1</span>
-                <span class="chapter-name">The Problem</span>
-              </button>
-              <button type="button" class="chapter-pill" data-seek="6.8" data-end="13.6">
-                <span class="chapter-time">0:06 · Beat 2</span>
-                <span class="chapter-name">Meet VoxEye</span>
-              </button>
-              <button type="button" class="chapter-pill" data-seek="13.6" data-end="21.8">
-                <span class="chapter-time">0:13 · Beat 3</span>
-                <span class="chapter-name">Sonar Vision</span>
-              </button>
-              <button type="button" class="chapter-pill" data-seek="21.8" data-end="30.5">
-                <span class="chapter-time">0:21 · Beat 4</span>
-                <span class="chapter-name">Smart Memory</span>
-              </button>
-              <button type="button" class="chapter-pill" data-seek="30.5" data-end="38.2">
-                <span class="chapter-time">0:30 · Beat 5</span>
-                <span class="chapter-name">Compass &amp; Maps</span>
-              </button>
-              <button type="button" class="chapter-pill" data-seek="38.2" data-end="53.5">
-                <span class="chapter-time">0:38 · Beat 6</span>
-                <span class="chapter-name">Sees vs Hears</span>
-              </button>
-              <button type="button" class="chapter-pill" data-seek="53.5" data-end="60.0">
-                <span class="chapter-time">0:53 · Beat 7</span>
-                <span class="chapter-name">What's Next</span>
-              </button>
-            </div>
+            <a class="video-yt-link" href="https://www.youtube.com/watch?v=sIo0kuK4dTA" target="_blank" rel="noopener">Watch on YouTube ↗</a>
           </div>
         </div>
       </div>
@@ -1730,109 +1677,6 @@
     </section>
 
     <!-- ===================================================================
-         4. INTERACTIVE 7-BEAT STORYBOARD (From the v9 Video)
-         =================================================================== -->
-    <section id="storyboard" class="section section-alt">
-      <div class="container">
-        <div class="section-header">
-          <div class="sk-tag">v9 sketchbook storyboard</div>
-          <h2 class="section-title">
-            The 7-Beat Story: Click Any Panel to <span class="hi-mark">Jump &amp; Play</span>
-          </h2>
-          <p class="section-subtitle">
-            Every frame of our 60-second video is procedurally drawn on an HTML5 sketchbook canvas at 24fps. Click any panel below to jump the hero video straight to that chapter with sound.
-          </p>
-        </div>
-
-        <div class="storyboard-grid">
-          <article class="panel-card" data-jump="0.0">
-            <div class="panel-img-wrap">
-              <img src="/panels/p01.jpg" onerror="this.src='brag-output/storyboard/panels/v3/p01.jpg'" alt="Panel 1: Blindfolded mascot walking toward overhanging tree branch" loading="lazy">
-              <span class="panel-time-badge">▶ 0:00 – 0:06</span>
-            </div>
-            <div class="panel-body">
-              <span class="panel-tag">1 · the problem</span>
-              <h3 class="panel-quote">“A cane feels the ground — not what hangs above.”</h3>
-              <p class="panel-desc">285M people worldwide. Canes miss head-level branches, smart glasses cost €4,000+, and cloud AI lags 3 seconds.</p>
-            </div>
-          </article>
-
-          <article class="panel-card" data-jump="6.8">
-            <div class="panel-img-wrap">
-              <img src="/panels/p02.jpg" onerror="this.src='brag-output/storyboard/panels/v3/p02.jpg'" alt="Panel 2: Meet VoxEye idea bulb with chest phone and stereo earphones" loading="lazy">
-              <span class="panel-time-badge">▶ 0:06 – 0:13</span>
-            </div>
-            <div class="panel-body">
-              <span class="panel-tag">2 · meet VoxEye</span>
-              <h3 class="panel-quote">“Just your phone &amp; earphones — now your ears can see.”</h3>
-              <p class="panel-desc">Replaces your phone’s default assistant using a chest-lanyard phone camera and true stereo earphones.</p>
-            </div>
-          </article>
-
-          <article class="panel-card" data-jump="13.6">
-            <div class="panel-img-wrap">
-              <img src="/panels/p03.jpg" onerror="this.src='brag-output/storyboard/panels/v3/p03.jpg'" alt="Panel 3: 3-sector stereo sonar cones fanning out toward a 0.8m hazard" loading="lazy">
-              <span class="panel-time-badge">▶ 0:13 – 0:21</span>
-            </div>
-            <div class="panel-body">
-              <span class="panel-tag">3 · sonar vision</span>
-              <h3 class="panel-quote">“Like a car parking sensor in your left &amp; right ears.”</h3>
-              <p class="panel-desc">Splits your view into LEFT EAR · BOTH EARS · RIGHT EAR. Closer obstacles beep faster and higher-pitched.</p>
-            </div>
-          </article>
-
-          <article class="panel-card" data-jump="21.8">
-            <div class="panel-img-wrap">
-              <img src="/panels/p04.jpg" onerror="this.src='brag-output/storyboard/panels/v3/p04.jpg'" alt="Panel 4: Mascot asking Where is the pharmacy in Greek and saving goal to memory" loading="lazy">
-              <span class="panel-time-badge">▶ 0:21 – 0:30</span>
-            </div>
-            <div class="panel-body">
-              <span class="panel-tag">4 · smart memory</span>
-              <h3 class="panel-quote">“Πού είναι το φαρμακείο; — Remembers what matters.”</h3>
-              <p class="panel-desc">Erases background street noise, saves explicit goals (Pharmacy), and replies in clock directions &amp; steps.</p>
-            </div>
-          </article>
-
-          <article class="panel-card" data-jump="30.5">
-            <div class="panel-img-wrap">
-              <img src="/panels/p05.jpg" onerror="this.src='brag-output/storyboard/panels/v3/p05.jpg'" alt="Panel 5: Hand-drawn compass rose and footpath guiding 45 steps to pharmacy" loading="lazy">
-              <span class="panel-time-badge">▶ 0:30 – 0:38</span>
-            </div>
-            <div class="panel-body">
-              <span class="panel-tag">5 · compass &amp; maps</span>
-              <h3 class="panel-quote">“Phone compass and maps turn every street into simple steps.”</h3>
-              <p class="panel-desc">Locks directions to your body’s real-time compass heading with Google Maps &amp; Places API.</p>
-            </div>
-          </article>
-
-          <article class="panel-card" data-jump="38.2">
-            <div class="panel-img-wrap">
-              <img src="/panels/p06.jpg" onerror="this.src='brag-output/storyboard/panels/v3/p06.jpg'" alt="Panel 6: Split-screen showing 3D camera depth heatmap on left and stereo earphone sound on right" loading="lazy">
-              <span class="panel-time-badge">▶ 0:38 – 0:53</span>
-            </div>
-            <div class="panel-body">
-              <span class="panel-tag">6 · what it sees vs what you hear</span>
-              <h3 class="panel-quote">“Left: 3D depth heatmap. Right: what you hear in each ear.”</h3>
-              <p class="panel-desc">Floor &amp; ceiling ignored; active center obstacle at 0.8m triggers fast beeps while left ear stays quiet (= clear path).</p>
-            </div>
-          </article>
-
-          <article class="panel-card" data-jump="53.5">
-            <div class="panel-img-wrap">
-              <img src="/panels/p07.jpg" onerror="this.src='brag-output/storyboard/panels/v3/p07.jpg'" alt="Panel 7: Working prototype today and 3 next steps toward real user testing" loading="lazy">
-              <span class="panel-time-badge">▶ 0:53 – 1:00</span>
-            </div>
-            <div class="panel-body">
-              <span class="panel-tag">7 · where we are &amp; what's next</span>
-              <h3 class="panel-quote">“Working prototype today — next we test with real users.”</h3>
-              <p class="panel-desc">Co-designing sonar comfort with blind users and shipping as a hands-free default Android assistant.</p>
-            </div>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <!-- ===================================================================
          5. SYSTEM 1 + SYSTEM 2 ARCHITECTURE & BILINGUAL VOICE ROUTER
          =================================================================== -->
     <section id="architecture" class="section">
@@ -1900,65 +1744,6 @@
           </div>
         </div>
 
-        <!-- Interactive Bilingual Utterance & Router Inspector -->
-        <div class="voice-demo-box">
-          <div class="tape-strip tape-tl" aria-hidden="true"></div>
-          <div class="tape-strip tape-tr" aria-hidden="true"></div>
-          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
-            <div>
-              <span style="font-family:var(--font-hand);font-size:1.35rem;font-weight:700;color:var(--terra-dark);">Click a spoken turn to hear VoxEye’s bilingual response:</span>
-              <h3 style="font-family:var(--font-display);font-size:1.45rem;margin:2px 0 0;">Live <code class="code-tag">router.py</code> Decision &amp; Spoken Reply Inspector</h3>
-            </div>
-            <span class="spec-pill green" id="ttsStatusBadge">🔊 Browser Speech Synthesis Ready</span>
-          </div>
-
-          <div class="voice-examples-grid">
-            <button type="button" class="voice-bubble-card active" data-lang="el-GR" data-speak="Η πόρτα του φαρμακείου είναι στις 12 η ώρα, 4 βήματα μπροστά. Αποθήκευσα τον στόχο: Φαρμακείο.">
-              <div>
-                <div class="vb-heard">“Πού είναι η πόρτα; Ψάχνω το φαρμακείο.”</div>
-                <div style="font-size:0.8rem;color:var(--graphite);margin-top:2px;">“Where is the door? I'm looking for the pharmacy.”</div>
-              </div>
-              <div class="vb-reply">
-                🔊 “Door 4 steps ahead at 12 o’clock. Saved goal: Pharmacy.”
-              </div>
-              <div class="vb-router-meta">
-                <span class="code-tag">keep_memory: True</span>
-                <span class="code-tag">goal: "Pharmacy"</span>
-                <span class="code-tag">should_answer: True</span>
-              </div>
-            </button>
-
-            <button type="button" class="voice-bubble-card" data-lang="el-GR" data-speak="Κοιτάς 203 μοίρες, νοτιοδυτικά. Ο στόχος σου είναι 23 μοίρες αριστερά σου, στις 11 η ώρα.">
-              <div>
-                <div class="vb-heard">“Πόσες μοίρες κοιτάω;”</div>
-                <div style="font-size:0.8rem;color:var(--graphite);margin-top:2px;">“How many degrees am I facing?” (Deterministic IMU)</div>
-              </div>
-              <div class="vb-reply">
-                🔊 “Κοιτάς 203 μοίρες, νοτιοδυτικά. Ο στόχος σου είναι αριστερά σου, 23 μοίρες.”
-              </div>
-              <div class="vb-router-meta">
-                <span class="code-tag">action: "compass:facing"</span>
-                <span class="code-tag">imu: 203° SW</span>
-                <span class="code-tag">model_guess: False</span>
-              </div>
-            </button>
-
-            <button type="button" class="voice-bubble-card" data-lang="en-US" data-speak="Step slightly left to 11 o'clock. Low tree branch ahead at 0.8 meters; clear sidewalk on your left.">
-              <div>
-                <div class="vb-heard">“What’s in front of me right now?”</div>
-                <div style="font-size:0.8rem;color:var(--graphite);margin-top:2px;">Routine visual question (does not clutter memory)</div>
-              </div>
-              <div class="vb-reply">
-                🔊 “Step slightly left to 11 o’clock. Low branch ahead at 0.8m; clear sidewalk on your left.”
-              </div>
-              <div class="vb-router-meta">
-                <span class="code-tag">keep_memory: False</span>
-                <span class="code-tag">center_probe: 0.80m</span>
-                <span class="code-tag">should_answer: True</span>
-              </div>
-            </button>
-          </div>
-        </div>
       </div>
     </section>
 
@@ -1973,7 +1758,7 @@
             Two Ways to Run VoxEye: <span class="hi-mark">Instant WebApp</span> or <span class="hi-mark">Android APK</span>
           </h2>
           <p class="section-subtitle">
-            Plug in stereo earphones (or use speaker mode), open the live WebApp directly from the URL, or install our signed Android APK for hardware volume-button Push-to-Talk and Default Assistant integration.
+            Plug in stereo earphones, then open the WebApp in your browser or install the Android app.
           </p>
         </div>
 
@@ -1994,23 +1779,10 @@
               <ul class="feature-checklist">
                 <li><span class="chk-icon">✓</span> <span><strong>Full 3-Sector Stereo Sonar &amp; Depth View:</strong> Live heatmap canvas splitting <code class="code-tag">LEFT EAR</code> / <code class="code-tag">BOTH EARS</code> / <code class="code-tag">RIGHT EAR</code> with tunable per-ear pitch &amp; beep rate.</span></li>
                 <li><span class="chk-icon">✓</span> <span><strong>Push-to-Talk &amp; Barge-In:</strong> Hold screen (or press <code class="code-tag">Space</code> on laptop) to talk in English or Greek; release for instant streaming answer.</span></li>
-                <li><span class="chk-icon">✓</span> <span><strong>Works over Localhost or HTTPS Tunnel:</strong> Connect any phone via Cloudflare Tunnel or local network URL below.</span></li>
               </ul>
             </div>
 
             <div>
-              <div class="qr-and-meta" style="margin-bottom:16px;">
-                <div class="qr-box" id="webappQrBox" title="Scan to open WebApp on your phone"></div>
-                <div style="flex:1;min-width:0;">
-                  <div style="font-family:var(--font-hand);font-size:1.3rem;font-weight:700;color:var(--ink);">Scan or Enter Server URL</div>
-                  <div style="font-family:var(--font-mono);font-size:0.78rem;color:var(--graphite);word-break:break-all;margin-bottom:6px;" id="hubWebappUrlDisplay">http://localhost:8000/app</div>
-                  <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                    <button type="button" id="hubCopyWebappBtn" class="btn btn-secondary btn-sm">Copy URL</button>
-                    <a href="/panel" class="btn btn-secondary btn-sm">Open /panel Trace</a>
-                  </div>
-                </div>
-              </div>
-
               <a href="/app" id="hubOpenWebAppBtn" class="btn btn-primary" style="width:100%;font-size:1.12rem;">
                 🚀 Launch VoxEye WebApp (/app) →
               </a>
@@ -2033,25 +1805,10 @@
               <ul class="feature-checklist">
                 <li><span class="chk-icon">✓</span> <span><strong>Hardware Volume-Button Push-to-Talk:</strong> Hold Volume Up or Volume Down while the phone hangs on a chest lanyard to talk without touching the screen.</span></li>
                 <li><span class="chk-icon">✓</span> <span><strong>Android Default Assistant Ready:</strong> Registers <code class="code-tag">android.intent.action.ASSIST</code> &amp; <code class="code-tag">VOICE_COMMAND</code> so VoxEye can replace your default phone assistant.</span></li>
-                <li><span class="chk-icon">✓</span> <span><strong>Configurable Server URL &amp; Deep Link:</strong> Tap the top-right <em>Server URL</em> button in the app (or click <em>Open in Installed APK</em> below) to point to any tunnel or LAN IP.</span></li>
               </ul>
             </div>
 
             <div>
-              <div class="qr-and-meta" style="margin-bottom:16px;">
-                <div class="qr-box" id="apkQrBox" title="Scan to download voxeye-v1.8.apk on Android"></div>
-                <div style="flex:1;min-width:0;">
-                  <div style="font-family:var(--font-hand);font-size:1.3rem;font-weight:700;color:var(--ink);">Signed Android Package</div>
-                  <div style="font-family:var(--font-mono);font-size:0.74rem;color:var(--graphite);word-break:break-all;margin-bottom:8px;">
-                    File: <strong>voxeye-v1.8.apk</strong> · Min SDK 26 (Android 8.0+)<br>
-                    SHA-256: <code class="code-tag">b01f7a64...8cd17df</code>
-                  </div>
-                  <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                    <a href="voxeye://open?url=http://localhost:8000/app" id="deepLinkApkBtn" class="btn btn-secondary btn-sm" title="If APK is already installed on this Android phone, launch it with this server URL">Open Installed APK ↗</a>
-                  </div>
-                </div>
-              </div>
-
               <a href="/voxeye.apk" download="voxeye-v1.8.apk" class="btn btn-hilite" style="width:100%;font-size:1.12rem;">
                 ⬇️ Download Android APK (voxeye-v1.8.apk)
               </a>
@@ -2161,235 +1918,6 @@
       clearTimeout(toastTimer);
       toastTimer = setTimeout(() => toastEl.classList.remove("show"), 2800);
     }
-
-    const isFileProto = location.protocol === "file:";
-    const defaultAppUrl = isFileProto
-      ? "http://localhost:8000/app"
-      : `${location.origin}/app`;
-    const defaultApkUrl = isFileProto
-      ? "http://localhost:8000/voxeye.apk"
-      : `${location.origin}/voxeye.apk`;
-
-    const urlInput = document.getElementById("webappUrlInput");
-    const hubUrlDisplay = document.getElementById("hubWebappUrlDisplay");
-    const deepLinkApkBtn = document.getElementById("deepLinkApkBtn");
-
-    function updateUrlTargets(urlStr) {
-      const clean = (urlStr || defaultAppUrl).trim();
-      urlInput.value = clean;
-      if (hubUrlDisplay) hubUrlDisplay.textContent = clean;
-      if (deepLinkApkBtn) {
-        deepLinkApkBtn.href = `voxeye://open?url=${encodeURIComponent(clean)}`;
-      }
-      renderStylizedQr("webappQrBox", clean, "#2a2420");
-      renderStylizedQr("apkQrBox", defaultApkUrl, "#b85c3f");
-    }
-
-    // Deterministic SVG QR-like Matrix Pattern seeded by URL string (zero external requests)
-    function renderStylizedQr(containerId, text, fgColor) {
-      const box = document.getElementById(containerId);
-      if (!box) return;
-      const N = 21;
-      let h = 2166136261 >>> 0;
-      for (let i = 0; i < text.length; i++) {
-        h ^= text.charCodeAt(i);
-        h = Math.imul(h, 16777619) >>> 0;
-      }
-      const nextBit = () => {
-        h ^= h << 13; h ^= h >>> 17; h ^= h << 5;
-        return (h >>> 0) & 1;
-      };
-      const inFinder = (r, c, r0, c0) => r >= r0 && r < r0 + 7 && c >= c0 && c < c0 + 7;
-      const finderBit = (r, c, r0, c0) => {
-        const dr = r - r0, dc = c - c0;
-        if (dr === 0 || dr === 6 || dc === 0 || dc === 6) return 1;
-        if (dr >= 2 && dr <= 4 && dc >= 2 && dc <= 4) return 1;
-        return 0;
-      };
-      let rects = "";
-      for (let r = 0; r < N; r++) {
-        for (let c = 0; c < N; c++) {
-          let bit = 0;
-          if (inFinder(r, c, 0, 0)) bit = finderBit(r, c, 0, 0);
-          else if (inFinder(r, c, 0, N - 7)) bit = finderBit(r, c, 0, N - 7);
-          else if (inFinder(r, c, N - 7, 0)) bit = finderBit(r, c, N - 7, 0);
-          else if (r === 7 || c === 7) bit = 0;
-          else if (r === 6 || c === 6) bit = (r + c) % 2 === 0 ? 1 : 0;
-          else bit = nextBit();
-          if (bit) {
-            rects += `<rect x="${c}" y="${r}" width="0.92" height="0.92" rx="0.18" fill="${fgColor}"/>`;
-          }
-        }
-      }
-      box.innerHTML = `<svg viewBox="0 0 ${N} ${N}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="QR Code for ${text}">${rects}</svg>`;
-    }
-
-    updateUrlTargets(defaultAppUrl);
-
-    urlInput.addEventListener("input", () => updateUrlTargets(urlInput.value));
-    document.getElementById("openCustomUrlBtn").addEventListener("click", () => {
-      const target = urlInput.value.trim() || defaultAppUrl;
-      window.location.href = target;
-    });
-    const copyHandler = async () => {
-      const target = urlInput.value.trim() || defaultAppUrl;
-      try {
-        await navigator.clipboard.writeText(target);
-        showToast("✓ Copied WebApp URL: " + target);
-      } catch (_) {
-        showToast("WebApp URL: " + target);
-      }
-    };
-    document.getElementById("copyUrlBtn").addEventListener("click", copyHandler);
-    document.getElementById("hubCopyWebappBtn").addEventListener("click", copyHandler);
-
-    // -----------------------------------------------------------------
-    // 2. Hero v8 Video Player & 7-Beat Interactive Storyboard Scrubber
-    // -----------------------------------------------------------------
-    const video = document.getElementById("heroVideo");
-    const unmuteOverlay = document.getElementById("videoUnmuteOverlay");
-    const unmuteIcon = document.getElementById("unmuteIcon");
-    const unmuteText = document.getElementById("unmuteText");
-    const playBtn = document.getElementById("vcPlayBtn");
-    const muteBtn = document.getElementById("vcMuteBtn");
-    const restartBtn = document.getElementById("vcRestartBtn");
-    const fullBtn = document.getElementById("vcFullBtn");
-    const progWrap = document.getElementById("vcProgressWrap");
-    const progBar = document.getElementById("vcProgressBar");
-    const timeLabel = document.getElementById("vcTimeLabel");
-    const chapterPills = Array.from(document.querySelectorAll(".chapter-pill"));
-
-    function fmtTime(sec) {
-      const s = Math.max(0, Math.floor(sec || 0));
-      const m = Math.floor(s / 60);
-      const rem = s % 60;
-      return `${m}:${rem < 10 ? "0" : ""}${rem}`;
-    }
-
-    function syncVideoUI() {
-      const dur = video.duration || 60;
-      const cur = video.currentTime || 0;
-      progBar.style.width = `${Math.min(100, (cur / dur) * 100).toFixed(1)}%`;
-      progWrap.setAttribute("aria-valuenow", Math.round(cur));
-      timeLabel.textContent = `${fmtTime(cur)} / ${fmtTime(dur)}`;
-      playBtn.textContent = video.paused ? "▶ Play" : "⏸ Pause";
-      muteBtn.textContent = video.muted ? "🔇 Unmute" : "🔊 Sound On";
-
-      if (video.muted) {
-        unmuteOverlay.classList.remove("is-unmuted");
-        unmuteIcon.textContent = "🔇";
-        unmuteText.textContent = "Tap to Unmute Voiceover & Stereo Sonar";
-      } else {
-        unmuteOverlay.classList.add("is-unmuted");
-        unmuteIcon.textContent = "🔊";
-        unmuteText.textContent = "Playing Voiceover + Stereo Sonar";
-      }
-
-      chapterPills.forEach((pill) => {
-        const t0 = parseFloat(pill.dataset.seek);
-        const t1 = parseFloat(pill.dataset.end);
-        pill.classList.toggle("active", cur >= t0 && cur < t1);
-      });
-    }
-
-    video.addEventListener("timeupdate", syncVideoUI);
-    video.addEventListener("play", syncVideoUI);
-    video.addEventListener("pause", syncVideoUI);
-    video.addEventListener("volumechange", syncVideoUI);
-
-    function toggleMuteWithPlay() {
-      video.muted = !video.muted;
-      if (!video.muted && video.paused) {
-        video.play().catch(() => {});
-      }
-      syncVideoUI();
-    }
-
-    unmuteOverlay.addEventListener("click", () => {
-      if (video.muted) {
-        video.muted = false;
-        video.play().catch(() => {});
-        showToast("🔊 Unmuted v9 Pitch: ElevenLabs v3 + Stereo Geiger Sonar");
-      } else {
-        video.muted = true;
-      }
-      syncVideoUI();
-    });
-
-    video.addEventListener("click", () => {
-      if (video.paused) video.play().catch(() => {});
-      else video.pause();
-    });
-
-    playBtn.addEventListener("click", () => {
-      if (video.paused) video.play().catch(() => {});
-      else video.pause();
-    });
-
-    muteBtn.addEventListener("click", toggleMuteWithPlay);
-
-    restartBtn.addEventListener("click", () => {
-      video.currentTime = 0;
-      video.muted = false;
-      video.play().catch(() => {});
-      syncVideoUI();
-      showToast("↺ Playing v9 Pitch from 0:00 with Sound");
-    });
-
-    fullBtn.addEventListener("click", () => {
-      if (video.requestFullscreen) video.requestFullscreen();
-      else if (video.webkitRequestFullscreen) video.webkitRequestFullscreen();
-    });
-
-    progWrap.addEventListener("click", (e) => {
-      const rect = progWrap.getBoundingClientRect();
-      const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      video.currentTime = frac * (video.duration || 60);
-      syncVideoUI();
-    });
-
-    chapterPills.forEach((pill) => {
-      pill.addEventListener("click", () => {
-        const targetT = parseFloat(pill.dataset.seek || "0");
-        video.currentTime = targetT;
-        video.play().catch(() => {});
-        syncVideoUI();
-      });
-    });
-
-    // Storyboard Cards -> Jump to Hero Video & Play
-    document.querySelectorAll(".panel-card[data-jump]").forEach((card) => {
-      card.addEventListener("click", () => {
-        const t = parseFloat(card.dataset.jump || "0");
-        video.currentTime = t;
-        video.muted = false;
-        video.play().catch(() => {});
-        syncVideoUI();
-        video.scrollIntoView({ behavior: "smooth", block: "center" });
-        showToast(`▶ Jumped to ${fmtTime(t)} with sound`);
-      });
-    });
-
-    // -----------------------------------------------------------------
-    // 3. Interactive Bilingual Voice Cards (Web Speech Synthesis)
-    // -----------------------------------------------------------------
-    const voiceCards = Array.from(document.querySelectorAll(".voice-bubble-card"));
-    voiceCards.forEach((card) => {
-      card.addEventListener("click", () => {
-        voiceCards.forEach((c) => c.classList.remove("active"));
-        card.classList.add("active");
-        const text = card.dataset.speak;
-        const lang = card.dataset.lang || "en-US";
-        if ("speechSynthesis" in window && text) {
-          window.speechSynthesis.cancel();
-          const u = new SpeechSynthesisUtterance(text);
-          u.lang = lang;
-          u.rate = 1.02;
-          window.speechSynthesis.speak(u);
-          showToast(`🔊 Speaking (${lang}): "${text.slice(0, 42)}..."`);
-        }
-      });
-    });
 
     // -----------------------------------------------------------------
     // 4. Interactive "What It Sees vs What You Hear" Sketchbook Canvas
