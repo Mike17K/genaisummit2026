@@ -174,8 +174,16 @@ async def local_alert(state: State, msg: dict) -> None:
     if _is_panning(imu):
         trace.log("local_alert", label=label, outcome="held: camera panning", key=key)
         return
+    mv = watch.frame_movement(list(state.frames)[-3:]) if len(state.frames) >= 2 else None
     fire, why = state.policy.decide(
-        d, now, now - state.turn.last_voice, fast_confirm=True, user_moving=watch.user_moving(imu)
+        d,
+        now,
+        now - state.turn.last_voice,
+        fast_confirm=True,
+        user_moving=watch.user_moving(imu),
+        movement_score=mv["score"] if mv else None,
+        movement_sustained=mv["sustained"] if mv else True,
+        lang=state.lang,
     )
     trace.log(
         "local_alert",
@@ -233,8 +241,9 @@ async def watch_once(state: State, look_started_at: float) -> bool:
         return False
 
     n_frames = min(3, config.COMPOSE_FRAMES if config.WATCH_COMPOSE else config.WATCH_FRAMES)
+    min_needed = 3 if n_frames >= 3 else 2
     frames = watch.select_frames(state.frames, state.attention.spacing, look_started_at, n=n_frames)
-    if len(frames) < 2 or frames[-1][0] <= state.last_judged_frame:
+    if len(frames) < min_needed or frames[-1][0] <= state.last_judged_frame:
         return False
 
     # Post-trigger similarity latch: skip while scene stays visually similar to last triggered danger frame.
@@ -265,8 +274,24 @@ async def watch_once(state: State, look_started_at: float) -> bool:
     ):
         return False
 
+    # Require clearly visible sustained movement across the selected frames before calling the watcher
+    mv = watch.frame_movement(frames)
+    if not mv["enough_for_alert"]:
+        state.last_judged_frame = frames[-1][0]
+        if state.attention.update("normal", look_started_at):
+            await announce_rate(state, "low movement")
+        trace.log(
+            "watch_skipped",
+            reason="low_movement",
+            move_score=round(mv["score"], 3),
+            min_step=round(mv["min_step"], 3),
+            span=round(mv["span"], 3),
+        )
+        return False
+
     moving = watch.user_moving(imu)
     sensors_desc = watch.sensors_text(imu)
+    sensors_desc = f"{sensors_desc}, visual move {mv['score']:.2f}" if sensors_desc else f"visual move {mv['score']:.2f}"
     user_ctx = state.memory.context_text(tools.peek_places())
     state.last_judged_frame = frames[-1][0]
     state.last_look_at = look_started_at
@@ -286,7 +311,15 @@ async def watch_once(state: State, look_started_at: float) -> bool:
     if not d.notify and state.danger_frame_jpeg is None:
         state.policy.clear_resolved()
 
-    fire, why = state.policy.decide(d, now_after, now_after - state.turn.last_voice, user_moving=moving)
+    fire, why = state.policy.decide(
+        d,
+        now_after,
+        now_after - state.turn.last_voice,
+        user_moving=moving,
+        movement_score=mv["score"],
+        movement_sustained=mv["sustained"],
+        lang=state.lang,
+    )
     outcome = "ALERT" if fire else ("silent" if not d.notify else "held: " + why)
 
     held = d.notify and not fire and why in (
@@ -303,6 +336,7 @@ async def watch_once(state: State, look_started_at: float) -> bool:
         next_code=d.next_code or None,
         steer=d.steer or None,
         move=d.user_direction or None,
+        move_score=round(mv["score"], 3),
         urgency=d.urgency,
         confidence=d.confidence,
         key=d.hazard_key,

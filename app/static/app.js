@@ -12,17 +12,28 @@ const canvas = document.getElementById("canvas");
 const IN_RATE = 16000;
 const OUT_RATE = 24000;
 const SILENCE_WAIT_MS = 400; // Fixed 400 ms wait after user stops talking
-const GATE_DEFAULT = 0.03;
-const ECHO_FACTOR = 2.5;
+const GATE_DEFAULT = 0.045;  // Balanced manual floor paired with adaptive room-noise floor
+const GATE_STEP = 0.010;
+const GATE_MAX = 0.50;
+const ECHO_FACTOR = 2.0;
 
 function loadGate() {
   const q = parseFloat(new URLSearchParams(location.search).get("gate"));
   if (q > 0) return q;
-  try { const v = parseFloat(localStorage.getItem("eyesGate")); if (v > 0) return v; } catch (_) {}
+  try { const v = parseFloat(localStorage.getItem("eyesGateV4")); if (v > 0) return v; } catch (_) {}
   return GATE_DEFAULT;
 }
 let gate = loadGate();
-const micGate = new MicGate({ onsetMs: 250, hangMs: 500, rate: IN_RATE });
+const micGate = new MicGate({
+  onsetMs: 170,
+  hangMs: 500,
+  rate: IN_RATE,
+  grace: 1,
+  sustainFactor: 0.78,
+  adaptiveFloor: true,
+  peakDropFactor: 0.35,
+  maxOpenMs: 7500,
+});
 
 const imu = new Looming.ImuState({ panDegS: 160, stableDegS: 110 });
 window.addEventListener("devicemotion", (e) => imu.handleMotion(e, performance.now()));
@@ -103,10 +114,16 @@ const dbg = {
   micLevel: 0, micPeak: 0, sentKB: 0, sentFrames: 0, recvKB: 0, recvChunks: 0,
   lastHeard: "", lastReply: "", lastEvent: "", lastModelAudioAt: 0, lastSpeechAt: 0,
   error: "", startedAt: 0, log: [],
-  watch: "-", lastAlert: "-", alertMode: "normal", alerts: 0, conn: "-", fps: 2, attention: "normal", frameStamps: [], voiceOpen: false, effGate: 0, depth: "-", depthModel: "idle", memory: "empty",
+  watch: "-", lastAlert: "-", alertMode: "normal", alerts: 0, conn: "-", fps: 2, attention: "normal", frameStamps: [], voiceOpen: false, effGate: 0, depth: "-", depthModel: "idle", memory: "empty", memoryObj: { goal: "", notes: [] },
 };
 const hideDebug = new URLSearchParams(location.search).get("debug") === "0";
 if (hideDebug) debugEl.style.display = "none";
+const dbgTableEl = document.getElementById("dbgTable");
+const logEl = document.getElementById("log");
+const memTitleEl = document.getElementById("memTitle");
+const memListEl = document.getElementById("memlist");
+const memEmptyEl = document.getElementById("memempty");
+const memClearBtn = document.getElementById("memClear");
 
 function formatMemory(mem) {
   if (!mem) return "empty";
@@ -115,6 +132,48 @@ function formatMemory(mem) {
   if (Array.isArray(mem.notes) && mem.notes.length) parts.push(`notes: ${mem.notes.join("; ")}`);
   return parts.length ? parts.join(" | ") : "empty";
 }
+
+function renderMemories(mem) {
+  const goal = mem && mem.goal ? String(mem.goal).trim() : "";
+  const notes = mem && Array.isArray(mem.notes) ? mem.notes.map((x) => String(x || "").trim()).filter(Boolean) : [];
+  dbg.memoryObj = { goal, notes };
+  dbg.memory = formatMemory(dbg.memoryObj);
+  if (!memTitleEl || !memListEl || !memEmptyEl) return;
+  const items = [];
+  if (goal) items.push(`<li><span class="mem-tag">[goal]</span> ${esc(goal)}</li>`);
+  for (let i = 0; i < notes.length; i++) {
+    items.push(`<li><span class="mem-tag">[note ${i + 1}]</span> ${esc(notes[i])}</li>`);
+  }
+  memTitleEl.textContent = `memories (${items.length})`;
+  if (memClearBtn) memClearBtn.hidden = items.length === 0;
+  if (items.length === 0) {
+    memEmptyEl.hidden = false;
+    memListEl.hidden = true;
+    memListEl.innerHTML = "";
+  } else {
+    memEmptyEl.hidden = true;
+    memListEl.hidden = false;
+    memListEl.innerHTML = items.join("");
+  }
+}
+
+if (memClearBtn) {
+  memClearBtn.addEventListener("click", () => {
+    if (socket && socket.readyState === 1) {
+      socket.send(JSON.stringify({ type: "memory_clear" }));
+    }
+    fetch("/memory/clear", { method: "POST" })
+      .then((r) => r.json())
+      .then((m) => renderMemories(m))
+      .catch(() => renderMemories({ goal: "", notes: [] }));
+    note("memories cleared");
+  });
+}
+
+fetch("/memory")
+  .then((r) => (r.ok ? r.json() : null))
+  .then((m) => { if (m) renderMemories(m); })
+  .catch(() => {});
 
 function note(msg) {
   const t = new Date().toLocaleTimeString([], { hour12: false });
@@ -147,8 +206,8 @@ function renderDebug() {
     ["camera", cls(dbg.camera === "ok" ? true : dbg.camera === "-" ? null : false, dbg.camera) + `  sent ${dbg.sentFrames} frames`],
     ["camera rate", `${dbg.fps} fps set (measured ${(dbg.frameStamps.length / 3).toFixed(1)}), attention: ` + cls(dbg.attention === "normal" ? null : dbg.attention === "high" ? false : true, dbg.attention)],
     ["mic", cls(dbg.mic === "ok" ? true : dbg.mic === "-" ? null : false, dbg.mic) + `  sent ${dbg.sentKB.toFixed(0)} KB` +
-      `<div id="meter"><div style="width:${Math.min(100, dbg.micLevel * 600)}%"></div></div>` +
-      `level ${dbg.micLevel.toFixed(3)} peak ${dbg.micPeak.toFixed(3)} gate ${(dbg.effGate || gate).toFixed(3)}${dbg.effGate > gate ? " (raised: assistant speaking)" : ""} ${talkingNow ? cls(true, "(voice open: sending speech)") : dbg.micLevel > (dbg.effGate || gate) ? cls(null, "(sound above gate, waiting to confirm)") : cls(null, "(below gate: sending silence)")}`],
+      `<div id="meter"><div style="width:${Math.min(100, dbg.micLevel * 250)}%"></div><i style="left:${Math.min(99, (micGate.lastOpenThresh || dbg.effGate || gate) * 250)}%"></i></div>` +
+      `level ${dbg.micLevel.toFixed(3)} floor ${micGate.noiseFloor.toFixed(3)} open ${(micGate.lastOpenThresh || dbg.effGate || gate).toFixed(3)} gate ${gate.toFixed(3)}${dbg.effGate > gate ? " (raised: assistant speaking)" : ""} ${talkingNow ? cls(true, "(voice open: sending speech)") : dbg.micLevel > (micGate.lastOpenThresh || dbg.effGate || gate) ? cls(null, "(sound above gate, waiting to confirm)") : cls(null, "(below gate: sending silence)")}`],
     ["audio ctx", cls(dbg.audioCtx === "running" ? true : dbg.audioCtx === "-" ? null : false, dbg.audioCtx)],
     ["session id", esc(dbg.conn) + "  (filter the server trace with /panel?conn=" + esc(dbg.conn) + ")"],
     ["websocket", cls(wsState === "open" ? true : wsState === "-" ? null : wsState === "connecting" ? null : false, wsState) + (dbg.ws !== "-" ? "  " + esc(dbg.ws) : "")],
@@ -166,8 +225,9 @@ function renderDebug() {
     ["last event", esc(dbg.lastEvent || "-")],
   ];
   if (dbg.error) rows.push(["error", cls(false, esc(dbg.error))]);
-  debugEl.innerHTML = "<table>" + rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("") + "</table>" +
-    `<div id="log">${esc(dbg.log.join("\n"))}</div>`;
+  const tableHtml = "<table>" + rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("") + "</table>";
+  if (dbgTableEl) dbgTableEl.innerHTML = tableHtml;
+  if (logEl) logEl.textContent = dbg.log.join("\n");
 }
 
 function updateLiveState() {
@@ -182,6 +242,13 @@ function updateLiveState() {
   const label = !assistantEnabled && next === "listening"
     ? "Safety watcher active (assistant off)."
     : { listening: "Listening. Ask me anything.", hearing: "Hearing you...", thinking: "Thinking...", speaking: "Speaking..." }[next];
+  const btnLabel = {
+    listening: "Listening. Tap to stop · Hold 1s for depth",
+    hearing: "Hearing you... · Tap to stop",
+    thinking: "Thinking... · Tap to stop",
+    speaking: "Speaking... · Tap to stop",
+  }[next];
+  if (btnLabel && go.textContent !== btnLabel) go.textContent = btnLabel;
   if (next !== dbg.state) setState(next, label);
 }
 
@@ -225,17 +292,21 @@ function alertCue(urgency, dangerLevel = 0) {
 }
 
 function playPcm(arrayBuffer) {
+  if (!ctx) return;
+  if (ctx.state === "suspended") ctx.resume().catch(() => {});
   dbg.recvKB += arrayBuffer.byteLength / 1024;
   dbg.recvChunks++;
   dbg.lastModelAudioAt = Date.now();
   const int16 = new Int16Array(arrayBuffer);
+  if (!int16.length) return;
   const buf = ctx.createBuffer(1, int16.length, OUT_RATE);
   const ch = buf.getChannelData(0);
   for (let i = 0; i < int16.length; i++) ch[i] = int16[i] / 32768;
   const src = ctx.createBufferSource();
   src.buffer = buf;
   src.connect(ctx.destination);
-  nextPlayTime = Math.max(nextPlayTime, ctx.currentTime + 0.05);
+  if (nextPlayTime > ctx.currentTime + 30) nextPlayTime = 0;
+  nextPlayTime = Math.max(nextPlayTime, ctx.currentTime + 0.04);
   src.start(nextPlayTime);
   nextPlayTime += buf.duration;
   playing.add(src);
@@ -627,7 +698,7 @@ function openLiveSocket(isInitial = false) {
         sessionLang = m.lang;
         try { localStorage.setItem("eyesLang", sessionLang); } catch (_) {}
       }
-      if (m.memory) dbg.memory = formatMemory(m.memory);
+      if (m.memory) renderMemories(m.memory);
       dbg.gemini = "ready"; dbg.conn = m.conn || "-"; chime(); note(`gemini session ready, id ${dbg.conn} (${sessionLang || "English"})`);
       ws.send(JSON.stringify({ type: "mode", mode: dbg.alertMode }));
       ws.send(JSON.stringify({ type: "assistant", enabled: assistantEnabled }));
@@ -672,7 +743,7 @@ function openLiveSocket(isInitial = false) {
       }
     }
     else if (m.type === "memory") {
-      dbg.memory = formatMemory(m);
+      renderMemories(m);
       note("memory -> " + dbg.memory);
     }
     else if (m.type === "lang") {
@@ -684,6 +755,7 @@ function openLiveSocket(isInitial = false) {
     }
     else if (m.type === "interrupted") { stopPlayback(); note("interrupted"); }
     else if (m.type === "heard") { dbg.lastHeard = m.text; note("heard: " + m.text); }
+    else if (m.type === "heard_ignored") { dbg.lastSpeechAt = 0; note("mic clip ignored (background noise)"); }
     else if (m.type === "reply") { if (m.text) { dbg.lastReply = m.text; note("reply: " + m.text); } }
     else if (m.type === "tool") note("tool call: " + m.name + " " + JSON.stringify(m.args || {}));
     else if (m.type === "error") {
@@ -842,13 +914,20 @@ function stop(announce = true) {
 
 const gateVal = document.getElementById("gateVal");
 function setGate(v) {
-  gate = Math.min(0.3, Math.max(0.005, Math.round(v * 1000) / 1000));
+  gate = Math.min(GATE_MAX, Math.max(0.01, Math.round(v * 1000) / 1000));
   gateVal.textContent = gate.toFixed(3);
-  try { localStorage.setItem("eyesGate", String(gate)); } catch (_) {}
+  if (micGate.open) {
+    micGate.reset(true);
+    dbg.voiceOpen = false;
+  }
+  try { localStorage.setItem("eyesGateV4", String(gate)); } catch (_) {}
   note("gate set to " + gate.toFixed(3));
 }
-document.getElementById("gateDown").addEventListener("click", () => setGate(gate - 0.005));
-document.getElementById("gateUp").addEventListener("click", () => setGate(gate + 0.005));
+window.addEventListener("pointerdown", () => {
+  if (ctx && ctx.state === "suspended") ctx.resume().catch(() => {});
+}, { passive: true });
+document.getElementById("gateDown").addEventListener("click", () => setGate(gate - GATE_STEP));
+document.getElementById("gateUp").addEventListener("click", () => setGate(gate + GATE_STEP));
 gateVal.textContent = gate.toFixed(3);
 
 const MODES = ["normal", "urgent_only", "off"];

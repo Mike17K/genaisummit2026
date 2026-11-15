@@ -18,6 +18,7 @@ END_WAIT_FLOOR_S = 0.4
 BARGE_IN_S = 0.45
 SHORT_S = 1.0
 SHORT_EXTRA_S = 0.4
+MAX_TURN_S = 8.0             # Safety cap so continuous loud-room noise can never trap a turn open forever
 
 
 def parse_chunk(chunk: bytes) -> tuple[bytes, int]:
@@ -72,7 +73,10 @@ class TurnTracker:
             self._onset, self._onset_s = [], 0.0        # the voice stopped before it was sustained enough
         if self.active and not self.hold_open:
             out.append(("audio", pcm))
-            if not voice:
+            if self.voiced_s >= MAX_TURN_S:
+                self.active = False
+                out.append(("end", 0.0))
+            elif not voice:
                 wait = self.end_wait + (SHORT_EXTRA_S if self.voiced_s < SHORT_S else 0.0)
                 if now - self.last_voice >= wait:
                     self.active = False

@@ -14,24 +14,39 @@
     td { padding: .35rem 1rem; border-bottom: 1px solid #21262d; vertical-align: top; }
     .heard { color: #79c0ff; } .reply { color: #7ee787; } .tool { color: #d2a8ff; } .error { color: #ff7b72; }
     .meta { color: #8b949e; }
+    #membar { padding: .5rem 1rem; background: #161b22; border-bottom: 1px solid #30363d; font-size: .9rem; }
+    #membar b { color: #79c0ff; margin-right: .5rem; }
+    #membar .tag { color: #e3b341; }
   </style>
 </head>
 <body>
   <h1><img src="/static/logo.png" width="22" height="22" alt="" style="vertical-align:middle;border-radius:5px;margin-right:.5rem">VoxEye: live trace <span class="meta" id="count"></span> <span class="meta">(click a connection id to filter; <a href="/panel" style="color:inherit">show all</a>)</span></h1>
+  <div id="membar"><b>memories:</b> <span id="memitems" class="meta">loading...</span></div>
   <table><tbody id="rows"></tbody></table>
   <script>
     const rows = document.getElementById("rows");
+    const memEl = document.getElementById("memitems");
+    const esc = (s) => String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
     const fmt = (e) => {
       const { t, kind, conn, ...rest } = e;
       const main = rest.text ?? rest.tool ?? rest.error ?? "";
       const meta = Object.entries(rest).filter(([k]) => k !== "text").map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : v}`).join("  ");
-      return `<tr class="${kind}"><td class="meta">${new Date(t * 1000).toLocaleTimeString()}</td><td class="meta"><a href="?conn=${conn}" style="color:inherit">${conn}</a></td><td>${kind}</td><td>${main === null ? "(silent)" : String(main).replace(/</g, "&lt;")}</td><td class="meta">${meta.replace(/</g, "&lt;")}</td></tr>`;
+      return `<tr class="${kind}"><td class="meta">${new Date(t * 1000).toLocaleTimeString()}</td><td class="meta"><a href="?conn=${conn}" style="color:inherit">${conn}</a></td><td>${kind}</td><td>${main === null ? "(silent)" : esc(main)}</td><td class="meta">${esc(meta)}</td></tr>`;
     };
     async function tick() {
       try {
-        const events = await (await fetch("/trace" + location.search)).json();
+        const [events, mem] = await Promise.all([
+          fetch("/trace" + location.search).then((r) => r.json()),
+          fetch("/memory").then((r) => r.json()).catch(() => null),
+        ]);
         rows.innerHTML = events.slice().reverse().map(fmt).join("");
         document.getElementById("count").textContent = `(${events.length} events)`;
+        if (mem) {
+          const items = [];
+          if (mem.goal) items.push(`<span class="tag">[goal]</span> ${esc(mem.goal)}`);
+          (mem.notes || []).forEach((n, i) => items.push(`<span class="tag">[note ${i + 1}]</span> ${esc(n)}`));
+          memEl.innerHTML = items.length ? items.join(" &nbsp;&middot;&nbsp; ") : '<span class="meta">(empty)</span>';
+        }
       } catch (_) {}
     }
     tick(); setInterval(tick, 1000);

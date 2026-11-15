@@ -19,6 +19,7 @@ __all__ = ["State", "run"]
 
 _active_connections = 0
 MIN_VOICE_PCM_BYTES = 4800  # ~150 ms of 16 kHz mono PCM16
+MIN_VOICED_S = 0.20         # Ignore sub-200 ms room clicks/blips that only look big due to quiet hang tail
 
 
 async def run(socket: WebSocket) -> None:
@@ -49,7 +50,8 @@ async def _handle_audio_chunk(state: State, chunk: bytes) -> None:
     if state.depth_mode_active or state.alert_locked(now_c):
         state.reset_mic_turn()
         return
-    assistant_busy = state.audible(now_c) or state.model_speaking
+    info_generating = state.info_task is not None and not state.info_task.done()
+    assistant_busy = state.audible(now_c) or state.model_speaking or info_generating
     for action in state.turn.feed(chunk, now_c, assistant_busy):
         if action[0] == "start":
             was_cut = info_pipeline.cancel_for_user(state)
@@ -65,18 +67,21 @@ async def _handle_audio_chunk(state: State, chunk: bytes) -> None:
             state.mic_turn_pcm.clear()
             frame_jpeg = state.turn_frame_jpeg or (state.frames[-1][1] if state.frames else None)
             state.turn_frame_jpeg = None
+            voiced_s = state.turn.voiced_s
             trace.log(
                 "user_turn",
                 state="end",
                 silence_s=action[1],
-                voiced_s=round(state.turn.voiced_s, 1),
+                voiced_s=round(voiced_s, 1),
                 pcm_kb=round(len(pcm_bytes) / 1024, 1),
             )
-            if len(pcm_bytes) >= MIN_VOICE_PCM_BYTES:
+            if len(pcm_bytes) >= MIN_VOICE_PCM_BYTES and voiced_s >= MIN_VOICED_S:
                 info_pipeline.cancel_for_user(state)
                 state.info_task = alerts.spawn(
                     info_pipeline.answer_user_audio(state, pcm_bytes, frame_jpeg)
                 )
+            else:
+                await state.send({"type": "heard_ignored"})
 
 
 async def _run_depth_probe(state: State, b64_data: str, seq: int = 0, disp: float | None = None) -> None:

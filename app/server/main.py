@@ -9,7 +9,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import agent, config, live, local_depth, speak, tools, trace
+from . import agent, config, live, local_depth, memory, speak, tools, trace
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
 
@@ -50,6 +50,21 @@ async def panel() -> FileResponse:
 async def get_trace(conn: str | None = None, n: int = 100) -> list[dict]:
     """Recent events. Pass ?conn=<id> (shown in each event and in the page's debug panel) to see one connection."""
     return trace.recent(max(1, min(n, 1000)), conn)
+
+
+@app.get("/memory")
+async def get_memory() -> dict:
+    """Current persisted explicit user memories (`goal` and `notes`)."""
+    return memory.load_persisted().to_dict()
+
+
+@app.post("/memory/clear")
+async def clear_memory() -> dict:
+    """Clear persisted explicit user memories from disk."""
+    m = memory.UserMemory()
+    memory.save_persisted(m)
+    trace.log("memory_update", **m.to_dict(), by="http_clear")
+    return m.to_dict()
 
 
 @app.websocket("/live")

@@ -29,8 +29,16 @@
     #debug td { padding: 1px 6px 1px 0; vertical-align: top; }
     #debug td:first-child { color: #8b949e; white-space: nowrap; width: 1%; }
     .ok { color: #7ee787; } .bad { color: #ff7b72; } .warn { color: #e3b341; }
-    #meter { height: 8px; background: #21262d; border-radius: 4px; overflow: hidden; margin: 2px 0 4px; }
+    #meter { position: relative; height: 8px; background: #21262d; border-radius: 4px; overflow: hidden; margin: 2px 0 4px; }
     #meter > div { height: 100%; width: 0; background: #7ee787; transition: width .08s linear; }
+    #meter > i { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff7b72; pointer-events: none; }
+    #membox { margin-bottom: .45rem; padding: .35rem .5rem; background: #161b22; border: 1px solid #30363d; border-radius: 6px; }
+    #memhead { display: flex; align-items: center; justify-content: space-between; color: #79c0ff; font-weight: 700; margin-bottom: 2px; }
+    #memClear { border: 1px solid #30363d; border-radius: 4px; background: #21262d; color: #c9d1d9; font: 11px ui-monospace, monospace; padding: 1px 6px; cursor: pointer; }
+    #memlist { margin: 0; padding-left: 1.1rem; color: #e6edf3; }
+    #memlist li { margin: 1px 0; }
+    #memlist .mem-tag { color: #e3b341; }
+    #memempty { color: #8b949e; font-style: italic; }
     #log { margin-top: .4rem; border-top: 1px solid #30363d; padding-top: .3rem; color: #8b949e; white-space: pre-wrap; word-break: break-word; }
     #modebar, #gatebar, #agentbar, #depthbar { display: flex; align-items: center; gap: .6rem; padding: .4rem .8rem; background: #161b22; font: 12px ui-monospace, monospace; color: #8b949e; border-top: 1px solid #21262d; }
     #gatebar span, #modebar span, #agentbar span, #depthbar span { flex: 1; }
@@ -44,7 +52,7 @@
   <button id="go" aria-pressed="false" aria-label="Start assistant. When running, tap to stop or hold 1 second for center depth mode.">Tap to start</button>
   <div id="gatebar" class="bar" aria-hidden="true">
     <span>voice gate (higher = must speak louder)</span>
-    <button id="gateDown" type="button">&minus;</button><b id="gateVal">0.030</b><button id="gateUp" type="button">+</button>
+    <button id="gateDown" type="button">&minus;</button><b id="gateVal">0.045</b><button id="gateUp" type="button">+</button>
   </div>
   <div id="modebar" class="bar" aria-hidden="true">
     <span>proactive camera alerts (tap to change)</span>
@@ -58,13 +66,21 @@
     <span>depth inference (hold 1s, tap to cycle)</span>
     <button id="depthBtn" type="button" style="width:auto;padding:0 .8rem">depth: auto (mobile)</button>
   </div>
-  <div id="debug" aria-hidden="true"></div>
+  <div id="debug" aria-hidden="true">
+    <div id="membox">
+      <div id="memhead"><span id="memTitle">memories (0)</span><button id="memClear" type="button" hidden>clear</button></div>
+      <div id="memempty">no memories saved</div>
+      <ul id="memlist" hidden></ul>
+    </div>
+    <div id="dbgTable"></div>
+    <div id="log"></div>
+  </div>
   <video id="cam" playsinline muted></video>
   <canvas id="canvas" hidden></canvas>
-  <script src="/static/micgate.js?v=8"></script>
-  <script src="/static/looming.js?v=8"></script>
-  <script src="/static/spatial.js?v=8"></script>
-  <script src="/static/depth_engine.js?v=8"></script>
-  <script src="/static/app.js?v=8"></script>
+  <script src="/static/micgate.js?v=11"></script>
+  <script src="/static/looming.js?v=11"></script>
+  <script src="/static/spatial.js?v=11"></script>
+  <script src="/static/depth_engine.js?v=11"></script>
+  <script src="/static/app.js?v=11"></script>
 </body>
 </html>

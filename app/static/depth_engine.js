@@ -43,7 +43,7 @@
       this.loading = true;
       this._setStatus("starting worker...");
       try {
-        this.worker = new Worker("/static/depth_worker.js?v=7");
+        this.worker = new Worker("/static/depth_worker.js?v=11");
       } catch (err) {
         this.loading = false;
         this.hasError = true;

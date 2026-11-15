@@ -51,13 +51,17 @@ async function detectGpu() {
   }
 }
 
-async function initModel() {
+async function initModel(allowWasm = false) {
+  const gpu = await detectGpu();
+  if (!gpu.webgpu && !allowWasm) {
+    throw new Error("WebGPU unavailable on mobile browser/HTTP; using laptop ONNX");
+  }
+
   self.postMessage({ type: "status", status: "loading transformers.js..." });
   const tf = await import(TRANSFORMERS_CDN);
   tf.env.allowLocalModels = false;
   RawImageCls = tf.RawImage;
 
-  const gpu = await detectGpu();
   const candidates = [];
   if (gpu.webgpu) {
     if (gpu.fp16) candidates.push({ device: "webgpu", dtype: "q4f16", label: "WebGPU q4f16" });
@@ -65,7 +69,9 @@ async function initModel() {
     if (gpu.fp16) candidates.push({ device: "webgpu", dtype: "fp16", label: "WebGPU fp16" });
     candidates.push({ device: "webgpu", dtype: "fp32", label: "WebGPU fp32" });
   }
-  candidates.push({ device: "wasm", dtype: "q8", label: "WASM q8" });
+  if (allowWasm) {
+    candidates.push({ device: "wasm", dtype: "q8", label: "WASM q8" });
+  }
 
   let lastPct = -1;
   const progress_callback = (p) => {
@@ -92,7 +98,7 @@ async function initModel() {
       });
       backendLabel = cand.label;
 
-      // Pass 1: compile WebGPU/WASM shaders. Pass 2: measure true steady-state phone speed (benchMs).
+      // Pass 1: compile WebGPU shaders. Skip Pass 2 if Pass 1 is already >1000ms so slow devices never stall audio.
       const tWarm = performance.now();
       const dummy = new RawImageCls(new Uint8ClampedArray(INPUT_SIZE * INPUT_SIZE * 4), INPUT_SIZE, INPUT_SIZE, 4);
       const warmIn = await processor(dummy);
@@ -100,11 +106,14 @@ async function initModel() {
       warmOut?.predicted_depth?.dispose?.();
       const warmMs = Math.round(performance.now() - tWarm);
 
-      const tBench = performance.now();
-      const benchIn = await processor(dummy);
-      const benchOut = await model(benchIn);
-      benchOut?.predicted_depth?.dispose?.();
-      const benchMs = Math.round(performance.now() - tBench);
+      let benchMs = warmMs;
+      if (warmMs <= 1000) {
+        const tBench = performance.now();
+        const benchIn = await processor(dummy);
+        const benchOut = await model(benchIn);
+        benchOut?.predicted_depth?.dispose?.();
+        benchMs = Math.round(performance.now() - tBench);
+      }
 
       self.postMessage({ type: "ready", backend: backendLabel, warmMs, benchMs, inputSize: INPUT_SIZE });
       return;
@@ -121,7 +130,7 @@ self.onmessage = async (e) => {
   if (!msg) return;
   if (msg.type === "init") {
     try {
-      await initModel();
+      await initModel(!!msg.allowWasm);
     } catch (err) {
       self.postMessage({ type: "error", error: String((err && err.message) || err) });
     }

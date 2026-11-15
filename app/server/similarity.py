@@ -25,6 +25,32 @@ def is_similar_to_danger(danger_jpeg: bytes | None, candidate_jpeg: bytes) -> tu
     return diff < config.DANGER_SIMILARITY_DIFF, diff
 
 
+def frame_movement(frames: list[tuple[float, bytes]]) -> dict:
+    """Measure visible movement across consecutive frames and oldest->newest span.
+
+    Filters out small hand sway, slight tilts, and 1-frame twitches so alerts only fire on real
+    visible movement (`score >= MIN_ALERT_MOVEMENT` and `sustained`), and `STOP` only fires when
+    movement is clearly visible (`score >= MIN_STOP_MOVEMENT`).
+    """
+    if len(frames) < 2:
+        return {"score": 0.0, "mean_step": 0.0, "min_step": 0.0, "span": 0.0, "sustained": False, "enough_for_alert": False}
+    steps = [image_difference(frames[i][1], frames[i + 1][1]) for i in range(len(frames) - 1)]
+    span = image_difference(frames[0][1], frames[-1][1])
+    mean_step = sum(steps) / len(steps)
+    min_step = min(steps)
+    score = 0.55 * mean_step + 0.45 * span
+    sustained = min_step >= config.MIN_STEP_MOVEMENT
+    enough = score >= config.MIN_ALERT_MOVEMENT and sustained
+    return {
+        "score": score,
+        "mean_step": mean_step,
+        "min_step": min_step,
+        "span": span,
+        "sustained": sustained,
+        "enough_for_alert": enough,
+    }
+
+
 def select_frames(
     buffer,
     spacing: float,

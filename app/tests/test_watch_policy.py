@@ -173,6 +173,44 @@ def run():
         True,
     )
 
+    # Visible movement gating: small movement / hand sway blocks alerts; moderate movement downgrades STOP; big movement allows STOP
+    from server.watch import frame_movement
+    still_frames = [(1.0, make_jpeg(100)), (1.5, make_jpeg(106)), (2.0, make_jpeg(110))]
+    mv_still = frame_movement(still_frames)
+    check("tiny hand-sway frame change is below movement threshold", mv_still["enough_for_alert"], False)
+
+    big_frames = [(1.0, make_jpeg(40)), (1.5, make_jpeg(110)), (2.0, make_jpeg(185))]
+    mv_big = frame_movement(big_frames)
+    check("clear sustained movement across all 3 frames passes threshold", mv_big["enough_for_alert"] and mv_big["score"] >= 0.12, True)
+
+    twitch_frames = [(1.0, make_jpeg(40)), (1.5, make_jpeg(44)), (2.0, make_jpeg(180))]
+    mv_twitch = frame_movement(twitch_frames)
+    check("single-step twitch with frozen prior step is rejected as unsustained", mv_twitch["sustained"], False)
+
+    p_mv = AlertPolicy()
+    stop_low_mv = apply_danger_level(WatchDecision(danger_level=4, action_code="STOP", next_code="SLIDE_RIGHT", hazard_key="desk-ahead"))
+    check(
+        "small movement (<0.095) blocks even lvl 4 STOP alert",
+        p_mv.decide(stop_low_mv, 10.0, 99, movement_score=0.052, movement_sustained=True),
+        (False, "low_movement"),
+    )
+    stop_mod_mv = apply_danger_level(
+        WatchDecision(danger_level=4, action_code="STOP", next_code="SLIDE_RIGHT", hazard_key="chair-ahead"),
+        lang="Greek",
+    )
+    ok_mod, why_mod = p_mv.decide(stop_mod_mv, 12.0, 99, movement_score=0.105, movement_sustained=True, lang="Greek")
+    check(
+        "moderate movement (0.095..0.12) does NOT say Stop — downgrades to lvl 2 guidance",
+        (ok_mod, why_mod, stop_mod_mv.danger_level, stop_mod_mv.message),
+        (True, "ok", 2, "Κάνε λίγο δεξιά."),
+    )
+    stop_big_mv = apply_danger_level(WatchDecision(danger_level=4, action_code="STOP", hazard_key="wall-ahead"))
+    check(
+        "large sustained movement (>=0.12) speaks full Stop! immediately",
+        (p_mv.decide(stop_big_mv, 15.0, 99, movement_score=0.24, movement_sustained=True), stop_big_mv.message),
+        ((True, "ok"), "Stop!"),
+    )
+
     print(f"\n{sum(results)}/{len(results)} passed")
     return all(results)
 

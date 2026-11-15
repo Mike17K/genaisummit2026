@@ -41,7 +41,7 @@ STANDARD_CODES_DOC = (
 INFO_SYSTEM = f"""You are Eyes, a warm, concise voice assistant for a blind or low-vision person.
 STRICT LANGUAGE RULE:
 - You ONLY understand and speak English or Greek (Ελληνικά). NEVER output any other language (never Spanish, French, German, Italian, Turkish, Russian, Arabic, etc.).
-- The user ONLY speaks English or Greek. Transcribe HEARD strictly as English or Greek words. If the audio is noise, muffled, or sounds like any other language, output HEARD: NONE and REPLY: SILENT.
+- The user ONLY speaks English or Greek (often in a noisy venue with crowd chatter). Always transcribe the foreground user's English or Greek speech even if there is background room noise or slight mic muffling; ONLY output HEARD: NONE and REPLY: SILENT when there is no foreground English or Greek speech at all (or only background foreign chatter/noise).
 - If HEARD is Greek, reply in Greek. If HEARD is English, reply in English.
 Rules:
 - Start with a short, natural 4-7 word opening clause followed by a comma or period so speech starts fast.
@@ -102,7 +102,7 @@ def detect_text_lang(text: str, current_lang: str = "English") -> str:
     # Strip universal loanword 'ok'/'okay' so saying 'OK' during a Greek session doesn't flip to English
     stripped_ok = re.sub(r"\b(ok|okay)\b", "", text, flags=re.IGNORECASE)
     latin_count = len(LATIN.findall(stripped_ok))
-    if latin_count >= 3 and greek_count == 0:
+    if latin_count >= 4 and greek_count == 0:
         return "English"
     return current
 
@@ -119,13 +119,22 @@ async def update_session_lang(state: State, new_lang: str, source: str = "speech
     return canon
 
 
+_REPEATED_NONE_RE = re.compile(r"^(?:NONE[\s,.;:-]*)+", re.IGNORECASE)
+
+
 def is_valid_en_el_heard(text: str) -> bool:
     """Return True only if transcribed speech contains English or Greek letters and no foreign scripts."""
-    if not text or text.upper() == "NONE":
+    if not text:
         return False
-    if OTHER_SCRIPT.search(text):
+    up = text.strip().upper()
+    if up == "NONE" or up.startswith("NONENONE"):
         return False
-    return bool(GREEK.search(text) or LATIN.search(text))
+    cleaned = _REPEATED_NONE_RE.sub("", text).strip()
+    if not cleaned:
+        return False
+    if OTHER_SCRIPT.search(cleaned):
+        return False
+    return bool(GREEK.search(cleaned) or LATIN.search(cleaned))
 
 
 def parse_header_block(head_part: str) -> tuple[str, str]:
@@ -134,7 +143,12 @@ def parse_header_block(head_part: str) -> tuple[str, str]:
         heard_raw, mem_raw = head_part.split("MEMORY:", 1)
     else:
         heard_raw, mem_raw = head_part, "NONE"
-    heard_text = heard_raw.replace("HEARD:", "").strip()
+    heard_text = re.sub(r"^\s*HEARD\s*:\s*", "", heard_raw, flags=re.IGNORECASE).strip()
+    if heard_text.upper().startswith("NONENONE"):
+        heard_text = "NONE"
+    else:
+        stripped_none = _REPEATED_NONE_RE.sub("", heard_text).strip()
+        heard_text = stripped_none if stripped_none else "NONE"
     mem_directive = mem_raw.strip()
     return heard_text, mem_directive
 
@@ -435,7 +449,10 @@ async def _stream_clauses_and_speak(
                 await clause_queue.put((clause, pcm_q, p_task, is_why))
             reply_buf = ready_part + held_bracket
 
-        if not aborted_noise:
+        if aborted_noise:
+            trace.log("heard_ignored", raw_heard=(heard_text or raw_buf.strip())[:80])
+            await state.send({"type": "heard_ignored"})
+        else:
             # Fallback if model omitted HEARD:/REPLY: markers
             if not in_reply and raw_buf.strip():
                 tail = _clean_clause(raw_buf.replace("HEARD:", ""), state.lang)
@@ -532,6 +549,10 @@ async def answer_user_audio(state: State, pcm16_16k: bytes, frame_jpeg: bytes | 
         raise
     except Exception as exc:
         trace.log("info_error", error=f"{type(exc).__name__}: {exc}"[:200])
+        try:
+            await state.send({"type": "heard_ignored", "reason": "error"})
+        except Exception:
+            pass
     finally:
         if state.active_speech is active:
             state.active_speech = None

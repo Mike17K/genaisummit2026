@@ -14,7 +14,7 @@ from google.genai import types
 from . import agent, compose, config
 from .attention import Attention, sensors_text, user_moving
 from .policy import AlertPolicy, WatchDecision, apply_danger_level, same_hazard
-from .similarity import image_difference, is_similar_to_danger, scene_is_static, select_frames
+from .similarity import frame_movement, image_difference, is_similar_to_danger, scene_is_static, select_frames
 
 __all__ = [
     "AlertPolicy",
@@ -23,6 +23,7 @@ __all__ = [
     "apply_danger_level",
     "build_contents",
     "estimate_center_distance",
+    "frame_movement",
     "image_difference",
     "is_similar_to_danger",
     "judge",
@@ -36,17 +37,23 @@ __all__ = [
 WATCH_SYSTEM = """Fast stateless navigation & obstacle checker for a blind pedestrian.
 Input: up to 3 sequential camera tiles, oldest (1) to newest (NEW).
 
-STEP 1 — Infer where the person wants to go from motion/rotation across tiles 1 -> NEW:
-- Scene shifts LEFT across 1->NEW = person is ROTATING RIGHT (wants to go right).
-- Scene shifts RIGHT across 1->NEW = person is ROTATING LEFT (wants to go left).
-- Objects ahead grow/expand from center = person is MOVING FORWARD (wants to go straight ahead).
-- Nearly identical tiles = "still".
+STEP 1 — Infer where the person wants to go from CLEAR, LARGE motion/rotation across ALL tiles 1 -> NEW:
+- Scene shifts CLEARLY LEFT across 1->NEW = person is ROTATING RIGHT (wants to go right).
+- Scene shifts CLEARLY RIGHT across 1->NEW = person is ROTATING LEFT (wants to go left).
+- Objects ahead GROW SIGNIFICANTLY from center across 1->2->NEW = person is MOVING FORWARD.
+- Nearly identical tiles, slight hand sway, small camera tilt, or sitting/standing near desks/chairs/people = "still".
 Set "move": "forward" | "right" | "left" | "still".
 
-STEP 2 — Emit ONLY standard action codes (never custom messages):
-A) CLEAR PATH along where they want to go -> output ONLY:
+CRITICAL MOVEMENT RULE:
+- If movement across 1 -> 2 -> NEW is NOT clearly visible and substantial (e.g. "still", minor hand shake, or barely moving), output ONLY:
 {"lvl":0}
-(Ignore side walls/furniture they are walking parallel to or already rotating away from.)
+(Exception: ONLY if an external moving vehicle/cyclist/person is visibly rushing straight toward the camera.)
+- NEVER output "STOP" or "STOP_NOW" (lvl 4-5) when movement is small or slow! Reserve lvl 4-5 ONLY when large, unmistakable forward/turning motion is carrying the person straight into a dead-center collision within <1.5 steps.
+
+STEP 2 — Emit ONLY standard action codes (never custom messages):
+A) CLEAR PATH or NO SIGNIFICANT MOVEMENT -> output ONLY:
+{"lvl":0}
+(Ignore side walls/furniture they are walking parallel to, rotating away from, or standing/sitting near.)
 
 B) OPEN WAY AVAILABLE + OBSTACLE IN SIDE-FRONT (guide around without stopping, lvl 2 or 3):
 Choose ONE standard "code":

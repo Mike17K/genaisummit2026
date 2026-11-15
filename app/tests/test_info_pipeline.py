@@ -224,8 +224,11 @@ def run():
 
     check("is_supported_lang accepts English and Greek only", phrases.is_supported_lang("Greek") and phrases.is_supported_lang("English") and not phrases.is_supported_lang("Spanish"))
     check("detect_text_lang keeps Greek when user says short 'OK'", info_pipeline.detect_text_lang("OK", "Greek") == "Greek")
+    check("detect_text_lang keeps Greek on 3-letter noise word 'bro'", info_pipeline.detect_text_lang("bro", "Greek") == "Greek")
     check("detect_text_lang switches to Greek on Greek speech", info_pipeline.detect_text_lang("Πού να πάω;", "English") == "Greek")
     check("detect_text_lang switches to English on English speech", info_pipeline.detect_text_lang("Where is the door?", "Greek") == "English")
+    h_none, _ = info_pipeline.parse_header_block("HEARD: NONENONENONEπερούζ\nMEMORY: NONE\n")
+    check("parse_header_block + is_valid_en_el_heard rejects NONENONE noise hallucinations", h_none == "NONE" and not info_pipeline.is_valid_en_el_heard("NONENONENONEπερούζ"))
 
     # 9. Approach 1 Web PDAF sensor note + Hold > 1s Depth Identification Mode gating
     from server import live, watch
@@ -418,6 +421,38 @@ def run():
         )
 
     asyncio.run(test_local_laptop_depth())
+
+    # 13. Short room-noise spike during Gemini thinking window (before first_audio) MUST NOT cancel info_task
+    async def test_noise_during_thinking_does_not_cancel():
+        class _SilentSock:
+            async def send_json(self, _p):
+                pass
+
+        st_n = State(socket=_SilentSock())
+
+        async def pending_answer():
+            await asyncio.sleep(5.0)
+
+        st_n.info_task = asyncio.create_task(pending_answer())
+        try:
+            # 3 chunks of 85 ms voice (~0.255 s < BARGE_IN_S 0.45 s) while audible=False & model_speaking=False
+            v_chunk = b"\x01" + b"\x05\x00" * (85 * 16)
+            s_chunk = b"\x00" + b"\x00\x00" * (85 * 16)
+            for c in [v_chunk, v_chunk, v_chunk, s_chunk, s_chunk]:
+                await live._handle_audio_chunk(st_n, c)
+            check(
+                "short room-noise spike during LLM thinking window does not cancel state.info_task",
+                st_n.info_task is not None and not st_n.info_task.cancelled() and not st_n.info_task.done(),
+            )
+        finally:
+            if st_n.info_task and not st_n.info_task.done():
+                st_n.info_task.cancel()
+                try:
+                    await st_n.info_task
+                except asyncio.CancelledError:
+                    pass
+
+    asyncio.run(test_noise_during_thinking_does_not_cancel())
 
     print(f"\n{sum(results)}/{len(results)} passed")
     return all(results)

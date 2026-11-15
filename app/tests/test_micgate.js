@@ -116,5 +116,54 @@ check("reset closes the gate", () => {
   assert(!g.open);
 });
 
+check("hysteresis keeps softer mid-sentence syllables open without letting room noise open from closed", () => {
+  const gClosed = new MicGate({ sustainFactor: 0.62 });
+  feed(gClosed, [0.042, 0.042, 0.042, 0.042], 1000, 0.055);
+  assert(!gClosed.open, "room noise below gate (0.042 < 0.055) never opens turn");
+
+  const gOpen = new MicGate({ sustainFactor: 0.62 });
+  feed(gOpen, [0.07, 0.07, 0.07], 1000, 0.055);
+  assert(gOpen.open);
+  const r = gOpen.process(loud(), 0.042, 1300, 0.055);
+  assert.deepStrictEqual(flags(r), [1], "softer syllable (0.042 > 0.055*0.62) stays voiced once open");
+});
+
+check("adaptiveFloor + peakDropFactor closes cleanly in loud room even when manual gate is lowered below ambient noise", () => {
+  const g = new MicGate({
+    onsetMs: 170,
+    hangMs: 500,
+    grace: 1,
+    sustainFactor: 0.78,
+    adaptiveFloor: true,
+    peakDropFactor: 0.35,
+    maxOpenMs: 7500,
+  });
+  // Loud venue ambient noise = 0.032, user lowered gate all the way to 0.015!
+  feed(g, [0.032, 0.032, 0.032, 0.032], 1000, 0.015);
+  assert(!g.open, "steady loud room noise does not falsely open even when manual gate < room noise");
+
+  // User speaks at 0.110 -> opens promptly
+  feed(g, [0.110, 0.110, 0.110], 1400, 0.015);
+  assert(g.open, "foreground speech opens cleanly");
+
+  // User stops speaking, mic returns to 0.032 loud room noise -> must stop extending voice (flag=0) and close!
+  const after = [];
+  for (let i = 0; i < 8; i++) {
+    after.push(g.process(loud(), 0.032, 1700 + i * 85, 0.015));
+  }
+  assert(after.every((r) => r[0][1] === 0), "loud room noise after speech is tagged quiet (flag=0), never stuck flag=1");
+  assert(!g.open, "gate closes cleanly after hangMs even though gate (0.015) < room noise (0.032)");
+});
+
+check("maxOpenMs forces a stuck turn closed and flushes >=400ms quiet so server always answers", () => {
+  const g = new MicGate({ onsetMs: 170, hangMs: 500, maxOpenMs: 2000 });
+  feed(g, [HIGH, HIGH, HIGH], 1000, GATE); // opens at 1085
+  assert(g.open);
+  const forced = g.process(loud(), HIGH, 3200, GATE);
+  assert(!g.open && forced[0][1] === 0 && isZero(forced[0][0]), "maxOpenMs forces turn closed");
+  const holdQuiet = g.process(loud(), HIGH, 3450, GATE);
+  assert(!g.open && holdQuiet[0][1] === 0, "stays quiet for ~500ms so server TurnTracker ends turn");
+});
+
 console.log(`\n${pass}/${pass + fail} passed`);
 process.exit(fail ? 1 : 0);

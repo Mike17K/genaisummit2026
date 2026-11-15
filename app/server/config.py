@@ -62,6 +62,9 @@ STATIC_SKIP = os.environ.get("EYES_STATIC_SKIP", "1") != "0"
 STATIC_MOTION = float(os.environ.get("EYES_STATIC_MOTION", "0.012"))
 STATIC_MAX_SKIP_S = float(os.environ.get("EYES_STATIC_MAX_SKIP_S", "4.0"))
 DANGER_SIMILARITY_DIFF = float(os.environ.get("EYES_DANGER_SIM_DIFF", "0.12"))
+MIN_ALERT_MOVEMENT = float(os.environ.get("EYES_MIN_ALERT_MOVEMENT", "0.095"))
+MIN_STOP_MOVEMENT = float(os.environ.get("EYES_MIN_STOP_MOVEMENT", "0.120"))
+MIN_STEP_MOVEMENT = float(os.environ.get("EYES_MIN_STEP_MOVEMENT", "0.055"))
 
 # ---- Adaptive camera & watcher rates ----
 FPS = {

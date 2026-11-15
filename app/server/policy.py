@@ -140,14 +140,30 @@ class AlertPolicy:
         *,
         fast_confirm: bool = False,
         user_moving: bool | None = None,
+        movement_score: float | None = None,
+        movement_sustained: bool = True,
+        lang: str = "English",
     ) -> tuple[bool, str]:
         """Return (speak, reason). Call `record` when speaking."""
         if d.danger_level >= 1 and (not d.notify or not d.message):
-            apply_danger_level(d)
+            apply_danger_level(d, lang)
         if self.mode == "off":
             return False, "mode_off"
         if not d.notify or not d.message:
             return False, "silent"
+
+        # Require visibly clear movement across frames before firing any obstacle alert,
+        # and require larger movement before shouting STOP / STOP_NOW (lvl >= 4).
+        if movement_score is not None:
+            if movement_score < config.MIN_ALERT_MOVEMENT or not movement_sustained:
+                self._see(d, now)
+                return False, "low_movement"
+            if movement_score < config.MIN_STOP_MOVEMENT and d.danger_level >= 4:
+                fallback_code = d.next_code if d.next_code in phrases.GUIDANCE_CODES else "SLOW_DOWN"
+                d.danger_level = 2
+                d.action_code = fallback_code
+                d.next_code = ""
+                apply_danger_level(d, lang)
 
         high = d.urgency == "high"
         if self.mode == "urgent_only" and not high:

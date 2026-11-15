@@ -120,6 +120,11 @@ def run():
     log = run_script(t, [raw_voice] * 15 + [raw_zero] * 25)
     check("raw audio from an older page still works", all_kinds(log).count("start") == 1 and all_kinds(log).count("end") == 1)
 
+    # ---- MAX_TURN_S safety cap in loud rooms
+    t = TurnTracker(end_wait=0.9)
+    log = run_script(t, [voice()] * 100)  # 8.5 s continuous voice flag without silence
+    check("MAX_TURN_S flushes turn even if loud room keeps voice flag=1 continuously", "end" in all_kinds(log))
+
     print(f"\n{sum(results)}/{len(results)} passed")
     return all(results)
 
