@@ -1,5 +1,6 @@
 """Local server-side Depth-Anything-V2-Small inference via ONNX Runtime."""
 import asyncio
+import base64
 import io
 import os
 from pathlib import Path
@@ -102,7 +103,22 @@ def extract_center_disparity_np(depth_2d: np.ndarray) -> dict | None:
         "p10": round(p10, 4),
         "p90": round(p90, 4),
         "sector_disp": sector_disparities_np(depth_2d),
+        "depth_thumb": depth_thumb_b64(depth_2d),
     }
+
+
+THUMB = 48
+
+
+def depth_thumb_b64(depth_2d: np.ndarray, size: int = THUMB) -> str:
+    """Small normalized depth image for the phone's on-screen view: 0 = far .. 255 = near, row-major, base64."""
+    h, w = depth_2d.shape
+    ys = np.minimum(h - 1, ((np.arange(size) + 0.5) * h / size).astype(int))
+    xs = np.minimum(w - 1, ((np.arange(size) + 0.5) * w / size).astype(int))
+    small = np.nan_to_num(depth_2d[np.ix_(ys, xs)].astype(np.float32), nan=0.0, posinf=0.0, neginf=0.0)
+    lo, hi = float(small.min()), float(small.max())
+    norm = (small - lo) / (hi - lo) if hi > lo else np.zeros_like(small)
+    return base64.b64encode((norm * 255).round().astype(np.uint8).tobytes()).decode("ascii")
 
 
 def sector_disparities_np(depth_2d: np.ndarray) -> list[float | None]:

@@ -44,6 +44,7 @@
     sideOffset: 3,
     centerSplit: 1,
     proximityRise: 5,
+    pitchSmoothing: 0.2,  // light: big jumps settle in ~4-5 beeps, small ones in ~2 (0 = instant .. 0.95 = slow glide)
   };
   // Hard limits every setting is clamped to (also used by the settings UI sliders)
   const LIMITS = {
@@ -54,6 +55,7 @@
     sideOffset: [0, 12, 0.5],
     centerSplit: [0, 6, 0.5],
     proximityRise: [0, 12, 0.5],
+    pitchSmoothing: [0, 0.95, 0.05],
   };
   const MIN_HZ = 120, MAX_HZ = 2400;
 
@@ -70,7 +72,7 @@
       if (!o) continue;
       for (const k of ["pitchHz", "maxVolume", "maxRateHz"]) if (num(o[k]) !== null) next.ears[ear][k] = clamp(k, o[k]);
     }
-    for (const k of ["rangeM", "sideOffset", "centerSplit", "proximityRise"]) {
+    for (const k of ["rangeM", "sideOffset", "centerSplit", "proximityRise", "pitchSmoothing"]) {
       if (num(over[k]) !== null) next[k] = clamp(k, over[k]);
     }
     CFG = next;
@@ -121,6 +123,18 @@
     };
   }
 
+  // Pitch smoothing: one-pole low-pass in LOG frequency (semitones), plus a cap on how far one beep may move,
+  // so a sudden distance change becomes a short glide instead of a jump. Returns the next frequency to play.
+  const FRESH_AFTER_MS = 1500;  // a side silent this long starts again at its target pitch
+  function smoothFreq(prevHz, targetHz, smoothing = CFG.pitchSmoothing) {
+    if (!(prevHz > 0) || smoothing <= 0) return targetHz;
+    const semis = 12 * Math.log2(targetHz / prevHz);
+    const maxStep = 0.5 + 4 * (1 - smoothing);          // 4.5 st/beep at 0 .. 0.7 st/beep at 0.95
+    const step = Math.max(-maxStep, Math.min(maxStep, semis * (1 - smoothing)));
+    const next = prevHz * Math.pow(2, step / 12);
+    return Math.abs(12 * Math.log2(targetHz / next)) < 0.05 ? targetHz : Math.round(next * 10) / 10;
+  }
+
   // Which sectors should sound now, closest first (focus + voice limits applied).
   function planVoices(sectors) {
     const all = SECTORS.map((s) => sonarVoice(s, sectors && sectors[s])).filter(Boolean);
@@ -138,6 +152,7 @@
       this.duck = opts.duck || (() => 1);
       this.aliveTick = false;   // hold scan turns this on
       this.lastUpdateAt = 0;
+      this.pitch = {};          // per sector: { L, R, at } last played (smoothed) frequencies
       this.sectors = { left: null, center: null, right: null };
       this.nextAt = { left: 0, center: 0, right: 0 };
       this.lastBeepAt = 0;
@@ -198,17 +213,22 @@
     }
 
     // One beep = one oscillator per ear (each ear has its own pitch), shared click-free envelope.
-    _beep(ctx, freqL, freqR, gainL, gainR, durS = 0.07) {
+    _beep(ctx, freqL, freqR, gainL, gainR, durS = 0.07, from = null) {
       const t0 = ctx.currentTime + 0.005;
       const merger = ctx.createChannelMerger(2);
       merger.channelInterpretation = "discrete";
       merger.connect(this._graph(ctx));
       let pending = 0;
-      const ear = (freq, gain, channel) => {
+      const ear = (freq, gain, channel, fromHz) => {
         if (!(gain > 0)) return;
         const osc = ctx.createOscillator();
         osc.type = "triangle";
-        osc.frequency.setValueAtTime(freq, t0);
+        if (fromHz > 0 && Math.abs(fromHz - freq) > 0.5) {
+          osc.frequency.setValueAtTime(fromHz, t0);
+          osc.frequency.exponentialRampToValueAtTime(freq, t0 + Math.min(0.025, durS * 0.4));
+        } else {
+          osc.frequency.setValueAtTime(freq, t0);
+        }
         const env = ctx.createGain();
         env.gain.setValueAtTime(0.0001, t0);
         env.gain.linearRampToValueAtTime(gain, t0 + 0.006);
@@ -219,8 +239,8 @@
         pending++;
         osc.onended = () => { if (--pending === 0) { try { merger.disconnect(); } catch (_) {} } };
       };
-      ear(freqL, gainL, 0);
-      ear(freqR, gainR, 1);
+      ear(freqL, gainL, 0, from && from.L);
+      ear(freqR, gainR, 1, from && from.R);
     }
 
     _tick() {
@@ -236,7 +256,13 @@
       const due = this.voices.find((v) => now >= this.nextAt[v.sector]);
       if (due) {
         const k = Math.max(0, Math.min(1, this.duck()));
-        this._beep(ctx, due.freqL, due.freqR, due.gainL * k, due.gainR * k);
+        const prev = this.pitch[due.sector];
+        const fresh = !prev || now - prev.at > FRESH_AFTER_MS;
+        const fl = fresh ? due.freqL : smoothFreq(prev.L, due.freqL);
+        const fr = fresh ? due.freqR : smoothFreq(prev.R, due.freqR);
+        // each beep also glides from the previous pitch to the new one (no audible step inside the beep)
+        this._beep(ctx, fl, fr, due.gainL * k, due.gainR * k, 0.07, fresh ? null : prev);
+        this.pitch[due.sector] = { L: fl, R: fr, at: now };
         this.nextAt[due.sector] = now + due.intervalMs;
         this.lastBeepAt = this.lastSoundAt = now;
         if (due.sector === "center" && due.p > 0.85 && now - this.lastVibeAt > 400) {
@@ -269,7 +295,7 @@
   }
 
   const api = {
-    SpatialSonar, sonarVoice, planVoices, proximity, setSettings, getSettings, resetSettings, DEFAULTS, LIMITS,
+    SpatialSonar, sonarVoice, planVoices, proximity, smoothFreq, setSettings, getSettings, resetSettings, DEFAULTS, LIMITS,
     NEAR_M, FOCUS_M, MAX_VOICES, SECTORS, STALE_MS,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;

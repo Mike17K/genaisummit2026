@@ -70,6 +70,26 @@ async def clear_memory() -> dict:
     return m.to_dict()
 
 
+def _clip(v, depth: int = 0):
+    """Keep client diagnostics small and JSON-safe."""
+    if isinstance(v, str):
+        return v[:160]
+    if isinstance(v, bool) or v is None or isinstance(v, (int, float)):
+        return v
+    if isinstance(v, list) and depth < 3:
+        return [_clip(x, depth + 1) for x in v[:16]]
+    if isinstance(v, dict) and depth < 3:
+        return {str(k)[:40]: _clip(x, depth + 1) for k, x in list(v.items())[:30]}
+    return str(v)[:80]
+
+
+@app.post("/audio_diag")
+async def audio_diag(payload: dict) -> dict:
+    """Phone audio diagnostics (devices, mic settings, output channels, test-beep context) for /trace."""
+    trace.log("audio_diag", **{k: _clip(v) for k, v in list(payload.items())[:30] if k not in ("t", "conn", "kind")})
+    return {"ok": True}
+
+
 @app.websocket("/live")
 async def live_ws(socket: WebSocket) -> None:
     await live.run(socket)

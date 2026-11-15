@@ -13,6 +13,7 @@
 """
 import base64
 from dataclasses import dataclass
+import os
 import re
 import time
 from typing import Literal
@@ -640,6 +641,7 @@ async def run_local_depth_probe(state: State, b64_data: str, seq: int = 0) -> No
             "p10": stats["p10"],
             "p90": stats["p90"],
             "sector_disp": stats.get("sector_disp"),
+            "depth_thumb": stats.get("depth_thumb"),
             "provider": provider,
             "ms": ms,
         })
@@ -671,12 +673,96 @@ async def handle_gps(state: State, msg: dict) -> None:
         alerts.spawn(alerts.speak_notice(state, arrival))
 
 
-async def handle_audio_chunk(state: State, chunk: bytes) -> None:
-    """Track user voice turns and launch the streaming command/answer pipeline on turn end."""
+PTT_MAX_S = 30.0  # safety cap for one push-to-talk turn
+
+
+PTT_DEBUG_DIR = config.APP_DIR / ".debug" / "ptt"
+PTT_DEBUG_KEEP = 10
+
+
+def _save_ptt_clip(pcm: bytes) -> None:
+    """Keep the last few push-to-talk clips as WAV (local, git-ignored) to debug what the phone really sends."""
+    if os.environ.get("EYES_SAVE_PTT_CLIPS", "1") == "0" or not pcm:
+        return
+    try:
+        import wave
+
+        PTT_DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+        path = PTT_DEBUG_DIR / f"{time.strftime('%H%M%S')}_{trace.current_conn()}.wav"
+        with wave.open(str(path), "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(16000)
+            w.writeframes(pcm)
+        for old in sorted(PTT_DEBUG_DIR.glob("*.wav"))[:-PTT_DEBUG_KEEP]:
+            old.unlink(missing_ok=True)
+    except Exception as exc:
+        trace.log("ptt_clip_save_failed", error=f"{type(exc).__name__}: {exc}"[:120])
+
+
+def pcm_level(pcm: bytes) -> dict:
+    """Loudness of a PCM16 turn for the trace: RMS and peak in dBFS (silence / too-quiet mic diagnosis)."""
+    import numpy as np
+
+    x = np.frombuffer(pcm[: len(pcm) - (len(pcm) % 2)], dtype=np.int16).astype(np.float32) / 32768.0
+    if x.size == 0:
+        return {"rms_dbfs": None, "peak_dbfs": None}
+    rms = float(np.sqrt(np.mean(x * x)))
+    peak = float(np.max(np.abs(x)))
+    db = lambda v: round(20 * np.log10(v), 1) if v > 1e-6 else -120.0
+    return {"rms_dbfs": db(rms), "peak_dbfs": db(peak)}
+
+
+async def ptt_start(state: State) -> None:
+    """Push-to-talk pressed: stop everything VoxEye is saying or doing and start collecting the user's words."""
     from ..assistant import info_pipeline
+
+    if not state.assistant_enabled:
+        return
+    was_cut = info_pipeline.interrupt_everything(state, "push_to_talk")
+    state.reset_mic_turn()
+    state.ptt_active = True
+    state.ptt_started_at = time.time()
+    state.turn_frame_jpeg = state.frames[-1][1] if state.frames else None
+    trace.log("user_turn", state="start", mode="push_to_talk", cut_assistant=was_cut)
+    if was_cut:
+        await state.send({"type": "interrupted"})
+
+
+async def ptt_end(state: State) -> None:
+    """Push-to-talk released: answer what was said right away (no silence timeout)."""
+    from ..assistant import info_pipeline, turns
+    from ..safety import alerts
+
+    if not state.ptt_active:
+        return
+    state.ptt_active = False
+    pcm_bytes = bytes(state.mic_turn_pcm)
+    state.mic_turn_pcm.clear()
+    frame_jpeg = state.turn_frame_jpeg or (state.frames[-1][1] if state.frames else None)
+    state.turn_frame_jpeg = None
+    held_s = round(time.time() - state.ptt_started_at, 1)
+    trace.log("user_turn", state="end", mode="push_to_talk", held_s=held_s,
+              audio_s=round(len(pcm_bytes) / turns.BYTES_PER_S, 1), **pcm_level(pcm_bytes))
+    _save_ptt_clip(pcm_bytes)
+    if len(pcm_bytes) >= MIN_VOICE_PCM_BYTES:
+        info_pipeline.cancel_for_user(state)
+        state.info_task = alerts.spawn(info_pipeline.answer_user_audio(state, pcm_bytes, frame_jpeg))
+    else:
+        await state.send({"type": "heard_ignored"})
+
+
+async def handle_audio_chunk(state: State, chunk: bytes) -> None:
+    """Collect push-to-talk audio; legacy always-on clients still use the voice-activity turn tracker."""
+    from ..assistant import info_pipeline, turns
     from ..safety import alerts
 
     if not state.assistant_enabled:
+        return
+    if state.ptt_active:
+        pcm, _flag = turns.parse_chunk(chunk)
+        if len(state.mic_turn_pcm) < PTT_MAX_S * turns.BYTES_PER_S:
+            state.mic_turn_pcm.extend(pcm)
         return
     now_c = time.time()
     if state.mic_blocked(now_c):
@@ -737,6 +823,10 @@ async def handle_client_message(state: State, msg: dict, frame_count: int) -> in
             trace.log("fresh_frame")
             if state.turn.active:
                 state.turn_frame_jpeg = jpeg
+    elif kind == "ptt_start":
+        await ptt_start(state)
+    elif kind == "ptt_end":
+        await ptt_end(state)
     elif kind == "barge_in":
         # Phone heard the user's voice open while the assistant was busy: it already silenced playback locally
         if state.assistant_enabled and not state.mic_blocked(time.time()):

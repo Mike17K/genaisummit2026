@@ -63,5 +63,18 @@ function makeSonar(opts = {}) {
   assert.ok(s.beeps.length >= 1 && s.beeps.every((b) => b.gl <= 0.015));
   pass(`nothing near: silent when continuous, ${s.beeps.length} soft alive tick(s) in hold mode`);
 
+  // 6. sudden distance jump -> pitch glides over several beeps instead of jumping
+  s = makeSonar();
+  s.start();
+  for (let i = 0; i < 4; i++) { s.update({ right: 2.4 }); await sleep(200); }
+  const before = s.beeps.length;
+  for (let i = 0; i < 10; i++) { s.update({ right: 0.4 }); await sleep(200); }
+  s.stop();
+  const after = s.beeps.slice(before - 1).map((b) => b.fr);
+  const jumps = after.slice(1).map((f, i) => 12 * Math.log2(f / after[i]));
+  const cap = 0.5 + 4 * (1 - require("../static/spatial_sonar.js").DEFAULTS.pitchSmoothing) + 0.01;
+  assert.ok(jumps.length >= 3 && Math.max(...jumps) <= cap, `max step ${Math.max(...jumps).toFixed(2)} st (cap ${cap.toFixed(2)})`);
+  pass(`sudden 2.4 m -> 0.4 m: right-ear pitch glides ${after.map(Math.round).join(" > ")} Hz`);
+
   console.log(`${n} passed`);
 })().catch((e) => { console.error("FAIL", e.message); process.exit(1); });

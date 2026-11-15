@@ -51,6 +51,8 @@ class State:
     # Streaming information pipeline & turn state
     turn: turns.TurnTracker = field(default_factory=turns.TurnTracker)
     mic_turn_pcm: bytearray = field(default_factory=bytearray)
+    ptt_active: bool = False      # push-to-talk: the user is holding the button and talking
+    ptt_started_at: float = 0.0
     turn_frame_jpeg: bytes | None = None
     chat_history: deque = field(default_factory=lambda: deque(maxlen=8))
     info_task: asyncio.Task | None = None

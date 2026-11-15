@@ -12,9 +12,10 @@
   const MAX_FRAME_ERRORS = 3;     // consecutive frame errors before reporting the engine as failed
 
   class DepthEngine {
-    constructor({ video, onDepth, onStatus, onPerfChange }) {
+    constructor({ video, onDepth, onStatus, onPerfChange, onDepthImage }) {
       this.video = video;
       this.onDepth = onDepth;
+      this.onDepthImage = onDepthImage;
       this.onStatus = onStatus;
       this.onPerfChange = onPerfChange;
       this.calibrator = new root.Looming.DepthCalibrator(4.5);
@@ -112,6 +113,7 @@
               right: m.sectorDisp[2] != null ? this.calibrator.toMeters(m.sectorDisp[2]) : null,
             }
           : null;
+        if (this.active && m.thumb && this.onDepthImage) this.onDepthImage(new Uint8Array(m.thumb), m.thumbSize, m.thumbSize);
         if (this.active && distM !== null && this.onDepth) this.onDepth(distM, m.backend, m.ms, m.centerDisp, sectors);
       } else if (m.type === "skipped") {
         if (m.seq !== this.seq) return;
