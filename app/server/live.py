@@ -1,6 +1,8 @@
-"""WebSocket session coordinator running two parallel tasks per connection:
-  1) Task 1: Stateful conversational voice + camera assistant (Gemini Live API, toggleable ON/OFF)
-  2) Task 2: Fast stateless 3-frame safety watcher (alerts.py + watch.py)
+"""WebSocket session coordinator running two integrated parallel pipelines per connection:
+  1) Streaming Information Pipeline (info_pipeline.py): multimodal audio+frame -> text-token
+     streaming LLM -> concurrent clause-by-clause streaming TTS, cut immediately on danger
+     to explain why and smoothly resume what it was saying.
+  2) Fast Stateless Safety Guardrail (alerts.py + watch.py): 3-frame composite obstacle check.
 """
 import asyncio
 import base64
@@ -9,14 +11,14 @@ import time
 import uuid
 
 from fastapi import WebSocket
-from google.genai import types
 
-from . import alerts, config, live_bridge, speak, tools, trace, turns, watch
+from . import alerts, config, info_pipeline, phrases, speak, tools, trace, turns, watch
 from .state import State
 
 __all__ = ["State", "run"]
 
 _active_connections = 0
+MIN_VOICE_PCM_BYTES = 4800  # ~150 ms of 16 kHz mono PCM16
 
 
 async def run(socket: WebSocket) -> None:
@@ -40,25 +42,41 @@ async def run(socket: WebSocket) -> None:
 
 
 async def _handle_audio_chunk(state: State, chunk: bytes) -> None:
-    """Process a 16 kHz PCM16 audio chunk when the conversational assistant is enabled."""
-    if not state.assistant_enabled or state.session is None:
+    """Track user voice turns and launch the streaming information pipeline on turn end."""
+    if not state.assistant_enabled:
         return
     now_c = time.time()
-    for action in state.turn.feed(chunk, now_c, state.audible(now_c) or state.model_speaking):
+    if state.alert_locked(now_c):
+        state.reset_mic_turn()
+        return
+    assistant_busy = state.audible(now_c) or state.model_speaking
+    for action in state.turn.feed(chunk, now_c, assistant_busy):
         if action[0] == "start":
-            was_audible = state.audible(now_c)
-            trace.log("user_turn", state="start", model_speaking=state.model_speaking, audible=was_audible)
-            if was_audible:
-                state.audible_until = 0.0
+            was_cut = info_pipeline.cancel_for_user(state)
+            trace.log("user_turn", state="start", cut_assistant=was_cut)
+            if was_cut:
                 await state.send({"type": "interrupted"})
-            await state.session.send_realtime_input(activity_start=types.ActivityStart())
+            state.mic_turn_pcm.clear()
+            state.turn_frame_jpeg = state.frames[-1][1] if state.frames else None
         elif action[0] == "audio":
-            await state.session.send_realtime_input(
-                audio=types.Blob(data=action[1], mime_type="audio/pcm;rate=16000")
-            )
+            state.mic_turn_pcm.extend(action[1])
         elif action[0] == "end":
-            trace.log("user_turn", state="end", silence_s=action[1], voiced_s=round(state.turn.voiced_s, 1))
-            await state.session.send_realtime_input(activity_end=types.ActivityEnd())
+            pcm_bytes = bytes(state.mic_turn_pcm)
+            state.mic_turn_pcm.clear()
+            frame_jpeg = state.turn_frame_jpeg or (state.frames[-1][1] if state.frames else None)
+            state.turn_frame_jpeg = None
+            trace.log(
+                "user_turn",
+                state="end",
+                silence_s=action[1],
+                voiced_s=round(state.turn.voiced_s, 1),
+                pcm_kb=round(len(pcm_bytes) / 1024, 1),
+            )
+            if len(pcm_bytes) >= MIN_VOICE_PCM_BYTES:
+                info_pipeline.cancel_for_user(state)
+                state.info_task = alerts.spawn(
+                    info_pipeline.answer_user_audio(state, pcm_bytes, frame_jpeg)
+                )
 
 
 async def _handle_json_message(state: State, msg: dict, frame_count: int) -> int:
@@ -75,12 +93,10 @@ async def _handle_json_message(state: State, msg: dict, frame_count: int) -> int
             state.imu, state.imu_at = msg["imu"], now_f
         if isinstance(msg.get("motion"), (int, float)):
             state.motion.append((now_f, float(msg["motion"])))
-        if state.assistant_enabled and state.session is not None:
-            if msg.get("fresh") and now_f - state.last_live_frame < 0.95:
-                trace.log("fresh_frame")
-            if msg.get("fresh") or now_f - state.last_live_frame >= 0.95:
-                state.last_live_frame = now_f
-                await state.session.send_realtime_input(video=types.Blob(data=jpeg, mime_type="image/jpeg"))
+        if msg.get("fresh"):
+            trace.log("fresh_frame")
+            if state.turn.active:
+                state.turn_frame_jpeg = jpeg
     elif kind == "local_alert":
         alerts.spawn(alerts.local_alert(state, msg))
     elif kind == "mode" and msg.get("mode") in watch.AlertPolicy.MODES:
@@ -90,10 +106,10 @@ async def _handle_json_message(state: State, msg: dict, frame_count: int) -> int
         enabled = bool(msg.get("enabled", True))
         state.assistant_enabled = enabled
         trace.log("assistant_toggle", enabled=enabled)
-        if not enabled and (state.model_speaking or state.audible(time.time())):
-            state.audible_until = 0.0
-            state.drop_audio_since = time.time()
+        if not enabled and info_pipeline.cancel_for_user(state):
             await state.send({"type": "interrupted"})
+    elif kind == "lang" and phrases.is_supported_lang(msg.get("lang")):
+        await info_pipeline.update_session_lang(state, msg["lang"], source="client")
     return frame_count
 
 
@@ -103,14 +119,25 @@ async def _serve(socket: WebSocket, conn_id: str) -> None:
     except ValueError:
         silence_ms = config.SILENCE_MS
     silence_ms = max(int(turns.END_WAIT_FLOOR_S * 1000), min(4000, silence_ms))
-    trace.log("live_connect", silence_ms=silence_ms, active=_active_connections)
+
+    q_lang = socket.query_params.get("lang", "")
+    initial_lang = (
+        phrases.save_last_lang(q_lang) if phrases.is_supported_lang(q_lang) else phrases.get_last_lang()
+    )
+    trace.log(
+        "live_connect",
+        silence_ms=silence_ms,
+        lang=initial_lang,
+        active=_active_connections,
+        pipeline="streaming_clauses",
+    )
 
     if not config.API_KEY:
         await socket.send_json({"type": "error", "text": "The model is not connected yet."})
         await socket.close()
         return
 
-    state = State(socket=socket, conn_id=conn_id)
+    state = State(socket=socket, conn_id=conn_id, lang=initial_lang)
     state.client_tts = socket.query_params.get("client_tts", "1") != "0"
     state.turn = turns.TurnTracker(end_wait=silence_ms / 1000)
     asyncio.create_task(speak.warm_common())
@@ -124,42 +151,42 @@ async def _serve(socket: WebSocket, conn_id: str) -> None:
         asyncio.get_running_loop().create_task(state.send({"type": "mode", "mode": mode}))
         return {"status": "ok", "mode": mode}
 
-    state.extra_funcs = {"set_alert_mode": set_alert_mode}
+    def set_language(language: str) -> dict:
+        """Switch and remember the spoken language. Only 'English' and 'Greek' are supported."""
+        if not phrases.is_supported_lang(language):
+            return {"error": "language must be 'English' or 'Greek'"}
+        canon = phrases.save_last_lang(language)
+        state.lang = canon
+        trace.log("lang_set", lang=canon, by="voice_tool")
+        asyncio.get_running_loop().create_task(state.send({"type": "lang", "lang": canon}))
+        return {"status": "ok", "language": canon}
 
+    state.extra_funcs = {"set_alert_mode": set_alert_mode, "set_language": set_language}
+
+    await socket.send_json({"type": "ready", "conn": conn_id, "lang": state.lang})
+    await alerts.announce_rate(state, "start")
+    watcher = asyncio.create_task(alerts.watch_loop(state))
+    mic_bytes = frame_count = 0
     try:
-        live_model = await live_bridge.pick_live_model()
-        client = live_bridge.get_client()
-        async with client.aio.live.connect(model=live_model, config=live_bridge.live_config([set_alert_mode])) as session:
-            state.session = session
-            await socket.send_json({"type": "ready", "conn": conn_id})
-            await alerts.announce_rate(state, "start")
-
-            downstream = asyncio.create_task(live_bridge.gemini_to_browser(state))
-            watcher = asyncio.create_task(alerts.watch_loop(state))
-            mic_bytes = frame_count = 0
-            try:
-                while True:
-                    message = await socket.receive()
-                    if message["type"] == "websocket.disconnect":
-                        break
-                    if message.get("bytes"):
-                        chunk = message["bytes"]
-                        if mic_bytes == 0:
-                            trace.log("first_mic_audio", bytes=len(chunk))
-                        mic_bytes += len(chunk)
-                        await _handle_audio_chunk(state, chunk)
-                    elif message.get("text"):
-                        frame_count = await _handle_json_message(state, json.loads(message["text"]), frame_count)
-                    if downstream.done():
-                        downstream.result()
-                        break
-            finally:
-                downstream.cancel()
-                watcher.cancel()
-                trace.log("live_input_totals", mic_kb=round(mic_bytes / 1024), frames=frame_count)
+        while True:
+            message = await socket.receive()
+            if message["type"] == "websocket.disconnect":
+                break
+            if message.get("bytes"):
+                chunk = message["bytes"]
+                if mic_bytes == 0:
+                    trace.log("first_mic_audio", bytes=len(chunk))
+                mic_bytes += len(chunk)
+                await _handle_audio_chunk(state, chunk)
+            elif message.get("text"):
+                frame_count = await _handle_json_message(state, json.loads(message["text"]), frame_count)
     except Exception as exc:
         trace.log("error", error=f"{type(exc).__name__}: {exc}"[:300])
         try:
             await socket.send_json({"type": "error", "text": "Voice connection lost. Tap to restart."})
         except Exception:
             pass
+    finally:
+        watcher.cancel()
+        info_pipeline.cancel_for_user(state)
+        trace.log("live_input_totals", mic_kb=round(mic_bytes / 1024), frames=frame_count)

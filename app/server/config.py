@@ -50,8 +50,10 @@ ALERT_FAST_CONF = float(os.environ.get("EYES_ALERT_FAST_CONF", "0.85"))
 ALERT_FAST_CONF_MOVING = float(os.environ.get("EYES_ALERT_FAST_CONF_MOVING", "0.80"))
 ALERT_COOLDOWN_S = float(os.environ.get("EYES_ALERT_COOLDOWN_S", "6.0"))
 ALERT_COOLDOWN_HIGH_S = float(os.environ.get("EYES_ALERT_COOLDOWN_HIGH_S", "1.0"))
+STEER_COOLDOWN_S = float(os.environ.get("EYES_STEER_COOLDOWN_S", "1.5"))
 ALERT_DEDUPE_S = float(os.environ.get("EYES_ALERT_DEDUPE_S", "25.0"))
 ALERT_MAX_PER_MIN = int(os.environ.get("EYES_ALERT_MAX_PER_MIN", "6"))
+EXPLAIN_POST_WINDOW_S = float(os.environ.get("EYES_EXPLAIN_POST_WINDOW_S", "0.5"))
 
 # ---- Scene motion & post-trigger similarity latch ----
 PAN_DEG_S = float(os.environ.get("EYES_PAN_DEG_S", "160"))

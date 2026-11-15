@@ -125,6 +125,54 @@ def run():
     p.clear_resolved()
     check("new wall after clear path speaks after 1s high cooldown", p.decide(w1, 12.0, 99), (True, "ok"))
 
+    # Frame-inferred movement/rotation + side-front steering nudges
+    p_steer = AlertPolicy()
+    s_left = apply_danger_level(
+        WatchDecision(danger_level=2, steer="left", user_direction="right", hazard_key="desk-front-right")
+    )
+    check("steer=left maps to Turn slightly left.", s_left.message, "Turn slightly left.")
+    s_right_gr = apply_danger_level(
+        WatchDecision(danger_level=2, steer="right", user_direction="forward", hazard_key="chair-front-left"),
+        lang="Greek",
+    )
+    check("steer=right in Greek maps to Στρίψε λίγο δεξιά.", s_right_gr.message, "Στρίψε λίγο δεξιά.")
+    check(
+        "frame-detected rotation overrides stationary accelerometer for side-front steer",
+        p_steer.decide(s_left, 10.0, 99, user_moving=False),
+        (True, "ok"),
+    )
+    p_steer.record(s_left, 10.0)
+    check(
+        "different side-front obstacle speaks after responsive 1.5s steer cooldown",
+        p_steer.decide(s_right_gr, 12.0, 99, user_moving=False),
+        (True, "ok"),
+    )
+    s_lvl4 = apply_danger_level(
+        WatchDecision(danger_level=4, steer="left", user_direction="forward", hazard_key="desk-front-right")
+    )
+    check("level >= 4 collision forces full Stop! instead of slight turn", (s_lvl4.message, s_lvl4.steer), ("Stop!", ""))
+
+    # Standard ACTION_CODES -> exact standard words in English & Greek
+    from server import phrases
+    c_slide = apply_danger_level(WatchDecision(danger_level=2, action_code="SLIDE_RIGHT", user_direction="forward", hazard_key="chair-left"))
+    check("SLIDE_RIGHT maps to Slide right.", (c_slide.message, c_slide.steer), ("Slide right.", "right"))
+    c_slide_gr = apply_danger_level(
+        WatchDecision(danger_level=2, action_code="SLIDE_LEFT", user_direction="forward", hazard_key="desk-right"),
+        lang="Greek",
+    )
+    check("SLIDE_LEFT in Greek maps to Κάνε λίγο αριστερά.", c_slide_gr.message, "Κάνε λίγο αριστερά.")
+    c_stop_next = apply_danger_level(WatchDecision(danger_level=4, action_code="SLIDE_LEFT", hazard_key="wall-ahead"))
+    check(
+        "lvl 4 promotes guidance code into next_code while commanding STOP",
+        (c_stop_next.action_code, c_stop_next.next_code, c_stop_next.message),
+        ("STOP", "SLIDE_LEFT", "Stop!"),
+    )
+    check(
+        "all standard codes are pre-warmed in all_phrases()",
+        all(en in phrases.all_phrases() and el in phrases.all_phrases() for en, el in phrases.ACTION_CODES.values()),
+        True,
+    )
+
     print(f"\n{sum(results)}/{len(results)} passed")
     return all(results)
 

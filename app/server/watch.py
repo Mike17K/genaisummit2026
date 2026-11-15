@@ -32,17 +32,37 @@ __all__ = [
     "user_moving",
 ]
 
-WATCH_SYSTEM = """Fast stateless obstacle detector for a blind pedestrian.
-Input: up to 3 sequential camera tiles, oldest (1) to newest (NEW). Judge danger as of NEW.
-If path is clear/safe, output ONLY: {"lvl":0}
-If real obstacle or approaching hazard is in path, output compact JSON:
-{"lvl":1..5,"key":"wall-ahead","type":"static|moving","why":"<=6 words"}
-Levels:
-5 = immediate impact (<1 step / <1s) -> Stop now!
-4 = very close obstacle (1-2 steps) -> Stop!
-3 = obstacle in path (2-3 steps) -> Slow down now.
-2 = obstacle ahead (3-5 steps) -> Slow down.
-1 = minor caution -> Careful ahead."""
+WATCH_SYSTEM = """Fast stateless navigation & obstacle checker for a blind pedestrian.
+Input: up to 3 sequential camera tiles, oldest (1) to newest (NEW).
+
+STEP 1 — Infer where the person wants to go from motion/rotation across tiles 1 -> NEW:
+- Scene shifts LEFT across 1->NEW = person is ROTATING RIGHT (wants to go right).
+- Scene shifts RIGHT across 1->NEW = person is ROTATING LEFT (wants to go left).
+- Objects ahead grow/expand from center = person is MOVING FORWARD (wants to go straight ahead).
+- Nearly identical tiles = "still".
+Set "move": "forward" | "right" | "left" | "still".
+
+STEP 2 — Emit ONLY standard action codes (never custom messages):
+A) CLEAR PATH along where they want to go -> output ONLY:
+{"lvl":0}
+(Ignore side walls/furniture they are walking parallel to or already rotating away from.)
+
+B) OPEN WAY AVAILABLE + OBSTACLE IN SIDE-FRONT (guide around without stopping, lvl 2 or 3):
+Choose ONE standard "code":
+- "SLIGHT_LEFT" / "SLIGHT_RIGHT": obstacle in front-right (1-2 o'clock) or front-left (10-11 o'clock), turn slightly toward open gap.
+- "SLIDE_LEFT" / "SLIDE_RIGHT": sidestep laterally left or right past a narrow edge obstacle while keeping heading.
+- "KEEP_LEFT" / "KEEP_RIGHT": stay hugging the clear side of a corridor/aisle.
+- "TURN_LEFT" / "TURN_RIGHT": clear ~45-90 deg turn into open doorway/hallway when ahead closes off.
+Output JSON:
+{"lvl":2,"code":"SLIGHT_LEFT","move":"forward","key":"desk-front-right","type":"static|moving","why":"<=5 words"}
+(Use lvl 3 when closer ~1.5-2.5 steps needing immediate steering.)
+
+C) BLOCKED PATH / MUST STOP (dead-center obstacle with no safe pass without stopping, or <1.5 steps):
+Choose "code" from: "STOP_NOW" (lvl 5, <1 step), "STOP" (lvl 4, 1-2 steps), "SLOW_NOW" (lvl 3), "SLOW_DOWN" (lvl 2), "CAREFUL" (lvl 1).
+Also set "next" to the standard redirect code after stopping:
+"SLIDE_LEFT" | "SLIDE_RIGHT" | "SLIGHT_LEFT" | "SLIGHT_RIGHT" | "TURN_LEFT" | "TURN_RIGHT" | "TURN_BACK" | "CHECK_CANE" | "".
+Output JSON:
+{"lvl":4,"code":"STOP","next":"SLIDE_RIGHT","move":"forward","key":"chair-ahead","type":"static|moving","why":"<=5 words"}"""
 
 
 def _age(now: float, t: float) -> str:
@@ -112,16 +132,25 @@ def _parse_decision(response, lang: str) -> WatchDecision:
         raw = json.loads((response.text or "{}").strip())
         if isinstance(raw, list):
             raw = raw[0] if raw and isinstance(raw[0], dict) else {}
-        if "lvl" in raw or "key" in raw or "why" in raw:
+        if "lvl" in raw or "key" in raw or "why" in raw or "steer" in raw or "code" in raw:
             lvl = int(raw.get("lvl", raw.get("danger_level", 0)) or 0)
             htype = raw.get("type", raw.get("hazard_type", "static"))
+            code_raw = str(raw.get("code", raw.get("action_code", "")) or "").strip()
+            next_raw = str(raw.get("next", raw.get("next_code", "")) or "").strip()
+            steer_raw = str(raw.get("steer", "") or "").strip().lower()
+            steer = steer_raw if steer_raw in ("left", "right") else ""
+            move_raw = re.sub(r"[^a-z\-]", "", str(raw.get("move", raw.get("user_direction", "")) or "").lower())[:20]
             d = WatchDecision(
-                notify=lvl >= 1 or bool(raw.get("notify", False)),
+                notify=lvl >= 1 or bool(code_raw) or bool(steer) or bool(raw.get("notify", False)),
                 danger_level=lvl,
-                confidence=float(raw.get("confidence", 0.95 if lvl >= 3 else (0.90 if lvl >= 1 else 0.0))),
+                confidence=float(raw.get("confidence", 0.95 if lvl >= 3 else (0.90 if (lvl >= 1 or code_raw or steer) else 0.0))),
                 hazard_key=str(raw.get("key", raw.get("hazard_key", ""))),
                 reason=str(raw.get("why", raw.get("reason", ""))),
                 hazard_type="moving" if htype == "moving" else "static",
+                action_code=code_raw,
+                next_code=next_raw,
+                steer=steer,
+                user_direction=move_raw,
             )
         else:
             d = WatchDecision.model_validate(raw)

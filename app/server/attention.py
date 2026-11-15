@@ -78,6 +78,8 @@ def sensors_text(imu: dict | None) -> str:
     else:
         state = "movement unknown"
     bits = [f"user {state}"] if state != "movement unknown" else ["movement unknown"]
+    if imu.get("turnDir") in ("turning left", "turning right", "heading straight"):
+        bits.append(imu["turnDir"])
     if speed is not None:
         bits.append(f"gyro {speed} deg/s")
     if imu.get("pitchDeg") is not None:

@@ -31,6 +31,11 @@ let spatial = null;
 const ON_DEVICE = new URLSearchParams(location.search).get("ondevice") === "1";
 let alertMuteUntil = 0;
 let assistantEnabled = true;
+let sessionLang = "";
+try {
+  const savedL = localStorage.getItem("eyesLang");
+  if (savedL === "English" || savedL === "Greek") sessionLang = savedL;
+} catch (_) {}
 
 function requestSensorPermissions() {
   try {
@@ -44,7 +49,7 @@ function speakLocal(text, dangerLevel = 0) {
   try {
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = /[\u0370-\u03ff]/.test(text) ? "el-GR" : "en-US";
+    u.lang = /[\u0370-\u03ff\u1f00-\u1fff]/.test(text) ? "el-GR" : "en-US";
     const lvl = Math.max(1, Math.min(5, +dangerLevel || 3));
     u.rate = [1.0, 1.05, 1.12, 1.2, 1.3, 1.38][lvl];
     u.pitch = [1.0, 1.0, 1.05, 1.12, 1.22, 1.32][lvl];
@@ -103,7 +108,7 @@ function renderDebug() {
     ["audio ctx", cls(dbg.audioCtx === "running" ? true : dbg.audioCtx === "-" ? null : false, dbg.audioCtx)],
     ["session id", esc(dbg.conn) + "  (filter the server trace with /panel?conn=" + esc(dbg.conn) + ")"],
     ["websocket", cls(wsState === "open" ? true : wsState === "-" ? null : wsState === "connecting" ? null : false, wsState) + (dbg.ws !== "-" ? "  " + esc(dbg.ws) : "")],
-    ["gemini", cls(dbg.gemini === "ready" ? true : dbg.gemini === "-" ? null : false, esc(dbg.gemini)) + " (assistant: " + (assistantEnabled ? "on" : "off") + ")"],
+    ["gemini", cls(dbg.gemini === "ready" ? true : dbg.gemini === "-" ? null : false, esc(dbg.gemini)) + " (assistant: " + (assistantEnabled ? "on" : "off") + ", lang: " + esc(sessionLang || "English") + ")"],
     ["received", `${dbg.recvKB.toFixed(0)} KB in ${dbg.recvChunks} chunks, last audio ${sinceAudio}`],
     ["you said", esc(dbg.lastHeard || "-")],
     ["eyes said", esc(dbg.lastReply || "-")],
@@ -325,7 +330,8 @@ async function start() {
 
   setState("connecting", "Connecting to the assistant...");
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  socket = new WebSocket(`${proto}://${location.host}/live?silence=${SILENCE_WAIT_MS}${"speechSynthesis" in window ? "" : "&client_tts=0"}`);
+  const langParam = (sessionLang === "English" || sessionLang === "Greek") ? `&lang=${encodeURIComponent(sessionLang)}` : "";
+  socket = new WebSocket(`${proto}://${location.host}/live?silence=${SILENCE_WAIT_MS}${langParam}${"speechSynthesis" in window ? "" : "&client_tts=0"}`);
   note(`wait after you stop talking: ${SILENCE_WAIT_MS} ms`);
   socket.binaryType = "arraybuffer";
   socket.onmessage = (e) => {
@@ -333,9 +339,20 @@ async function start() {
     const m = JSON.parse(e.data);
     dbg.lastEvent = m.type + (m.name ? ":" + m.name : "");
     if (m.type === "ready") {
-      dbg.gemini = "ready"; dbg.conn = m.conn || "-"; chime(); note("gemini session ready, id " + dbg.conn);
+      if (m.lang === "English" || m.lang === "Greek") {
+        sessionLang = m.lang;
+        try { localStorage.setItem("eyesLang", sessionLang); } catch (_) {}
+      }
+      dbg.gemini = "ready"; dbg.conn = m.conn || "-"; chime(); note(`gemini session ready, id ${dbg.conn} (${sessionLang || "English"})`);
       socket.send(JSON.stringify({ type: "mode", mode: dbg.alertMode }));
       socket.send(JSON.stringify({ type: "assistant", enabled: assistantEnabled }));
+    }
+    else if (m.type === "lang") {
+      if (m.lang === "English" || m.lang === "Greek") {
+        sessionLang = m.lang;
+        try { localStorage.setItem("eyesLang", sessionLang); } catch (_) {}
+        note("language kept: " + sessionLang);
+      }
     }
     else if (m.type === "interrupted") { stopPlayback(); note("interrupted"); }
     else if (m.type === "heard") { dbg.lastHeard = m.text; note("heard: " + m.text); }
@@ -345,6 +362,8 @@ async function start() {
     else if (m.type === "go_away") note("server says the session will end soon");
     else if (m.type === "alert") {
       stopPlayback();
+      micGate.reset();
+      dbg.voiceOpen = false;
       alertCue(m.urgency, m.danger_level);
       alertMuteUntil = Date.now() + 1800;
       if (m.client_voice) setTimeout(() => speakLocal(m.text, m.danger_level), 110);
@@ -355,7 +374,9 @@ async function start() {
     }
     else if (m.type === "watch") {
       const lvlTag = m.danger_level ? ` L${m.danger_level}` : "";
-      dbg.watch = `${m.outcome}${lvlTag}${m.key ? " [" + m.key + "]" : ""} conf ${(+m.confidence).toFixed(2)} ${m.ms} ms`;
+      const codeTag = m.code ? ` ${m.code}` : "";
+      const moveTag = m.move ? ` move:${m.move}` : "";
+      dbg.watch = `${m.outcome}${lvlTag}${codeTag}${moveTag}${m.key ? " [" + m.key + "]" : ""} conf ${(+m.confidence).toFixed(2)} ${m.ms} ms`;
     }
     else if (m.type === "speak_text") { speakLocal(m.text, m.danger_level); note("fallback voice: " + m.text); }
     else if (m.type === "rate") {

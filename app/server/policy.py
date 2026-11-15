@@ -18,15 +18,53 @@ class WatchDecision(BaseModel):
     reason: str = ""
     attention: Literal["normal", "elevated", "high"] = "normal"
     hazard_type: Literal["moving", "static"] = "static"
+    action_code: str = ""
+    next_code: str = ""
+    steer: Literal["", "left", "right"] = ""
+    user_direction: str = ""
+
+
+def _side_of_code(code: str) -> Literal["", "left", "right"]:
+    if "LEFT" in code:
+        return "left"
+    if "RIGHT" in code:
+        return "right"
+    return ""
 
 
 def apply_danger_level(d: WatchDecision, lang: str = "English") -> WatchDecision:
-    """Normalize a 1..5 danger_level into calibrated short phrase, urgency, and confidence."""
+    """Normalize danger_level + standard action_code into pre-cached standard words, urgency, and confidence."""
     level = max(0, min(5, int(getattr(d, "danger_level", 0) or 0)))
+    code = phrases.normalize_code(getattr(d, "action_code", ""))
+    nxt = phrases.normalize_code(getattr(d, "next_code", ""))
+
+    if not code and d.steer in ("left", "right"):
+        code = "SLIGHT_LEFT" if d.steer == "left" else "SLIGHT_RIGHT"
+
+    if code in phrases.GUIDANCE_CODES and level == 0:
+        level = 2
+
+    if level >= 4:
+        # Immediate (<2 steps) collision always commands STOP / STOP_NOW first;
+        # preserve any guidance code as `next_code` so post-stop redirect still uses standard words.
+        if code in phrases.GUIDANCE_CODES and not nxt:
+            nxt = code
+        code = phrases.LEVEL_TO_CODE[level]
+        d.steer = ""
+
     d.danger_level = level
+    d.next_code = nxt if nxt in phrases.GUIDANCE_CODES else ""
+
     if level >= 1:
         d.notify = True
-        d.message = phrases.danger_phrase(level, lang)
+        if code in phrases.GUIDANCE_CODES:
+            d.action_code = code
+            d.steer = _side_of_code(code)
+            d.message = phrases.code_phrase(code, lang)
+        else:
+            d.action_code = code if code in phrases.STOP_CODES else phrases.LEVEL_TO_CODE[level]
+            d.steer = ""
+            d.message = phrases.code_phrase(d.action_code, lang) or phrases.danger_phrase(level, lang)
         d.urgency = "high" if level >= 3 else "low"
         d.confidence = max(d.confidence, 0.90)
         if level >= 3:
@@ -35,6 +73,9 @@ def apply_danger_level(d: WatchDecision, lang: str = "English") -> WatchDecision
             d.attention = "elevated"
         if not d.hazard_key:
             d.hazard_key = f"obstacle-lvl-{level}"
+    else:
+        d.action_code = ""
+        d.steer = ""
     return d
 
 
@@ -115,13 +156,16 @@ class AlertPolicy:
             self._see(d, now)
             return False, "low_confidence"
 
-        if not high and user_moving is False and d.hazard_type == "static":
+        frame_moving = bool(d.user_direction and d.user_direction != "still")
+        if not high and user_moving is False and not frame_moving and d.hazard_type == "static":
             self._see(d, now)
             return False, "user_stationary"
 
         seen_before = self._recently_seen(d.hazard_key, now, within=max(8.0, config.WATCH_S * 3 + 2))
         self._see(d, now)
-        sure = d.confidence >= (config.ALERT_FAST_CONF_MOVING if user_moving else config.ALERT_FAST_CONF)
+        sure = d.confidence >= (
+            config.ALERT_FAST_CONF_MOVING if (user_moving or frame_moving) else config.ALERT_FAST_CONF
+        )
         if not high and not seen_before and not (fast_confirm or sure):
             return False, "needs_confirmation"
 
@@ -133,7 +177,13 @@ class AlertPolicy:
                 return False, "duplicate"
 
         gap = now - self.last_alert_at
-        if gap < (config.ALERT_COOLDOWN_HIGH_S if high else config.ALERT_COOLDOWN_S):
+        is_guidance = d.action_code in phrases.GUIDANCE_CODES or d.steer in ("left", "right")
+        min_gap = (
+            config.ALERT_COOLDOWN_HIGH_S
+            if high
+            else (config.STEER_COOLDOWN_S if is_guidance else config.ALERT_COOLDOWN_S)
+        )
+        if gap < min_gap:
             return False, "cooldown"
 
         recent = sum(1 for t in self.alert_times if now - t < 60)

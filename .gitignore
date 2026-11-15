@@ -5,4 +5,5 @@ server.log
 server.pid
 app/debug_triggers/
 app/trigger_logs/
+app/.last_lang
 

@@ -1,13 +1,16 @@
-"""Speak a short alert with a TTS model. Returns raw PCM16 mono 24 kHz, ready for the page to play.
+"""Speak alerts and streaming assistant clauses with TTS (raw PCM16 mono 24 kHz).
 
-Why not let the Live model say it: it sometimes read the instruction aloud instead of the alert. TTS says exactly the text.
-Results are cached, so a repeated alert plays instantly.
+Supports both:
+  1. `synthesize(text)` — full cached synthesis used for pre-warmed safety alerts ("Stop!", etc.)
+  2. `stream_tts(text)` — low-latency chunked PCM16 streaming (~465 ms to first chunk) for
+     clause-by-clause conversational responses, caching completed clauses automatically.
 """
 import asyncio
+from collections import OrderedDict
+from collections.abc import AsyncIterator
 import io
 import time
 import wave
-from collections import OrderedDict
 
 from google import genai
 from google.genai import types
@@ -17,8 +20,8 @@ from . import config, fal, phrases, trace
 _client: genai.Client | None = None
 _cache: "OrderedDict[str, bytes]" = OrderedDict()
 _inflight: dict[str, asyncio.Future] = {}
-_slots: asyncio.Semaphore | None = None   # limits parallel TTS calls across all connections
-CACHE_SIZE = 128
+_slots: asyncio.Semaphore | None = None
+CACHE_SIZE = 160
 OUT_RATE = 24000
 
 
@@ -27,6 +30,17 @@ def _get_client() -> genai.Client:
     if _client is None:
         _client = genai.Client(api_key=config.API_KEY, http_options=types.HttpOptions(api_version="v1beta"))
     return _client
+
+
+def _tts_config() -> types.GenerateContentConfig:
+    return types.GenerateContentConfig(
+        response_modalities=["AUDIO"],
+        speech_config=types.SpeechConfig(
+            voice_config=types.VoiceConfig(
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=config.VOICE)
+            )
+        ),
+    )
 
 
 def _to_pcm16(data: bytes, mime: str) -> bytes:
@@ -38,7 +52,16 @@ def _to_pcm16(data: bytes, mime: str) -> bytes:
             if w.getframerate() != OUT_RATE:
                 trace.log("tts_warning", note=f"sample rate {w.getframerate()} Hz, expected {OUT_RATE}")
             return w.readframes(w.getnframes())
-    return data  # raw PCM16 (the page plays it at 24 kHz)
+    return data
+
+
+def _store_cache(key: str, pcm: bytes) -> None:
+    if not pcm:
+        return
+    _cache[key] = pcm
+    _cache.move_to_end(key)
+    while len(_cache) > CACHE_SIZE:
+        _cache.popitem(last=False)
 
 
 async def _synthesize(text: str) -> bytes:
@@ -47,7 +70,7 @@ async def _synthesize(text: str) -> bytes:
         _slots = asyncio.Semaphore(config.MAX_PARALLEL_CALLS)
     async with _slots:
         if config.TTS_PROVIDER == "fal":
-            return await fal.tts(text)   # already raw PCM16 24 kHz
+            return await fal.tts(text)
         response = await _call(text)
     blob = response.candidates[0].content.parts[0].inline_data
     return _to_pcm16(blob.data, blob.mime_type or "")
@@ -57,12 +80,7 @@ async def _call(text: str):
     return await _get_client().aio.models.generate_content(
         model=config.TTS_MODEL,
         contents=text,
-        config=types.GenerateContentConfig(
-            response_modalities=["AUDIO"],
-            speech_config=types.SpeechConfig(
-                voice_config=types.VoiceConfig(prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=config.VOICE))
-            ),
-        ),
+        config=_tts_config(),
     )
 
 
@@ -78,17 +96,73 @@ async def synthesize(text: str) -> bytes:
     _inflight[key] = fut
     try:
         pcm = await _synthesize(text)
-        _cache[key] = pcm
-        while len(_cache) > CACHE_SIZE:
-            _cache.popitem(last=False)
+        _store_cache(key, pcm)
         fut.set_result(pcm)
         return pcm
     except Exception as exc:
         fut.set_exception(exc)
-        fut.exception()  # mark retrieved so asyncio does not warn when nobody else was waiting
+        fut.exception()
         raise
     finally:
         _inflight.pop(key, None)
+
+
+async def stream_tts(text: str) -> AsyncIterator[bytes]:
+    """Stream 24 kHz mono PCM16 chunks for `text` with ~465 ms time-to-first-audio."""
+    cleaned = text.strip()
+    if not cleaned:
+        return
+    key = cleaned.lower()
+    if key in _cache:
+        _cache.move_to_end(key)
+        cached_pcm = _cache[key]
+        for i in range(0, len(cached_pcm), 9600):
+            yield cached_pcm[i:i + 9600]
+        return
+
+    if config.TTS_PROVIDER == "fal":
+        pcm = await synthesize(cleaned)
+        for i in range(0, len(pcm), 9600):
+            yield pcm[i:i + 9600]
+        return
+
+    global _slots
+    if _slots is None:
+        _slots = asyncio.Semaphore(config.MAX_PARALLEL_CALLS)
+
+    collected = bytearray()
+    carry = b""
+    first = True
+    async with _slots:
+        stream = await _get_client().aio.models.generate_content_stream(
+            model=config.TTS_MODEL,
+            contents=cleaned,
+            config=_tts_config(),
+        )
+        async for chunk in stream:
+            for cand in chunk.candidates or []:
+                if not cand.content:
+                    continue
+                for part in cand.content.parts or []:
+                    inline = getattr(part, "inline_data", None)
+                    data = inline.data if inline else None
+                    if not data:
+                        continue
+                    if first:
+                        first = False
+                        if data[:4] == b"RIFF" and len(data) > 44:
+                            data = data[44:]
+                    buf = carry + data
+                    if len(buf) % 2 == 1:
+                        carry = buf[-1:]
+                        buf = buf[:-1]
+                    else:
+                        carry = b""
+                    if buf:
+                        collected.extend(buf)
+                        yield buf
+    if collected:
+        _store_cache(key, bytes(collected))
 
 
 def is_cached(text: str) -> bool:
@@ -99,7 +173,7 @@ _warmed = False
 
 
 async def warm_common() -> None:
-    """Make the voice of every common alert phrase ahead of time, once per server run, in the background."""
+    """Pre-synthesize common alert phrases once per server run in the background."""
     global _warmed
     if _warmed:
         return

@@ -15,7 +15,7 @@ Rules:
 - Never say a road or crossing is safe. You support a cane or guide dog, you do not replace them.
 - You have tools: remember_place, recall_places, call_contact. Use call_contact only if the user asks to call someone. If a tool result says simulated, say it is a demo call.
 - If there is nothing useful to say, reply with exactly SILENT.
-- Match the user's language (Greek or English)."""
+- STRICT LANGUAGE RULE: Speak ONLY in English or Greek (Ελληνικά). Never use any other language."""
 
 MAX_HISTORY = 6
 FRAME_MAX_AGE_S = 5.0

@@ -1,13 +1,12 @@
-"""Parallel safety watcher loop, post-trigger similarity latch, and urgent alert delivery."""
+"""Parallel safety watcher loop, post-trigger similarity latch, and urgent alert + explain/resume delivery."""
 import asyncio
 import time
 
-from google.genai import types
-
-from . import config, debug_report, phrases, speak, trace, watch
+from . import config, debug_report, info_pipeline, phrases, speak, trace, watch
 from .state import State
 
 _watch_slots: asyncio.Semaphore | None = None
+_BREATH_PAUSE_PCM = b"\x00" * 7200  # 150 ms of 24 kHz mono PCM16 silence after alert before explanation
 
 
 def spawn(coro) -> asyncio.Task:
@@ -36,12 +35,32 @@ async def _warm_voice(text: str) -> None:
         pass
 
 
-async def fire_alert(state: State, d: watch.WatchDecision, source: str = "watch") -> None:
-    """Cancel any active assistant speech immediately and deliver the safety alert."""
+async def fire_alert(
+    state: State,
+    d: watch.WatchDecision,
+    source: str = "watch",
+    frame_jpeg: bytes | None = None,
+    trajectory_frames: list[tuple[float, bytes]] | None = None,
+    sensors_desc: str = "",
+) -> None:
+    """Cut active speech at once, play urgent alert, then explain why (+ resume interrupted speech)."""
     now = time.time()
     state.policy.record(d, now)
     state.recent_alerts.append((now, d.hazard_key, d.message))
-    was_speaking = state.model_speaking
+
+    # 1. Immediately cancel active LLM + TTS stream, reset partial mic turn, and lock re-triggers
+    #    before the first await so no parallel watcher tick can fire while explaining why to stop.
+    was_speaking, interrupted = info_pipeline.cancel_for_danger(state, now)
+    state.reset_mic_turn()
+
+    is_steer = d.action_code in phrases.GUIDANCE_CODES or d.steer in ("left", "right")
+    should_explain = state.assistant_enabled and (
+        interrupted is not None
+        or (not is_steer and (d.danger_level >= 3 or d.urgency == "high"))
+    )
+    state.explaining_alert = should_explain
+    state.explain_lock_until = max(state.explain_lock_until, now + 0.85 + config.EXPLAIN_POST_WINDOW_S)
+
     cached = speak.is_cached(d.message)
     client_voice = state.client_tts and d.urgency == "high" and not cached
 
@@ -49,10 +68,15 @@ async def fire_alert(state: State, d: watch.WatchDecision, source: str = "watch"
         "alert",
         urgency=d.urgency,
         danger_level=d.danger_level,
+        code=d.action_code or None,
+        next_code=d.next_code or None,
+        steer=d.steer or None,
+        move=d.user_direction or None,
         key=d.hazard_key,
         text=d.message,
         confidence=d.confidence,
         cut_speech=was_speaking,
+        resuming=interrupted is not None,
         voice_cached=cached,
         client_voice=client_voice,
         source=source,
@@ -60,7 +84,7 @@ async def fire_alert(state: State, d: watch.WatchDecision, source: str = "watch"
 
     synth = asyncio.create_task(speak.synthesize(d.message))
 
-    # 1. Immediately command browser to cancel speech playback, play level-matched cue, and vibrate.
+    # 2. Command browser to stop playback immediately, play level-matched cue, and vibrate.
     await state.send({
         "type": "alert",
         "urgency": d.urgency,
@@ -71,41 +95,54 @@ async def fire_alert(state: State, d: watch.WatchDecision, source: str = "watch"
         "source": source,
     })
 
-    # 2. Hard barge-in on Gemini Live if the conversational model was speaking.
-    if state.session is not None:
-        if was_speaking and not state.turn.active:
-            state.drop_audio_since = now
-            state.expect_interrupt = True
-            state.turn.hold_for_alert()
-            await state.session.send_realtime_input(activity_start=types.ActivityStart())
-        if state.assistant_enabled:
-            await state.session.send_client_content(
-                turns=types.Content(
-                    role="user",
-                    parts=[types.Part(text=(
-                        f'(Note: your safety watcher just told the user: "{d.message}". '
-                        "Do not repeat it and do not respond to this note.)"
-                    ))],
-                ),
-                turn_complete=False,
+    # 3. Start streaming the laconic "why + where to head" cue (+ continuation if interrupted)
+    #    IN PARALLEL while the alert phrase plays, gated so its audio follows right behind the alert.
+    alert_audio_done = asyncio.Event()
+    if should_explain:
+        ref_jpeg = frame_jpeg or state.danger_frame_jpeg or (state.frames[-1][1] if state.frames else None)
+        traj = trajectory_frames or watch.select_frames(state.frames, state.attention.spacing, now, n=3)
+        if not sensors_desc and state.imu and now - state.imu_at <= config.SENSOR_MAX_AGE_S:
+            sensors_desc = watch.sensors_text(state.imu)
+        state.info_task = spawn(
+            info_pipeline.explain_after_alert(
+                state,
+                d,
+                ref_jpeg,
+                interrupted,
+                alert_audio_done,
+                trajectory_frames=traj,
+                sensors_desc=sensors_desc,
             )
+        )
 
-    # 3. Stream pre-cached / synthesized voice unless the phone already spoke it locally.
-    if client_voice:
-        trace.log("alert_spoken", ms=round((time.time() - now) * 1000), by="phone")
-        return
+    # 4. Deliver the short alert audio ("Stop!", etc.), then open the gate for the explanation stream.
     try:
-        pcm = await asyncio.wait_for(synth, 6)
-    except Exception as exc:
-        trace.log("alert_voice_failed", error=f"{type(exc).__name__}: {exc}"[:150])
-        await state.send({"type": "speak_text", "text": d.message, "danger_level": d.danger_level})
-        return
+        if client_voice:
+            trace.log("alert_spoken", ms=round((time.time() - now) * 1000), by="phone")
+            await asyncio.sleep(0.85)  # let local phone utterance finish before streaming explanation PCM
+            state.explain_lock_until = max(state.explain_lock_until, time.time() + config.EXPLAIN_POST_WINDOW_S)
+            return
+        try:
+            pcm = await asyncio.wait_for(synth, 6)
+        except Exception as exc:
+            trace.log("alert_voice_failed", error=f"{type(exc).__name__}: {exc}"[:150])
+            await state.send({"type": "speak_text", "text": d.message, "danger_level": d.danger_level})
+            await asyncio.sleep(0.85)
+            state.explain_lock_until = max(state.explain_lock_until, time.time() + config.EXPLAIN_POST_WINDOW_S)
+            return
 
-    state.audible_until = 0.0
-    state.sent_audio(len(pcm), time.time())
-    for i in range(0, len(pcm), 9600):
-        await state.socket.send_bytes(pcm[i:i + 9600])
-    trace.log("alert_spoken", ms=round((time.time() - now) * 1000), audio_s=round(len(pcm) / 48000, 1), by="server")
+        payload = pcm + (_BREATH_PAUSE_PCM if should_explain else b"")
+        now_pcm = time.time()
+        state.audible_until = 0.0
+        state.sent_audio(len(payload), now_pcm)
+        state.explain_lock_until = max(
+            state.explain_lock_until, state.audible_until + config.EXPLAIN_POST_WINDOW_S
+        )
+        for i in range(0, len(payload), 9600):
+            await state.socket.send_bytes(payload[i:i + 9600])
+        trace.log("alert_spoken", ms=round((time.time() - now) * 1000), audio_s=round(len(pcm) / 48000, 1), by="server")
+    finally:
+        alert_audio_done.set()
 
 
 async def local_alert(state: State, msg: dict) -> None:
@@ -113,6 +150,9 @@ async def local_alert(state: State, msg: dict) -> None:
     label = str(msg.get("label", "object"))[:30]
     key, text = phrases.local_alert(label, state.lang)
     now = time.time()
+    if state.alert_locked(now):
+        trace.log("local_alert", label=label, outcome="held: explain_lock_active", key=key)
+        return
     try:
         confidence = max(0.0, min(1.0, float(msg.get("confidence", 0.92))))
     except (TypeError, ValueError):
@@ -124,12 +164,12 @@ async def local_alert(state: State, msg: dict) -> None:
         confidence=confidence,
         hazard_key=key,
         message=text,
-        reason="on-device looming",
+        reason=f"approaching {label} detected on-device",
         attention="high",
         hazard_type="moving",
     )
     imu = state.imu if state.imu and now - state.imu_at <= config.SENSOR_MAX_AGE_S else None
-    if imu and imu.get("panning"):
+    if _is_panning(imu):
         trace.log("local_alert", label=label, outcome="held: camera panning", key=key)
         return
     fire, why = state.policy.decide(
@@ -147,7 +187,8 @@ async def local_alert(state: State, msg: dict) -> None:
     if fire:
         if state.attention.update("high", now, alerted=True):
             await announce_rate(state, "on-device alert")
-        await fire_alert(state, d, source="local")
+        latest_jpeg = state.frames[-1][1] if state.frames else None
+        await fire_alert(state, d, source="local", frame_jpeg=latest_jpeg)
 
 
 async def watch_loop(state: State) -> None:
@@ -182,6 +223,10 @@ async def watch_once(state: State, look_started_at: float) -> bool:
         if state.attention.level != "normal":
             state.attention = watch.Attention()
             await announce_rate(state, "alerts off")
+        return False
+
+    # Do not trigger stopping again while explaining why to stop (+ 0.5 s post-explanation window).
+    if state.alert_locked(look_started_at):
         return False
 
     n_frames = min(3, config.COMPOSE_FRAMES if config.WATCH_COMPOSE else config.WATCH_FRAMES)
@@ -228,6 +273,9 @@ async def watch_once(state: State, look_started_at: float) -> bool:
     model_ms = round((time.time() - t0) * 1000, 1)
 
     now_after = time.time()
+    if state.alert_locked(now_after):
+        trace.log("watch_skipped", reason="explain_lock_active")
+        return True
     state.last_look_silent = not d.notify
     if not d.notify and state.danger_frame_jpeg is None:
         state.policy.clear_resolved()
@@ -245,6 +293,10 @@ async def watch_once(state: State, look_started_at: float) -> bool:
         outcome=outcome,
         notify=d.notify,
         danger_level=d.danger_level,
+        code=d.action_code or None,
+        next_code=d.next_code or None,
+        steer=d.steer or None,
+        move=d.user_direction or None,
         urgency=d.urgency,
         confidence=d.confidence,
         key=d.hazard_key,
@@ -262,6 +314,10 @@ async def watch_once(state: State, look_started_at: float) -> bool:
         "type": "watch",
         "outcome": outcome,
         "danger_level": d.danger_level,
+        "code": d.action_code,
+        "next_code": d.next_code,
+        "steer": d.steer,
+        "move": d.user_direction,
         "urgency": d.urgency,
         "confidence": d.confidence,
         "key": d.hazard_key,
@@ -293,7 +349,9 @@ async def watch_once(state: State, look_started_at: float) -> bool:
             token_info=dict(info),
             conn_id=state.conn_id,
         ))
-        await fire_alert(state, d)
+        await fire_alert(
+            state, d, frame_jpeg=danger_jpeg, trajectory_frames=list(frames), sensors_desc=sensors_desc
+        )
     elif d.notify:
         await state.send({"type": "suppressed", "reason": why, "key": d.hazard_key})
         if why == "needs_confirmation" and d.message:

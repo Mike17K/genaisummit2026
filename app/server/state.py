@@ -1,4 +1,5 @@
-"""Per-connection runtime state shared between the Live voice bridge and safety watcher."""
+"""Per-connection runtime state shared between the streaming information pipeline and safety watcher."""
+import asyncio
 from collections import deque
 from dataclasses import dataclass, field
 import time
@@ -8,6 +9,27 @@ from fastapi import WebSocket
 from . import turns
 from .attention import Attention
 from .policy import AlertPolicy
+
+
+@dataclass
+class ActiveSpeech:
+    """Tracks clause-by-clause playback timing while the assistant is speaking."""
+
+    kind: str  # "answer" | "explain_resume"
+    user_question: str = ""
+    generated_text: str = ""
+    # List of [play_start_epoch, play_end_epoch, clause_text]
+    clause_timeline: list[list] = field(default_factory=list)
+
+
+@dataclass
+class InterruptedSpeech:
+    """Preserves what the assistant was answering when cut off by a danger alert."""
+
+    user_question: str
+    spoken_so_far: str
+    draft_reply: str
+    created_at: float = field(default_factory=time.time)
 
 
 @dataclass
@@ -34,11 +56,20 @@ class State:
     imu_at: float = 0.0
     danger_frame_jpeg: bytes | None = None
 
-    # Voice turn & playback tracking
+    # Streaming information pipeline & turn state
     turn: turns.TurnTracker = field(default_factory=turns.TurnTracker)
+    mic_turn_pcm: bytearray = field(default_factory=bytearray)
+    turn_frame_jpeg: bytes | None = None
+    chat_history: deque = field(default_factory=lambda: deque(maxlen=8))
+    info_task: asyncio.Task | None = None
+    active_speech: ActiveSpeech | None = None
+    interrupted_speech: InterruptedSpeech | None = None
+
     expect_interrupt: bool = False
     model_speaking: bool = False
     audible_until: float = 0.0
+    explaining_alert: bool = False
+    explain_lock_until: float = 0.0
     drop_audio_since: float = 0.0
     lang: str = "English"
     extra_funcs: dict = field(default_factory=dict)
@@ -50,6 +81,17 @@ class State:
     def audible(self, now: float) -> bool:
         """True while previously streamed 24 kHz PCM16 speech is still playing on the client."""
         return now < self.audible_until
+
+    def alert_locked(self, now: float) -> bool:
+        """True while an alert + its 'why' explanation are generating/playing, plus 0.5 s after."""
+        return self.explaining_alert or now < self.explain_lock_until
+
+    def reset_mic_turn(self) -> None:
+        """Clear any partial user voice turn so pre-alert speech or speaker echo cannot cut explanations."""
+        self.turn.active = False
+        self.turn.hold_open = False
+        self.mic_turn_pcm.clear()
+        self.turn_frame_jpeg = None
 
     def sent_audio(self, nbytes: int, now: float) -> None:
         """Account for PCM16 24 kHz mono sent to the browser (48,000 bytes/s)."""

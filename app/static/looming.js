@@ -64,14 +64,21 @@
   class ImuState {
     constructor({ panDegS = 65, stableDegS = 50, walkVariance = 0.3, stillVariance = 0.06, windowMs = 800 } = {}) {
       Object.assign(this, { panDegS, stableDegS, walkVariance, stillVariance, windowMs });
-      this.angularSpeed = 0; this.panning = false; this.stable = true; this.pitchDeg = null; this.walking = null;
-      this._acc = [];
+      this.angularSpeed = 0; this.panning = false; this.stable = true; this.pitchDeg = null; this.walking = null; this.turnDir = null;
+      this._acc = []; this._yaw = [];
     }
     handleMotion(e, now) {
       const r = e && e.rotationRate;
       if (r) {
         const speed = Math.hypot(r.alpha || 0, r.beta || 0, r.gamma || 0);
         this.angularSpeed = Math.round(speed); this.stable = speed < this.stableDegS; this.panning = speed > this.panDegS;
+        const yawRate = r.alpha || 0;
+        this._yaw.push({ v: yawRate, ts: now });
+        while (this._yaw.length && this._yaw[0].ts < now - 600) this._yaw.shift();
+        if (this._yaw.length >= 3) {
+          const avgYaw = this._yaw.reduce((s, x) => s + x.v, 0) / this._yaw.length;
+          this.turnDir = avgYaw > 14 ? "turning left" : avgYaw < -14 ? "turning right" : "heading straight";
+        }
       }
       const a = e && (e.acceleration && e.acceleration.x != null ? e.acceleration : e.accelerationIncludingGravity);
       if (a && a.x != null) {
@@ -88,7 +95,9 @@
     }
     handleOrientation(e) { if (e && e.beta != null) this.pitchDeg = Math.round(e.beta); }
     snapshot() {
-      return { angularSpeed: this.angularSpeed, panning: this.panning, walking: this.walking, pitchDeg: this.pitchDeg };
+      const snap = { angularSpeed: this.angularSpeed, panning: this.panning, walking: this.walking, pitchDeg: this.pitchDeg };
+      if (this.turnDir) snap.turnDir = this.turnDir;
+      return snap;
     }
   }
 
