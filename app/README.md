@@ -10,10 +10,10 @@ Real-time camera, voice, and spatial safety assistant for blind and low-vision u
 
 ```mermaid
 flowchart LR
-    subgraph Client["Mobile Browser (app/static/)"]
-        UI["index.html + app.js"]
+    subgraph Client["Mobile Client (app/static/ + android/)"]
+        UI["index.html + app.js · landing.html"]
         MG["app.js push-to-talk (mic closed unless the button is held)"]
-        DW["depth_engine.js (phone model) / laptop ONNX -> spatial_sonar.js"]
+        DW["native_depth.js (ARCore) / xr_depth.js / depth_engine.js (WebGPU) / laptop ONNX -> spatial_sonar.js"]
         LM["looming.js (IMU, Compass, Depth Calibration & Sonar)"]
     end
 
@@ -75,7 +75,7 @@ flowchart LR
 | `server/depth/` | **Server depth inference**: `local_depth.py` (Depth-Anything-V2-Small via ONNX Runtime for phones without fast WebGPU), `center_probe.py` (Gemini center-crop metric anchor for calibration). |
 | `server/audio/` | **Speech synthesis & standard vocabulary**: `speak.py` & `fal.py` (24 kHz PCM TTS streaming + pre-warmed phrase cache), `phrases.py` (English/Greek compass cues + lookup filler). |
 | `server/utils/` | **Shared utilities**: `config.py` (env thresholds), `trace.py` (`/panel` telemetry). |
-| `static/` | **Browser client**: `app.js` (WS auto-reconnect, camera, audio player, GPS, push-to-talk, always-on sonar), `spatial_sonar.js` (3-sector stereo earphone sonar), `depth_engine.js` + `depth_worker.js` (WebGPU depth model fallback), `looming.js` (IMU, compass, depth calibration, sonar pulses). |
+| `static/` | **Browser & Android client**: `landing.html` (`/` landing page & playground), `index.html` + `app.js` (`/app` live assistant: WS auto-reconnect, camera, audio player, GPS, push-to-talk, always-on sonar), `spatial_sonar.js` + `depth_view.js` (3-sector stereo earphone sonar & HUD), `native_depth.js` (Android ARCore Depth API bridge), `xr_depth.js` (WebXR depth), `depth_engine.js` + `depth_worker.js` (WebGPU depth model fallback), `looming.js` (IMU, compass, depth calibration). |
 
 ---
 
@@ -124,11 +124,19 @@ flowchart TD
 ## Quickstart
 
 ```bash
+# Configure environment
+cp app/.env.example app/.env
+
 # Run server (from repo root or app/)
 ./restart_server.sh
 # Or directly:
 cd app && uv run uvicorn server.main:app --host 0.0.0.0 --port 8000
+
+# Or via Docker:
+cd app && docker build -t voxeye . && docker run --rm -p 8000:8000 --env-file .env voxeye
 ```
 
-- **Phone UI**: `http://localhost:8000` (use HTTPS tunnel for mobile mic/camera)
+- **Landing Page & Sonar Playground**: `http://localhost:8000/`
+- **Live Phone WebApp**: `http://localhost:8000/app` (use `adb reverse tcp:8000 tcp:8000` over USB or an HTTPS tunnel for mobile mic/camera/GPS)
+- **Signed Android APK**: `http://localhost:8000/voxeye.apk` (native ARCore depth source live in `../android/`)
 - **Live Judges' Trace Panel**: `http://localhost:8000/panel`
