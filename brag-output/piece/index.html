@@ -1283,17 +1283,16 @@ function scenePerson() {
     doodleStar(x, y, 20 + 5 * ((B + i) % 3 === 0), 'p1_st' + i, { w: 2.8 })
   );
 
-  // Taped Notebook Stat Card in Top-Left: How many people have this problem & what problem we solve!
+  // Taped Notebook Card in Top-Left: Simple 2-4 word labels!
   const pStat = ev(0.25, 0.45);
   if (pStat > 0) {
-    const stBox = sketchBox(190, 212, 460, 124, 12);
+    const stBox = sketchBox(190, 215, 360, 108, 12);
     gfill(stBox, SK.sheet, { off: [4, 4], key: 'p1_stf', a: pStat });
     gline(stBox, { closed: true, w: 4.5, key: 'p1_sto', part: pStat });
-    tapeStrip(420, 210, 130, -0.03, 'p1_stt', 32);
+    tapeStrip(370, 212, 120, -0.03, 'p1_stt', 32);
     if (pStat > 0.3) {
-      handLetter('285M+ PEOPLE (43M BLIND)', 420, 258, 28, { face: 'marker', col: SK.red, key: 'p1_stl1' });
-      handLetter('Canes only sweep the ground', 420, 294, 24, { face: 'hand', col: SK.ink, key: 'p1_stl2' });
-      handLetter('missing head-height overhangs!', 420, 322, 23, { face: 'hand', col: SK.graph, key: 'p1_stl3' });
+      handLetter('285M People', 370, 265, 36, { face: 'marker', col: SK.red, key: 'p1_stl1' });
+      handLetter('43M Blind Worldwide', 370, 304, 24, { face: 'hand', col: SK.ink, key: 'p1_stl2' });
     }
   }
 
@@ -1374,25 +1373,25 @@ function scenePerson() {
       : writeEnd(closeP(signBox), pSign);
     pencilTool(tip[0], tip[1], -0.7 + 0.06 * Math.sin(B * 1.5), 0.9);
   }
-  // Competing solutions & costs card + rubber stamp
+  // Competing solutions & costs card + rubber stamp (short 2-3 word labels!)
   if (TT >= cu.p1_stamp - 0.35) {
     const pAlt = ev(cu.p1_stamp - 0.35, 0.35);
-    const altBox = sketchBox(1055, 472, 295, 92, 10);
+    const altBox = sketchBox(1065, 472, 275, 90, 10);
     gfill(altBox, SK.sheet, { off: [3, 3], key: 'p1_altf', a: pAlt });
     gline(altBox, { closed: true, w: 4, key: 'p1_alto', part: pAlt });
     if (pAlt > 0.3) {
-      handLetter('SMART GLASSES', 1202, 510, 25, { face: 'marker', col: SK.ink, key: 'p1_alt1' });
-      handLetter('€3,500 – €5,000', 1202, 546, 28, { face: 'marker', col: SK.red, key: 'p1_alt2' });
+      handLetter('Smart Glasses', 1202, 510, 27, { face: 'hand', col: SK.ink, key: 'p1_alt1' });
+      handLetter('€4,000+', 1202, 548, 34, { face: 'marker', col: SK.red, key: 'p1_alt2' });
     }
   }
   if (TT >= cu.p1_stamp) {
-    inkStamp('CLOUD AI: 3s LAG', 1205, 635, 0.48, -0.08, ev(cu.p1_stamp, 0.2), 'p1_stmp');
+    inkStamp('3s AI LAG', 1205, 635, 0.50, -0.08, ev(cu.p1_stamp, 0.2), 'p1_stmp');
   }
 
-  skTag('the problem in numbers');
+  skTag('the problem');
   skCaption(
-    ['285M visually impaired · canes miss overhangs', 'smart glasses cost €4,000+ · cloud AI lags 3s'],
-    [[1, '€4,000+']]
+    ['285M people · canes miss what hangs above', 'smart glasses cost €4,000 · AI apps lag 3s'],
+    [[1, '€4,000']]
   );
 }
 
@@ -1456,24 +1455,22 @@ function sceneReveal() {
     handLetter('!', hx + 135, hy - 110 - 20 * hop, 96, { face: 'marker', col: SK.red, key: 'p2_bang', reveal: ev(7.35, 0.12) });
   }
 
-  // Hand-drawn callout label for the embodied smartphone + Push-to-Talk Bluetooth Stereo Fix!
+  // Hand-drawn callout label for the embodied smartphone + stereo earphones (simple human words!)
   if (phPart > 0.3) {
     arrowPencil([[1110, 615], [880, 675], [hx + 45, hy + 88]], phPart, { key: 'p2_pharw', w: 3.5 });
-    handLetter('Hold-to-Talk -> Phone Mic', 1320, 588, 34, { face: 'marker', col: SK.ink, key: 'p2_phl1', reveal: ev(cu.p2_phone + 0.15, 0.35) });
-    handLetter('Bluetooth Stereo Fix (No Mono Drop)', 1320, 636, 29, { face: 'hand', col: SK.green, key: 'p2_phl2', reveal: ev(cu.p2_phone + 0.4, 0.35) });
-    checkMark(1605, 600, 0.76, ev(cu.p2_chk, 0.28), SK.green, 'p2_chk');
+    handLetter('Phone + Earphones', 1320, 588, 36, { face: 'marker', col: SK.ink, key: 'p2_phl1', reveal: ev(cu.p2_phone + 0.15, 0.35) });
+    handLetter('True Stereo Sound', 1320, 636, 32, { face: 'hand', col: SK.green, key: 'p2_phl2', reveal: ev(cu.p2_phone + 0.4, 0.35) });
+    checkMark(1560, 600, 0.76, ev(cu.p2_chk, 0.28), SK.green, 'p2_chk');
 
-    // Left-side Personal Agent cards: Replaces Native Android Assistant + Memory & Behavioral UX
-    const b1 = sketchBox(95, 535, 330, 64, 10);
-    const b2 = sketchBox(95, 612, 330, 64, 10);
+    // Left-side simple 2-3 word cards: New Phone Assistant + Built for the Blind
+    const b1 = sketchBox(110, 545, 305, 56, 10);
+    const b2 = sketchBox(110, 616, 305, 56, 10);
     gfill(b1, SK.sheet, { off: [3, 3], key: 'p2_b1f', a: phPart });
     gline(b1, { closed: true, w: 3.8, key: 'p2_b1o', part: phPart });
-    handLetter('REPLACES ANDROID ASSIST', 260, 565, 22, { face: 'marker', col: SK.ink, key: 'p2_b1t' });
-    handLetter('Native Kotlin Personal Agent', 260, 590, 20, { face: 'hand', col: SK.graph, key: 'p2_b1s' });
+    handLetter('New Phone Assistant', 262, 582, 26, { face: 'marker', col: SK.ink, key: 'p2_b1t' });
     gfill(b2, SK.sheet, { off: [3, 3], key: 'p2_b2f', a: phPart });
     gline(b2, { closed: true, w: 3.8, key: 'p2_b2o', part: phPart });
-    handLetter('MEMORY + BEHAVIORAL UX', 260, 642, 22, { face: 'marker', col: SK.green, key: 'p2_b2t' });
-    handLetter('Tailored for Blind Walkers', 260, 667, 20, { face: 'hand', col: SK.graph, key: 'p2_b2s' });
+    handLetter('Built for the Blind', 262, 653, 26, { face: 'marker', col: SK.green, key: 'p2_b2t' });
   }
 
   // Pencil tool: first draws the bulb (6.9-7.8s), then sketches the chest phone (7.8-8.7s)
@@ -1491,15 +1488,15 @@ function sceneReveal() {
     gline(arcPts(hx, hy, r, -Math.PI * 0.16, Math.PI * 0.16, 12), { w: 4, col: SK.ink, key: 'p2_wr' + k, second: false, part: ev(7.6 + k * 0.1, 0.25) });
   }
 
-  skTag('personal android agent');
+  skTag('meet VoxEye');
   skCaption(
-    ['replaces the native Android assistant', 'with memory & behavioral UX for the blind'],
-    [[0, 'Android']]
+    ['replaces your phone\'s default assistant', 'using just your camera and stereo earphones'],
+    [[0, 'assistant']]
   );
 }
 
 // =====================================================================
-//  ERA 2 (13.6 - 21.8s): WHY STEREO SONAR WORKS (<50ms vs 3s Speech)
+//  ERA 2 (13.6 - 21.8s): SONAR VISION (Like a Parking Sensor in Your Ears)
 // =====================================================================
 function sceneSonar() {
   const cu = TIMELINE.cues;
@@ -1508,14 +1505,13 @@ function sceneSonar() {
   // Ground line
   gpencil([[180, 745], [700, 750], [1250, 742], [1740, 748]], { key: 'p3_gnd', w: 3, a: 0.75 });
 
-  // Hand-drawn "WHY SONAR WORKS" Card at top-right of sonar
+  // Simple metaphor badge at top-right: "Like a Car Parking Sensor · 10x Faster Than Speech"
   const pTech = ev(13.85, 0.4);
   if (pTech > 0) {
-    const tb = sketchBox(720, 104, 760, 80, 12);
+    const tb = sketchBox(680, 112, 660, 62, 12);
     gfill(tb, SK.sheet, { off: [3, 3], key: 'p3_tbf', a: pTech });
     gline(tb, { closed: true, w: 4, key: 'p3_tbo', part: pTech });
-    handLetter('WHY SONAR WORKS: Ears Locate Sound in <50ms (vs 3s Speech)', 1100, 138, 23, { face: 'marker', col: SK.green, key: 'p3_tbt1' });
-    handLetter('Depth-Anything-V2 (WebGPU / ONNX 5Hz) -> Per-Ear Stereo Beeps', 1100, 168, 22, { face: 'hand', col: SK.ink, key: 'p3_tbt2' });
+    handLetter('Like a Car Parking Sensor · 10x Faster Than Speech', 1010, 152, 26, { face: 'marker', col: SK.ink, key: 'p3_tbt1' });
   }
 
   // Blindfolded hero advances from x=350 to x=440 as distance ticks down 1.8m -> 1.2m -> 0.8m!
@@ -1586,15 +1582,15 @@ function sceneSonar() {
   handLetter(distStr, ox + 92, oy + 185, 52, { face: 'marker', col: SK.red, key: 'p3_obm_' + distStr });
   handLetter('HAZARD', ox + 92, oy + 235, 28, { face: 'marker', col: SK.ink, key: 'p3_obhl' });
 
-  skTag('why sonar works');
+  skTag('sonar vision');
   skCaption(
-    ['ears locate sound in 50ms — 10x faster than speech', 'Depth-Anything-V2 drives left · center · right beeps'],
-    [[0, '50ms']]
+    ['sonar vision — like a parking sensor in your ears', 'closer obstacles beep faster in left or right ear'],
+    [[0, 'parking']]
   );
 }
 
 // =====================================================================
-//  ERA 3 (21.8 - 30.5s): BEHAVIORAL ENGINEERING & PERSISTENT MEMORY
+//  ERA 3 (21.8 - 30.5s): REMEMBERS YOUR GOAL & SPEAKS IN STEPS
 // =====================================================================
 function sceneVoice() {
   const cu = TIMELINE.cues;
@@ -1619,8 +1615,8 @@ function sceneVoice() {
   if (pAsk > 0.6) {
     gline([[450, 380], [435, 438], [495, 380]], { w: 4.5, key: 'p4_sbto', second: false });
   }
-  handLetter('"Πού είναι το φαρμακείο;"', 515, 290, 36, { face: 'marker', col: SK.ink, key: 'p4_q1', reveal: ev(cu.p4_ask + 0.1, 0.35) });
-  handLetter('0.4s PTT pad · Gemini 2.5 Flash', 515, 346, 28, { face: 'hand', col: SK.graph, key: 'p4_q2', reveal: ev(cu.p4_ask + 0.3, 0.35) });
+  handLetter('"Πού είναι το φαρμακείο;"', 515, 292, 36, { face: 'marker', col: SK.ink, key: 'p4_q1', reveal: ev(cu.p4_ask + 0.1, 0.35) });
+  handLetter('"Where is the pharmacy?"', 515, 346, 30, { face: 'hand', col: SK.graph, key: 'p4_q2', reveal: ev(cu.p4_ask + 0.3, 0.35) });
 
   // Background street noise scribble (`graphiteScribble`) rubbed out by `eraserTool` at t=22.7..23.6s!
   if (TT >= 22.6 && TT < 23.8) {
@@ -1628,14 +1624,14 @@ function sceneVoice() {
     ctx.save();
     ctx.globalAlpha = 1 - eraseU;
     graphiteScribble(995, 315, 190, 65, 'p4_noise');
-    handLetter('room noise...', 995, 325, 26, { face: 'hand', col: SK.graph, key: 'p4_nlbl' });
+    handLetter('street noise...', 995, 325, 26, { face: 'hand', col: SK.graph, key: 'p4_nlbl' });
     ctx.restore();
     const ex = 995 + 55 * Math.sin(B * 2.2), ey = 315 + 15 * Math.cos(B * 2.2);
     eraserTool(ex, ey, -0.35 + 0.08 * Math.sin(B * 1.9), 0.72);
     scrap(ex - 65, ey + 45, 0.4, 0.55, 'p4_cr1');
   }
 
-  // Crisp Taped Behavioral Engineering + Persistent Memory Card in the center + green checkmark
+  // Crisp Taped Memory Card in the center (short 2-3 word lines!)
   const np = ev(cu.p4_router, 0.4);
   const mcBox = sketchBox(835, 398, 355, 192, 14);
   if (np > 0) {
@@ -1645,10 +1641,9 @@ function sceneVoice() {
     gline(mcBox, { closed: true, w: 5, key: 'p4_mco', part: np });
     tapeStrip(1012, 395, 130, -0.04, 'p4_mct', 34);
     if (np > 0.35) {
-      handLetter('BEHAVIORAL + MEMORY', 1012, 442, 23, { face: 'marker', col: SK.graph, key: 'p4_nct0' });
-      handLetter('Saved Goal: Pharmacy', 1012, 484, 31, { face: 'marker', col: SK.ink, key: 'p4_nct1' });
-      handLetter('12 o\'clock · 4 steps', 1012, 526, 28, { face: 'marker', col: SK.green, key: 'p4_nct2' });
-      handLetter('Never vague "over there"', 1012, 566, 22, { face: 'hand', col: SK.graph, key: 'p4_nct3' });
+      handLetter('REMEMBERS GOAL', 1012, 448, 25, { face: 'marker', col: SK.graph, key: 'p4_nct0' });
+      handLetter('Pharmacy', 1012, 498, 38, { face: 'marker', col: SK.ink, key: 'p4_nct1' });
+      handLetter('12 o\'clock · 4 steps', 1012, 548, 29, { face: 'hand', col: SK.green, key: 'p4_nct2' });
       checkMark(1215, 420, 0.78, ev(cu.p4_router + 0.3, 0.25), SK.green, 'p4_chk');
     }
   }
@@ -1675,10 +1670,10 @@ function sceneVoice() {
     arrowPencil([[1200, 505], [dx - 22, 535]], dp, { key: 'p4_arw2', w: 3.8 });
   }
 
-  skTag('behavioral engineering');
+  skTag('smart memory');
   skCaption(
-    ['remembers your goal across detours', 'speaks in clock-face & steps — never "over there"'],
-    [[0, 'goal'], [1, 'steps']]
+    ['remembers where you\'re going', 'guides you in clock directions and steps'],
+    [[0, 'going'], [1, 'steps']]
   );
 }
 
@@ -1718,7 +1713,7 @@ function scenePlaces() {
   handLetter('S', P5_COMP.x, P5_COMP.y + P5_COMP.r - 22, 34, { face: 'marker', col: SK.graph, key: 'p5_s' });
   handLetter('W', P5_COMP.x - P5_COMP.r + 36, P5_COMP.y + 12, 34, { face: 'marker', col: SK.graph, key: 'p5_w' });
   handLetter('E', P5_COMP.x + P5_COMP.r - 36, P5_COMP.y + 12, 34, { face: 'marker', col: SK.graph, key: 'p5_e' });
-  handLetter('IMU Compass · 203° SW', P5_COMP.x, P5_COMP.y + P5_COMP.r + 45, 28, { face: 'hand', col: SK.ink, key: 'p5_imu' });
+  handLetter('Phone Compass', P5_COMP.x, P5_COMP.y + P5_COMP.r + 45, 30, { face: 'hand', col: SK.ink, key: 'p5_imu' });
 
   // Rotating Compass Needle pointing toward the Pharmacy destination beacon
   const ang = -0.35 + 0.07 * Math.sin(TT * 3);
@@ -1749,37 +1744,37 @@ function scenePlaces() {
   handLetter('+', px, py + 22, 68, { face: 'marker', col: SK.green, key: 'p5_ppls' });
   handLetter('45 steps', px, py + 135, 30, { face: 'hand', col: SK.ink, key: 'p5_pstp' });
 
-  // 3 Crisp Hand-Drawn Notebook Tech & Sponsor Badges in top-right (cu.p5_stack)
+  // 3 Simple Human-Friendly Badges in top-right (cu.p5_stack)
   const spPart = ev(cu.p5_stack, 0.4);
   if (spPart > 0) {
     const badges = [
-      ['GEMINI 2.5 FLASH', 1320, 215],
-      ['FAL.AI 24kHz TTS', 1320, 288],
-      ['GOOGLE PLACES + OSM', 1320, 361]
+      ['3D Depth Camera', 1320, 215],
+      ['Natural Voice', 1320, 288],
+      ['Google Maps', 1320, 361]
     ];
     badges.forEach(([lbl, bx, by], i) => {
       const bp = ev(cu.p5_stack + i * 0.18, 0.3);
       if (bp > 0) {
-        const bpoly = sketchBox(bx, by, 305, 54, 12);
+        const bpoly = sketchBox(bx, by, 285, 54, 12);
         gfill(bpoly, SK.sheet, { off: [3, 3], key: 'p5_bf' + i, a: bp });
         gline(bpoly, { closed: true, w: 4, key: 'p5_bo' + i, part: bp });
-        handLetter(lbl, bx + 152, by + 37, 24, { face: 'marker', col: SK.ink, key: 'p5_bt' + i });
-        checkMark(bx + 330, by + 28, 0.50, ev(cu.p5_stack + 0.25 + i * 0.18, 0.2), SK.green, 'p5_bck' + i);
+        handLetter(lbl, bx + 142, by + 37, 26, { face: 'marker', col: SK.ink, key: 'p5_bt' + i });
+        checkMark(bx + 310, by + 28, 0.50, ev(cu.p5_stack + 0.25 + i * 0.18, 0.2), SK.green, 'p5_bck' + i);
       }
     });
   }
 
-  skTag('current tech stack');
+  skTag('compass & maps');
   skCaption(
-    ['Google Places, OSM fallback', '& phone compass guide every step'],
-    [[1, 'compass']]
+    ['phone compass and maps', 'turn every street into simple steps'],
+    [[0, 'maps']]
   );
 }
 
 // =====================================================================
-//  ERA 5 (38.2 - 53.5s): WORKING PROTOTYPE (Live Demo Window on the Page)
-//  Supports BOTH a drop-in real camera video (`window.DEMO_VIDEO` /
-//  `inject-live-demo.mjs`) AND a rich 3-Act Choreographed Prototype Walk!
+//  ERA 5 (38.2 - 53.5s): SPLIT-SCREEN PROTOTYPE VIEW
+//  Left: What the Camera Sees (3-Zone Depth Heatmap: LEFT | BOTH | RIGHT)
+//  Right: What the Person Hears (Left & Right Earphones + Voice Guidance)
 // =====================================================================
 const P6_WIN = { x: 340, y: 215, w: 1240, h: 610 };
 function sceneLiveDemo() {
@@ -1802,93 +1797,118 @@ function sceneLiveDemo() {
   gclip(WP);
 
   if (typeof window !== 'undefined' && window.DEMO_VIDEO && window.DEMO_VIDEO.readyState >= 2) {
-    // Mode A: Real camera footage composited directly inside the hand-drawn window!
     const vw = window.DEMO_VIDEO.videoWidth || 1920, vh = window.DEMO_VIDEO.videoHeight || 1080;
     const sc = Math.max(P6_WIN.w / vw, P6_WIN.h / vh);
     const dw = vw * sc, dh = vh * sc;
     ctx.drawImage(window.DEMO_VIDEO, P6_WIN.x + (P6_WIN.w - dw) / 2, P6_WIN.y + (P6_WIN.h - dh) / 2, dw, dh);
   } else {
-    // Mode B: 3-Act Choreographed Prototype Walk inside the window (38.2s -> 53.5s)
-    gpencil([[P6_WIN.x + 60, P6_WIN.y + 495], [P6_WIN.x + P6_WIN.w - 60, P6_WIN.y + 495]], { key: 'p6_flr', w: 3.2 });
-
-    // Top-right sketched current-build telemetry badges (cu.p6_trace = 40.2s)
-    const pTrace = ev(cu.p6_trace, 0.4);
-    if (pTrace > 0) {
-      const pills = ['[WebGPU/ONNX 5Hz]', '[PTT Stereo Fix]', '[0.5s WS Reconnect]'];
-      pills.forEach((pl, i) => {
-        const px = P6_WIN.x + 515 + i * 232, py = P6_WIN.y + 42;
-        const pb = sketchBox(px, py, 218, 42, 10);
-        gfill(pb, SK.paper, { off: [2, 2], key: 'p6_plf' + i, a: pTrace });
-        gline(pb, { closed: true, w: 3.2, key: 'p6_plo' + i, part: pTrace });
-        handLetter(pl, px + 109, py + 30, 20, { face: 'hand', col: SK.ink, key: 'p6_plt' + i });
-      });
-    }
-
-    // Street obstacle in center-left of window (x = P6_WIN.x + 390)
-    const ox = P6_WIN.x + 390, oy = P6_WIN.y + 340;
-    const obs = sketchBox(ox, oy, 115, 155, 12);
-    gfill(obs, SK.paper, { off: [3, 3], key: 'p6_obf' });
+    // -----------------------------------------------------------------
+    // SPLIT SCREEN INSIDE P6_WIN:
+    // LEFT HALF: Camera Depth Heatmap (from app/static/depth_view.js)
+    // RIGHT HALF: What the User Hears in Left & Right Ears
+    // -----------------------------------------------------------------
+    const midX = P6_WIN.x + 615;
     ctx.save();
-    gclip(obs);
-    ghatch(ox, oy, ox + 115, oy + 155, { ang: -0.65, gap: 9, col: SK.graph, w: 1.8, a: 0.45, key: 'p6_obh' });
+    ctx.setLineDash([12, 12]);
+    gpencil([[midX, P6_WIN.y + 25], [midX, P6_WIN.y + P6_WIN.h - 25]], { key: 'p6_div', w: 3.2, col: SK.graph });
     ctx.restore();
-    gline(obs, { closed: true, w: 4.5, key: 'p6_obo' });
-    handLetter('0.8m', ox + 57, oy + 72, 32, { face: 'marker', col: SK.red, key: 'p6_obd' });
-    handLetter('SIGN', ox + 57, oy + 112, 24, { face: 'marker', col: SK.ink, key: 'p6_obl' });
 
-    // Sketched Pharmacy Entrance on the right side of the window (x = P6_WIN.x + 935)
-    const dx = P6_WIN.x + 935, dy = P6_WIN.y + 225, dw = 190, dh = 270;
-    const door = sketchBox(dx, dy, dw, dh, 10);
-    gfill(door, SK.paper, { off: [4, 4], key: 'p6_drf' });
-    const crossBox = sketchBox(dx + 58, dy - 68, 74, 60, 8);
-    scribbleFill(crossBox, SK.hilite, { key: 'p6_crf', gap: 9, w: 3.8, a: 0.9, base: 0.3 });
-    gline(crossBox, { closed: true, w: 4, key: 'p6_cro' });
-    handLetter('+', dx + 95, dy - 18, 52, { face: 'marker', col: SK.green, key: 'p6_pls' });
-    gline(door, { closed: true, w: 5, key: 'p6_dro' });
-    gline(loopPts(dx + dw - 28, dy + dh * 0.54, 9, 9, 0.1), { w: 4, key: 'p6_knb' });
+    // Section headers
+    handLetter('CAMERA DEPTH HEATMAP', P6_WIN.x + 325, P6_WIN.y + 62, 28, { face: 'marker', col: SK.ink, key: 'p6_hlL' });
+    handLetter('WHAT YOU HEAR', P6_WIN.x + 930, P6_WIN.y + 62, 28, { face: 'marker', col: SK.ink, key: 'p6_hlR' });
 
-    // Green safe-steering path curving past the 0.8m obstacle right to the Pharmacy door!
-    const pSteer = ev(39.4, 0.6);
-    if (pSteer > 0) {
-      arrowPencil([
-        [P6_WIN.x + 310, P6_WIN.y + 390],
-        [ox + 55, oy - 48],
-        [dx - 25, P6_WIN.y + 370]
-      ], pSteer, { key: 'p6_str', w: 3.8, col: SK.green });
-    }
+    // --- LEFT HALF: 3-Zone DepthView Heatmap (LEFT EAR | BOTH EARS | RIGHT EAR) ---
+    const hmX = P6_WIN.x + 48, hmY = P6_WIN.y + 92, hmW = 528, hmH = 468;
+    const hmBox = sketchBox(hmX, hmY, hmW, hmH, 12);
+    gfill(hmBox, SK.paper, { off: [3, 3], key: 'p6_hmf' });
 
-    // Progressive hero walk across the 3 acts (no backward moonwalking!)
-    const walkProgress = EZ.io(seg(TT, 38.6, 49.2));
-    const wx = lerp(P6_WIN.x + 210, P6_WIN.x + 760, walkProgress);
-    const dodgeArc = Math.sin(Math.PI * seg(TT, 40.5, 45.2)) * 42;
-    const arriveHop = Math.sin(Math.PI * ev(49.5, 0.32)) * 35;
-    const wy = P6_WIN.y + 355 - dodgeArc - arriveHop;
-    const isWalking = TT > 38.6 && TT < 49.2;
+    // Dimmed ceiling (top 18%) and floor (bottom 28%) bands — ignored by sonar just like depth_view.js!
+    const bandTop = hmY + 82, bandBot = hmY + 345;
+    const ceilBox = [[hmX, hmY], [hmX + hmW, hmY], [hmX + hmW, bandTop], [hmX, bandTop]];
+    const flrBox = [[hmX, bandBot], [hmX + hmW, bandBot], [hmX + hmW, hmY + hmH], [hmX, hmY + hmH]];
+    ctx.save();
+    gclip(hmBox);
+    ghatch(hmX, hmY, hmX + hmW, bandTop, { ang: -0.6, gap: 9, col: SK.graph, w: 1.8, a: 0.45, key: 'p6_hm_ceil' });
+    ghatch(hmX, bandBot, hmX + hmW, hmY + hmH, { ang: -0.6, gap: 9, col: SK.graph, w: 1.8, a: 0.45, key: 'p6_hm_flr' });
 
-    blindHero(wx, wy, 86, {
-      key: 'p6_hero', legs: true, cane: true, earphones: true, phone: true,
-      mood: 'happy', step: isWalking ? Math.sin(TT * 6.5) : 0,
-      arms: TT >= 49.2 ? [0.9, 1.15] : [-0.4, -0.2]
+    // Active Center Sector ("BOTH EARS") glowing warm yellow/orange because obstacle is close (0.8m)!
+    const secW = hmW / 3;
+    const ctrSec = [[hmX + secW, bandTop], [hmX + 2 * secW, bandTop], [hmX + 2 * secW, bandBot], [hmX + secW, bandBot]];
+    scribbleFill(ctrSec, SK.hilite, { key: 'p6_hm_ctr', gap: 9, w: 4.5, a: 0.92, base: 0.4 });
+
+    // Warm close obstacle blob inside the center heatmap sector (clear of 0.8m text!)
+    const blob = loopPts(hmX + hmW / 2, bandTop + 152, 46, 52, 0.08);
+    gfill(blob, SK.terra, { off: [0, 0], key: 'p6_hm_blbf', a: 0.78 });
+    gline(blob, { w: 4, col: SK.red, key: 'p6_hm_blbo' });
+    ctx.restore();
+
+    // Horizontal inspected band lines
+    gline([[hmX, bandTop], [hmX + hmW, bandTop]], { w: 3, col: SK.graph, key: 'p6_btop', second: false });
+    gline([[hmX, bandBot], [hmX + hmW, bandBot]], { w: 3, col: SK.graph, key: 'p6_bbot', second: false });
+
+    // Two vertical dashed lines splitting LEFT EAR | BOTH | RIGHT EAR
+    ctx.save();
+    ctx.setLineDash([10, 10]);
+    gline([[hmX + secW, hmY], [hmX + secW, hmY + hmH]], { w: 3.5, col: SK.ink, key: 'p6_dv1', second: false });
+    gline([[hmX + 2 * secW, hmY], [hmX + 2 * secW, hmY + hmH]], { w: 3.5, col: SK.ink, key: 'p6_dv2', second: false });
+    ctx.restore();
+
+    // Bold outline around the active beeping center sector
+    gline(closeP(ctrSec), { w: 4.8, col: SK.red, key: 'p6_ctro', second: false });
+    gline(hmBox, { closed: true, w: 4.8, key: 'p6_hmo' });
+
+    // Sector labels & live distances inside the inspected band
+    const dStr = TT < 42.0 ? '1.4m' : '0.8m';
+    handLetter('LEFT EAR', hmX + secW * 0.5, bandTop + 38, 22, { face: 'marker', col: SK.green, key: 'p6_sl1' });
+    handLetter('2.4m', hmX + secW * 0.5, bandTop + 76, 30, { face: 'marker', col: SK.green, key: 'p6_sd1' });
+    handLetter('CLEAR', hmX + secW * 0.5, bandBot - 24, 22, { face: 'hand', col: SK.green, key: 'p6_sc1' });
+
+    handLetter('BOTH EARS', hmX + secW * 1.5, bandTop + 38, 22, { face: 'marker', col: SK.red, key: 'p6_sl2' });
+    handLetter(dStr, hmX + secW * 1.5, bandTop + 76, 32, { face: 'marker', col: SK.red, key: 'p6_sd2_' + dStr });
+    handLetter('CLOSE!', hmX + secW * 1.5, bandBot - 24, 24, { face: 'marker', col: SK.ink, key: 'p6_sc2' });
+
+    handLetter('RIGHT EAR', hmX + secW * 2.5, bandTop + 38, 22, { face: 'marker', col: SK.graph, key: 'p6_sl3' });
+    handLetter('2.1m', hmX + secW * 2.5, bandTop + 76, 30, { face: 'marker', col: SK.graph, key: 'p6_sd3' });
+    handLetter('CLEAR', hmX + secW * 2.5, bandBot - 24, 22, { face: 'hand', col: SK.graph, key: 'p6_sc3' });
+
+    handLetter('floor & ceiling ignored', hmX + hmW / 2, hmY + hmH - 35, 22, { face: 'hand', col: SK.graph, key: 'p6_ign' });
+
+    // --- RIGHT HALF: What the Person Hears in Their Left & Right Ears ---
+    const hx = P6_WIN.x + 925, hy = P6_WIN.y + 405;
+    blindHero(hx, hy, 80, {
+      key: 'p6_hero', legs: true, earphones: true, phone: true,
+      mood: 'happy', step: Math.sin(TT * 5.5) * 0.4,
+      arms: [-0.45, 0.45]
     });
 
-    // Pulsing sound wave arcs ahead of hero
+    // Left Ear callout: Quiet = Clear Path (Step Left!)
+    for (let k = 1; k <= 2; k++) {
+      const r = 98 + k * 18;
+      gline(arcPts(hx, hy, r, Math.PI * 0.84, Math.PI * 1.16, 10), { w: 3.5, col: SK.green, key: 'p6_el' + k, second: false });
+    }
+    handLetter('LEFT EAR', hx - 210, hy - 36, 24, { face: 'marker', col: SK.green, key: 'p6_hel1' });
+    handLetter('Quiet = Clear', hx - 210, hy - 4, 23, { face: 'hand', col: SK.green, key: 'p6_hel2' });
+    checkMark(hx - 210, hy + 30, 0.65, ev(39.6, 0.3), SK.green, 'p6_lchk');
+
+    // Right/Both Ears callout: Fast Beeps = Obstacle Ahead!
     for (let k = 1; k <= 3; k++) {
-      const r = 112 + k * 25 + 5 * ((B + k) % 2);
-      gline(arcPts(wx, wy, r, -Math.PI * 0.22, Math.PI * 0.22, 12), { w: 3.8, col: SK.ink, key: 'p6_wv' + k, second: false });
+      const r = 98 + k * 18 + 4 * ((B + k) % 2);
+      gline(arcPts(hx, hy, r, -Math.PI * 0.20, Math.PI * 0.20, 12), { w: 4.0, col: SK.red, key: 'p6_er' + k, second: false });
     }
+    handLetter('FAST BEEPS!', hx + 215, hy - 22, 25, { face: 'marker', col: SK.red, key: 'p6_her1' });
+    handLetter('0.8m Ahead', hx + 215, hy + 12, 23, { face: 'hand', col: SK.ink, key: 'p6_her2' });
 
-    // Act II: Live spoken voice guidance bubble (43.2s - 48.8s)
-    if (TT >= 43.0) {
-      const pBub = ev(43.0, 0.35);
-      const vb = sketchBox(P6_WIN.x + 560, P6_WIN.y + 135, 330, 88, 14);
-      gfill(vb, SK.sheet, { off: [3, 3], key: 'p6_vbf', a: pBub });
-      gline(vb, { closed: true, w: 4, key: 'p6_vbo', part: pBub });
-      handLetter('"Door 3 steps ahead!"', P6_WIN.x + 725, P6_WIN.y + 190, 30, { face: 'marker', col: SK.ink, key: 'p6_vbt', reveal: ev(43.1, 0.3) });
-    }
+    // Arrow connecting Heatmap Center Obstacle -> Hero's Ears
+    arrowPencil([[hmX + hmW + 8, (bandTop + bandBot) / 2], [hx - 130, hy - 95]], ev(39.0, 0.5), { key: 'p6_hm_arw', w: 3.6, col: SK.red });
 
-    // Act III: Arrival checkmark at the pharmacy door (49.2s+)
-    if (TT >= 48.8) {
-      checkMark(dx + 95, dy + 135, 0.95, ev(49.0, 0.3), SK.green, 'p6_arr_chk');
+    // Spoken Voice Bubble above Hero (t >= 42.5s)
+    if (TT >= 42.2) {
+      const pBub = ev(42.2, 0.35);
+      const vb = sketchBox(P6_WIN.x + 695, P6_WIN.y + 105, 470, 96, 14);
+      gfill(vb, SK.paper, { off: [3, 3], key: 'p6_vbf', a: pBub });
+      gline(vb, { closed: true, w: 4.2, key: 'p6_vbo', part: pBub });
+      handLetter('"Step left — door 3 steps!"', P6_WIN.x + 930, P6_WIN.y + 152, 29, { face: 'marker', col: SK.ink, key: 'p6_vbt1' });
+      handLetter('Hold screen to ask anytime', P6_WIN.x + 930, P6_WIN.y + 184, 22, { face: 'hand', col: SK.green, key: 'p6_vbt2' });
     }
   }
 
@@ -1909,17 +1929,15 @@ function sceneLiveDemo() {
     pencilTool(tip[0], tip[1], -0.75 + 0.08 * Math.sin(B * 1.7), 0.95);
   }
 
-  inkStamp('PROTOTYPE DEMO', P6_WIN.x + 215, P6_WIN.y + 78, 0.38, -0.05, ev(cu.p6_frame, 0.25), 'p6_st');
-
-  skTag('working prototype');
+  skTag('what it sees vs what you hear');
   skCaption(
-    ['working today in our build', 'ready for the live camera walk'],
-    [[1, 'camera']]
+    ['left: 3D depth heatmap from the camera', 'right: what you hear in your left & right ears'],
+    [[0, 'heatmap'], [1, 'hear']]
   );
 }
 
 // =====================================================================
-//  ERA 6 (53.5 - 60.0s): CURRENT STATE & NEXT STEPS ROADMAP
+//  ERA 6 (53.5 - 60.0s): HONEST CURRENT STATE & NEXT STEPS
 // =====================================================================
 const P7_SUN = { x: 1590, y: 245, r: 86 };
 function hillPts16x9() {
@@ -1955,27 +1973,23 @@ function sceneWhatsNext() {
     sx: 1 - 0.04 * hop, sy: 1 + 0.06 * hop
   });
 
-  // Hand-Drawn Sketchbook Engineering Roadmap: Current State (Checked!) -> 3 Next Steps to Make It Work
+  // Simple, Non-Technical 4-Card Roadmap: What Works Today -> 3 Next Steps
   const steps = [
     {
-      t0: 53.7, x: 560, y: 210, w: 830, h: 82, done: true,
-      title: 'WORKING NOW: Android Personal Agent · PTT Stereo Fix · 5Hz Depth',
-      sub: 'Persistent Memory Router · Behavioral Clock-Face UX · fal.ai 24kHz TTS'
+      t0: 53.7, x: 560, y: 215, w: 780, h: 74, done: true,
+      title: 'WORKING TODAY: Sonar Vision + Voice Memory Prototype'
     },
     {
-      t0: 54.15, x: 590, y: 330, w: 830, h: 82, done: false,
-      title: 'NEXT STEP 1: Test Audio & Voice UX with Real Blind Walkers',
-      sub: 'Gather real-user feedback on spoken pacing, barge-in & cognitive load'
+      t0: 54.15, x: 590, y: 330, w: 780, h: 74, done: false,
+      title: 'NEXT 1: Test with Real Blind Users & Get Feedback'
     },
     {
-      t0: 54.55, x: 620, y: 450, w: 830, h: 82, done: false,
-      title: 'NEXT STEP 2: Fine-Tune Sonar Sounds, Pitch Curves & Experience',
-      sub: 'Shape pleasant per-ear frequencies, spatial earcons & WebXR depth'
+      t0: 54.55, x: 620, y: 445, w: 780, h: 74, done: false,
+      title: 'NEXT 2: Fine-Tune the Sonar Sounds & Comfort'
     },
     {
-      t0: 54.95, x: 650, y: 570, w: 830, h: 82, done: false,
-      title: 'NEXT STEP 3: Default Android Assistant OS Replacement',
-      sub: 'Hands-free duplex voice gate & wake-button launch on every phone'
+      t0: 54.95, x: 650, y: 560, w: 780, h: 74, done: false,
+      title: 'NEXT 3: Hands-Free Default Android Assistant'
     }
   ];
 
@@ -1989,17 +2003,14 @@ function sceneWhatsNext() {
       }
       gline(bx, { closed: true, w: 4.5, key: 'p7_sbo' + i, part: p });
       if (p > 0.3) {
-        handLetter(st.title, st.x + st.w / 2, st.y + 36, 26, {
+        handLetter(st.title, st.x + st.w / 2, st.y + 46, 28, {
           face: 'marker', col: st.done ? SK.green : SK.ink, key: 'p7_stt' + i
-        });
-        handLetter(st.sub, st.x + st.w / 2, st.y + 66, 22, {
-          face: 'hand', col: SK.graph, key: 'p7_sts' + i
         });
       }
       if (st.done) {
-        checkMark(st.x + st.w + 35, st.y + 42, 0.72, ev(st.t0 + 0.25, 0.25), SK.green, 'p7_chk0');
+        checkMark(st.x + st.w + 35, st.y + 38, 0.76, ev(st.t0 + 0.25, 0.25), SK.green, 'p7_chk0');
       } else {
-        arrowPencil([[st.x - 48, st.y + 42], [st.x - 10, st.y + 42]], p, { key: 'p7_arw' + i, w: 3.6, col: SK.red });
+        arrowPencil([[st.x - 48, st.y + 38], [st.x - 10, st.y + 38]], p, { key: 'p7_arw' + i, w: 3.6, col: SK.red });
       }
     }
   });
@@ -2011,11 +2022,11 @@ function sceneWhatsNext() {
     pencilTool(st.x + st.w - 40, st.y + 35, -0.7 + 0.08 * Math.sin(B * 1.6), 0.88);
   }
 
-  inkStamp('NEXT STEPS', 1645, 520, 0.48, -0.08, ev(55.2, 0.25), 'p7_st');
+  inkStamp('NEXT STEPS', 1635, 520, 0.48, -0.08, ev(55.2, 0.25), 'p7_st');
 
-  skTag('user testing & refinement');
+  skTag('where we are & what\'s next');
   skCaption(
-    ['next: test voice UX with real blind users', '& fine-tune the sonar sounds and experience'],
+    ['working prototype today — next we test with real users', 'and fine-tune the sounds and experience'],
     [[0, 'real'], [1, 'sounds']]
   );
 }
