@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 
 BYTES_PER_S = 32000          # PCM16 mono 16 kHz
 END_WAIT_FLOOR_S = 0.4
-BARGE_IN_S = 0.45
+BARGE_IN_S = 0.2  # the phone gate already confirmed ~170 ms of voice; keep only a short echo guard
 SHORT_S = 1.0
 SHORT_EXTRA_S = 0.4
 MAX_TURN_S = 8.0             # Safety cap so continuous loud-room noise can never trap a turn open forever

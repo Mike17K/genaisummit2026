@@ -8,10 +8,10 @@ from fastapi import WebSocket
 from ..assistant import info_pipeline, tools, turns
 from ..audio import phrases, speak
 from ..depth import local_depth
-from ..safety import alerts, watch
+from ..safety import alerts
 from ..utils import config, trace
 from . import memory, router
-from .state import State
+from .state import ALERT_MODES, State
 
 __all__ = ["State", "run"]
 
@@ -71,10 +71,10 @@ async def _serve(socket: WebSocket, conn_id: str) -> None:
     asyncio.create_task(local_depth.warm())
 
     def set_alert_mode(mode: str) -> dict:
-        """Change how often camera safety alerts interrupt the user. mode: 'normal', 'urgent_only' or 'off'."""
-        if mode not in watch.AlertPolicy.MODES:
-            return {"error": f"mode must be one of {watch.AlertPolicy.MODES}"}
-        state.policy.mode = mode
+        """Change the depth emergency stop. mode: 'normal', 'urgent_only' (closer threshold) or 'off'."""
+        if mode not in ALERT_MODES:
+            return {"error": f"mode must be one of {ALERT_MODES}"}
+        state.alert_mode = mode
         trace.log("alert_mode", mode=mode, by="voice")
         asyncio.get_running_loop().create_task(state.send({"type": "mode", "mode": mode}))
         return {"status": "ok", "mode": mode}
@@ -108,11 +108,17 @@ async def _serve(socket: WebSocket, conn_id: str) -> None:
         "set_compass_direction": set_compass_direction,
     }
 
-    await socket.send_json(
-        {"type": "ready", "conn": conn_id, "lang": state.lang, "memory": state.memory.to_dict()}
-    )
-    await alerts.announce_rate(state, "start")
-    watcher = asyncio.create_task(alerts.watch_loop(state))
+    await socket.send_json({
+        "type": "ready",
+        "conn": conn_id,
+        "lang": state.lang,
+        "memory": state.memory.to_dict(),
+        "depth_stop_m": config.DEPTH_STOP_M,
+        "depth_stop_urgent_m": config.DEPTH_STOP_URGENT_M,
+    })
+    # A persisted goal such as "να πάω νότια" restores compass guidance toward that bearing on reconnect
+    await router.sync_goal_compass_target(state, by="goal")
+    watcher = asyncio.create_task(alerts.compass_loop(state))
     mic_bytes = frame_count = 0
     try:
         while True:
@@ -135,5 +141,7 @@ async def _serve(socket: WebSocket, conn_id: str) -> None:
             pass
     finally:
         watcher.cancel()
+        if state.emergency_task is not None and not state.emergency_task.done():
+            state.emergency_task.cancel()
         info_pipeline.cancel_for_user(state)
         trace.log("live_input_totals", mic_kb=round(mic_bytes / 1024), frames=frame_count)

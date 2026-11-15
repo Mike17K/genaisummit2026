@@ -32,62 +32,37 @@ VOICE = os.environ.get("GEMINI_VOICE", "Kore")
 # Fixed default silence wait after user stops talking (400 ms).
 SILENCE_MS = int(os.environ.get("EYES_SILENCE_MS", "400"))
 
-# ---- Parallel stateless safety watcher (low-latency tuned) ----
-WATCH_MODEL = os.environ.get("GEMINI_WATCH_MODEL", "gemini-3.5-flash-lite")
-WATCH_S = float(os.environ.get("EYES_WATCH_S", "0.35"))
-WATCH_TIMEOUT_S = float(os.environ.get("EYES_WATCH_TIMEOUT_S", "1.8"))
-WATCH_THINKING = os.environ.get("GEMINI_WATCH_THINKING", "MINIMAL")
-WATCH_MEDIA_RES = os.environ.get("GEMINI_WATCH_MEDIA_RES", "MEDIA_RESOLUTION_LOW")
-WATCH_MAX_INFLIGHT_PER_CONN = int(os.environ.get("EYES_WATCH_INFLIGHT", "2"))
+# ---- Center-crop metric depth probe (Gemini anchor for the on-device depth calibration) ----
+DEPTH_PROBE_MODEL = os.environ.get("GEMINI_DEPTH_PROBE_MODEL", os.environ.get("GEMINI_WATCH_MODEL", "gemini-3.5-flash-lite"))
+DEPTH_PROBE_THINKING = os.environ.get("GEMINI_DEPTH_PROBE_THINKING", "MINIMAL")
 
-# Inspect 2 tight trajectory tiles for minimal prefill latency while gating movement across 3 frames.
-WATCH_FRAMES = int(os.environ.get("EYES_WATCH_FRAMES", "2"))
-WATCH_COMPOSE = os.environ.get("EYES_WATCH_COMPOSE", "1") != "0"
-COMPOSE_FRAMES = int(os.environ.get("EYES_COMPOSE_FRAMES", "2"))
-COMPOSE_TILE_W = int(os.environ.get("EYES_COMPOSE_TILE_W", "192"))
-MOVEMENT_SPAN_S = float(os.environ.get("EYES_MOVEMENT_SPAN_S", "0.55"))
-
-# ---- Alert policy thresholds ----
-ALERT_MIN_CONF = float(os.environ.get("EYES_ALERT_MIN_CONF", "0.75"))
-ALERT_MIN_CONF_HIGH = float(os.environ.get("EYES_ALERT_MIN_CONF_HIGH", "0.60"))
-ALERT_FAST_CONF = float(os.environ.get("EYES_ALERT_FAST_CONF", "0.85"))
-ALERT_FAST_CONF_MOVING = float(os.environ.get("EYES_ALERT_FAST_CONF_MOVING", "0.80"))
-ALERT_COOLDOWN_S = float(os.environ.get("EYES_ALERT_COOLDOWN_S", "3.0"))
-ALERT_COOLDOWN_HIGH_S = float(os.environ.get("EYES_ALERT_COOLDOWN_HIGH_S", "0.75"))
-STEER_COOLDOWN_S = float(os.environ.get("EYES_STEER_COOLDOWN_S", "1.2"))
-ALERT_DEDUPE_S = float(os.environ.get("EYES_ALERT_DEDUPE_S", "5.5"))
-ALERT_MAX_PER_MIN = int(os.environ.get("EYES_ALERT_MAX_PER_MIN", "18"))
+# ---- Depth-triggered emergency stop ----
+# The phone (WebGPU) or laptop (ONNX) depth model watches the camera center continuously; when the calibrated
+# distance drops to DEPTH_STOP_M the client sends one image + compass, the server says "Stop!", blocks the
+# answering pipeline and asks the model what the user should do.
+DEPTH_STOP_M = float(os.environ.get("EYES_DEPTH_STOP_M", "0.9"))
+DEPTH_STOP_URGENT_M = float(os.environ.get("EYES_DEPTH_STOP_URGENT_M", "0.6"))  # threshold in "urgent_only" mode
+DEPTH_STOP_COOLDOWN_S = float(os.environ.get("EYES_DEPTH_STOP_COOLDOWN_S", "4.0"))
+DEPTH_STOP_GUIDE_TIMEOUT_S = float(os.environ.get("EYES_DEPTH_STOP_GUIDE_TIMEOUT_S", "8.0"))
+GUIDE_SPEECH_RATE = float(os.environ.get("EYES_GUIDE_SPEECH_RATE", "1.35"))  # pitch-preserving speed-up of stop guidance
 EXPLAIN_POST_WINDOW_S = float(os.environ.get("EYES_EXPLAIN_POST_WINDOW_S", "0.15"))
 
-# ---- Scene motion, compass & post-trigger similarity latch ----
-PAN_DEG_S = float(os.environ.get("EYES_PAN_DEG_S", "160"))
+# ---- Places / maps (tour guide) ----
+# Google Maps Platform key with Places API (New), Geocoding API and Routes API enabled. Without it the free
+# OpenStreetMap fallback (Nominatim + Overpass) is used. EYES_GEO_PROVIDER=osm forces the fallback.
+# The Gemini key is reused when it is a standard Google Cloud key (AIza...) from a project with those APIs enabled.
+GOOGLE_MAPS_API_KEY = (
+    os.environ.get("GOOGLE_MAPS_API_KEY")
+    or os.environ.get("GOOGLE_PLACES_API_KEY")
+    or (API_KEY if API_KEY.startswith("AIza") and os.environ.get("EYES_GEO_USE_GEMINI_KEY", "1") != "0" else "")
+)
+GEO_PROVIDER = os.environ.get("EYES_GEO_PROVIDER", "auto").strip().lower()
+
+# ---- Compass guidance ----
 SENSOR_MAX_AGE_S = 5.0
 COMPASS_CUE_COOLDOWN_S = float(os.environ.get("EYES_COMPASS_COOLDOWN_S", "5.5"))
 COMPASS_ALIGNED_DEG = float(os.environ.get("EYES_COMPASS_ALIGNED_DEG", "16.0"))
 COMPASS_DRIFT_DEG = float(os.environ.get("EYES_COMPASS_DRIFT_DEG", "26.0"))
-STATIC_SKIP = os.environ.get("EYES_STATIC_SKIP", "1") != "0"
-STATIC_MOTION = float(os.environ.get("EYES_STATIC_MOTION", "0.012"))
-STATIC_MAX_SKIP_S = float(os.environ.get("EYES_STATIC_MAX_SKIP_S", "4.0"))
-DANGER_SIMILARITY_DIFF = float(os.environ.get("EYES_DANGER_SIM_DIFF", "0.10"))
-MIN_ALERT_MOVEMENT = float(os.environ.get("EYES_MIN_ALERT_MOVEMENT", "0.058"))
-MIN_STOP_MOVEMENT = float(os.environ.get("EYES_MIN_STOP_MOVEMENT", "0.088"))
-MIN_STEP_MOVEMENT = float(os.environ.get("EYES_MIN_STEP_MOVEMENT", "0.022"))
-
-# ---- Adaptive camera & watcher rates (reduced steady frame rate) ----
-FPS = {
-    "normal": float(os.environ.get("EYES_FPS_NORMAL", "1.5")),
-    "elevated": float(os.environ.get("EYES_FPS_ELEVATED", "2.5")),
-    "high": float(os.environ.get("EYES_FPS_HIGH", "3.0")),
-}
-LOOK_S = {
-    "normal": float(os.environ.get("EYES_LOOK_NORMAL_S", "0.55")),
-    "elevated": float(os.environ.get("EYES_LOOK_ELEVATED_S", "0.40")),
-    "high": float(os.environ.get("EYES_LOOK_HIGH_S", "0.32")),
-}
-SPACING_S = {"normal": 0.55, "elevated": 0.40, "high": 0.33}
-ATTENTION_HOLD_S = {"elevated": 5.0, "high": 8.0}
-ATTENTION_MAX_S = float(os.environ.get("EYES_ATTENTION_MAX_S", "180"))
-ATTENTION_COOLDOWN_S = float(os.environ.get("EYES_ATTENTION_COOLDOWN_S", "2"))
 
 # ---- Concurrency & TTS ----
 MAX_CONNECTIONS = int(os.environ.get("EYES_MAX_CONNECTIONS", "10"))
@@ -97,6 +72,3 @@ TTS_PROVIDER = os.environ.get("EYES_TTS_PROVIDER", "gemini")
 FAL_KEY = os.environ.get("FAL_API_KEY") or os.environ.get("FAL_KEY", "")
 FAL_TTS_MODEL = os.environ.get("FAL_TTS_MODEL", "fal-ai/elevenlabs/tts/eleven-v3")
 FAL_TTS_VOICE = os.environ.get("FAL_TTS_VOICE", "Rachel")
-
-# ---- Debug trigger artifacts ----
-DEBUG_TRIGGERS_ENABLED = os.environ.get("EYES_DEBUG_TRIGGERS", "1") != "0"

@@ -2,18 +2,18 @@
 
 - `core`: session state, explicit user memory, centralized command/risk router, WebSocket lifecycle
 - `assistant`: multimodal command/answer streaming, turn-taking, tools, legacy session helpers
-- `safety`: 3-frame trajectory risk watcher, alert policy, attention state machine, interrupt/resume alerts
-- `depth`: local server ONNX Depth-Anything-V2-Small engine
+- `safety`: depth-triggered emergency stop (image + compass -> model guidance) and compass guidance cues
+- `depth`: local server ONNX Depth-Anything-V2-Small engine and Gemini center-crop metric anchor
 - `audio`: ElevenLabs / fal.ai TTS synthesis, PCM streaming, English/Greek standard navigation phrases
-- `utils`: environment config, image contact-sheet composer, visual movement scoring, JSONL tracing, debug reports
+- `utils`: environment config and JSONL tracing
 """
 from . import assistant, audio, core, depth, safety, utils
 from .assistant import agent, info_pipeline, live_bridge, tools, turns
 from .audio import fal, phrases, speak
 from .core import live, memory, router, state
-from .depth import local_depth
-from .safety import alerts, attention, policy, watch
-from .utils import compose, config, debug_report, similarity, trace
+from .depth import center_probe, local_depth
+from .safety import alerts
+from .utils import config, trace
 
 __all__ = [
     "assistant",
@@ -24,10 +24,8 @@ __all__ = [
     "utils",
     "agent",
     "alerts",
-    "attention",
-    "compose",
+    "center_probe",
     "config",
-    "debug_report",
     "fal",
     "info_pipeline",
     "live",
@@ -35,13 +33,10 @@ __all__ = [
     "local_depth",
     "memory",
     "phrases",
-    "policy",
     "router",
-    "similarity",
     "speak",
     "state",
     "tools",
     "trace",
     "turns",
-    "watch",
 ]

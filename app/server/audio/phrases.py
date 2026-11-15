@@ -1,8 +1,6 @@
-"""Spatial obstacle-location codes and fixed alert phrases in English and Greek.
+"""Standard spoken phrases (obstacle locations, compass cues, depth emergency stop) in English and Greek.
 
-Every spatial hazard code (`ACTION_CODES`) and common alert phrase describes WHERE the obstacle is
-(direction + distance in steps, never imperative movement commands) and is pre-synthesized at server
-startup (`speak.warm_common`) for 0 ms playback.
+Every code in `ACTION_CODES` is pre-synthesized at server startup (`speak.warm_common`) for 0 ms playback.
 """
 from pathlib import Path
 import re
@@ -12,14 +10,6 @@ from ..utils import config
 SUPPORTED_LANGS = ("English", "Greek")
 _LANG_FILE = config.APP_DIR / ".last_lang"
 _last_lang_cache: str | None = None
-
-LOCAL = {
-    "vehicle": ("Careful, vehicle right ahead of you.", "Πρόσεχε, όχημα ακριβώς μπροστά σου."),
-    "bike": ("Careful, bicycle ahead of you.", "Πρόσεχε, ποδήλατο μπροστά σου."),
-    "person": ("Careful, person ahead of you.", "Πρόσεχε, άτομο μπροστά σου."),
-    "animal": ("Careful, animal ahead of you.", "Πρόσεχε, ζώο μπροστά σου."),
-    "obstacle": ("Careful, obstacle right ahead of you.", "Πρόσεχε, εμπόδιο ακριβώς μπροστά σου."),
-}
 
 ACTION_CODES: dict[str, tuple[str, str]] = {
     "AHEAD_3": ("Careful, ahead of you in three steps.", "Πρόσεχε, μπροστά σου σε τρία βήματα."),
@@ -42,78 +32,44 @@ ACTION_CODES: dict[str, tuple[str, str]] = {
     "COMPASS_SLIGHT_RIGHT": ("Your target direction is slightly front-right.", "Η κατεύθυνσή σου είναι λίγο δεξιά μπροστά σου."),
     "COMPASS_RIGHT": ("Your target direction is to your right.", "Η κατεύθυνσή σου είναι δεξιά σου."),
     "COMPASS_BEHIND": ("Your target direction is behind you.", "Η κατεύθυνσή σου είναι πίσω σου."),
+    # Depth-triggered emergency stop: "Stop!" instantly, then the turn (degrees first), then what is ahead
+    "DEPTH_STOP": ("Stop!", "Σταμάτα!"),
+    "DEPTH_STOP_FALLBACK": ("Turn slowly to find open space.", "Γύρνα αργά να βρεις ελεύθερο χώρο."),
+    "GUIDE_AROUND": ("Turn around.", "Γύρνα πίσω."),
+    "GUIDE_WAIT": ("Wait, it is moving.", "Περίμενε, κινείται."),
+    "GUIDE_STAY": ("Stay stopped.", "Μείνε ακίνητος."),
+    # Spoken while the place tools run so the user is never left in silence
+    "LOOKUP_FILLER": ("One moment, I'm looking at what's around you.", "Μια στιγμή, κοιτάζω τι υπάρχει γύρω σου."),
 }
 
-GUIDANCE_CODES = frozenset({
-    "AHEAD_3",
-    "LEFT_3",
-    "RIGHT_3",
-    "AHEAD_2",
-    "LEFT_2",
-    "RIGHT_2",
-    "STAIRS_2",
-})
+# Pre-cached "turn <side> <deg> degrees" instructions (degrees snapped to 15 deg steps)
+TURN_DEGREES = (15, 30, 45, 60, 75, 90)
+for _deg in TURN_DEGREES:
+    ACTION_CODES[f"TURN_LEFT_{_deg}"] = (f"Turn left {_deg} degrees.", f"Στρίψε αριστερά {_deg} μοίρες.")
+    ACTION_CODES[f"TURN_RIGHT_{_deg}"] = (f"Turn right {_deg} degrees.", f"Στρίψε δεξιά {_deg} μοίρες.")
 
-STOP_CODES = frozenset({
-    "AHEAD_1",
-    "LEFT_1",
-    "RIGHT_1",
-    "STAIRS_1",
-    "AHEAD_NOW",
-    "LEFT_NOW",
-    "RIGHT_NOW",
-})
+GUIDE_CODES = frozenset(
+    {"DEPTH_STOP", "DEPTH_STOP_FALLBACK", "GUIDE_AROUND", "GUIDE_WAIT", "GUIDE_STAY"}
+    | {f"TURN_{side}_{d}" for side in ("LEFT", "RIGHT") for d in TURN_DEGREES}
+)
 
-CODE_TO_LEVEL: dict[str, int] = {
-    "AHEAD_3": 2,
-    "LEFT_3": 2,
-    "RIGHT_3": 2,
-    "AHEAD_2": 3,
-    "LEFT_2": 3,
-    "RIGHT_2": 3,
-    "STAIRS_2": 3,
-    "AHEAD_1": 4,
-    "LEFT_1": 4,
-    "RIGHT_1": 4,
-    "STAIRS_1": 4,
-    "AHEAD_NOW": 5,
-    "LEFT_NOW": 5,
-    "RIGHT_NOW": 5,
-}
 
-SOFTEN_CODE: dict[str, str] = {
-    "AHEAD_1": "AHEAD_2",
-    "LEFT_1": "LEFT_2",
-    "RIGHT_1": "RIGHT_2",
-    "STAIRS_1": "STAIRS_2",
-    "AHEAD_NOW": "AHEAD_2",
-    "LEFT_NOW": "LEFT_2",
-    "RIGHT_NOW": "RIGHT_2",
-}
-
-LEVEL_TO_CODE = {
-    1: "AHEAD_3",
-    2: "AHEAD_3",
-    3: "AHEAD_2",
-    4: "AHEAD_1",
-    5: "AHEAD_NOW",
-}
-
-DANGER_LEVEL = {
-    "English": {lvl: ACTION_CODES[code][0] for lvl, code in LEVEL_TO_CODE.items()},
-    "Greek": {lvl: ACTION_CODES[code][1] for lvl, code in LEVEL_TO_CODE.items()},
-}
-
-STEER = {
-    "English": {
-        "left": ACTION_CODES["LEFT_2"][0],
-        "right": ACTION_CODES["RIGHT_2"][0],
-    },
-    "Greek": {
-        "left": ACTION_CODES["LEFT_2"][1],
-        "right": ACTION_CODES["RIGHT_2"][1],
-    },
-}
+def turn_code(action: str, side: str, deg: float | int | None) -> str:
+    """Map the model's {action, side, deg} to a pre-cached guidance code (degrees snapped to 15 deg steps)."""
+    action = (action or "").strip().lower()
+    if action == "wait":
+        return "GUIDE_WAIT"
+    if action == "stay":
+        return "GUIDE_STAY"
+    try:
+        d = abs(float(deg))
+    except (TypeError, ValueError):
+        d = 45.0
+    if d >= 135.0 or action == "around":
+        return "GUIDE_AROUND"
+    snapped = min(TURN_DEGREES, key=lambda v: abs(v - d))
+    side_up = "LEFT" if str(side or "").strip().lower().startswith("l") else "RIGHT"
+    return f"TURN_{side_up}_{snapped}"
 
 _ALIASES = {
     "AHEAD": "AHEAD_2",
@@ -145,39 +101,7 @@ _ALIASES = {
     "CHECK_CANE": "STAIRS_1",
 }
 
-WATCHER = {
-    "English": [
-        "Careful, vehicle ahead of you in two steps!",
-        "Careful, bicycle ahead of you in two steps.",
-        "Careful, person ahead of you in two steps.",
-        "Careful, step down ahead of you.",
-        "Careful, wall ahead of you in two steps.",
-        "Careful, pillar ahead of you in two steps.",
-        "Careful, door ahead of you in two steps.",
-    ],
-    "Greek": [
-        "Πρόσεχε, όχημα μπροστά σου σε δύο βήματα!",
-        "Πρόσεχε, ποδήλατο μπροστά σου σε δύο βήματα.",
-        "Πρόσεχε, άτομο μπροστά σου σε δύο βήματα.",
-        "Πρόσεχε, σκαλί μπροστά σου.",
-        "Πρόσεχε, τοίχος μπροστά σου σε δύο βήματα.",
-        "Πρόσεχε, κολώνα μπροστά σου σε δύο βήματα.",
-        "Πρόσεχε, πόρτα μπροστά σου σε δύο βήματα.",
-    ],
-}
-
-_GROUP = {
-    "car": "vehicle", "truck": "vehicle", "bus": "vehicle", "motorcycle": "vehicle", "train": "vehicle",
-    "bicycle": "bike",
-    "person": "person",
-    "dog": "animal", "cat": "animal", "horse": "animal", "cow": "animal", "sheep": "animal",
-}
-
 _CODE_TAG_RE = re.compile(r"\[([A-Za-z0-9_\- ]{3,20})\]")
-
-
-def group_of(label: str) -> str:
-    return _GROUP.get(label.lower().strip(), "obstacle")
 
 
 def is_supported_lang(raw: str | None) -> bool:
@@ -259,39 +183,10 @@ def expand_codes(text: str, lang: str = "English") -> str:
     return _CODE_TAG_RE.sub(_repl, text)
 
 
-def local_alert(label: str, lang: str = "English") -> tuple[str, str]:
-    """(hazard_key, spoken text) for an on-device detection of `label` directly ahead."""
-    group = group_of(label)
-    english, greek = LOCAL[group]
-    return f"{group}-ahead", greek if lang == "Greek" else english
-
-
-def danger_phrase(level: int, lang: str = "English") -> str:
-    """Return the calibrated warning phrase for danger level 1..5."""
-    clamped = max(1, min(5, int(level)))
-    bank = DANGER_LEVEL.get(lang) or DANGER_LEVEL["English"]
-    return bank[clamped]
-
-
-def steer_phrase(direction: str, lang: str = "English") -> str:
-    """Return the calibrated slight-turn phrase ('left' or 'right') in English or Greek."""
-    side = "left" if direction == "left" else "right"
-    bank = STEER.get(lang) or STEER["English"]
-    return bank[side]
-
-
 def all_phrases() -> list[str]:
-    """Every unique phrase worth pre-synthesizing, ordered with standard action codes first."""
+    """Every standard phrase worth pre-synthesizing at startup for 0 ms playback."""
     out: list[str] = []
     for en, el in ACTION_CODES.values():
         out.append(en)
         out.append(el)
-    out.extend(p for pair in LOCAL.values() for p in pair)
-    for items in WATCHER.values():
-        out.extend(items)
     return list(dict.fromkeys(out))
-
-
-def prefer_list(lang: str) -> str:
-    items = WATCHER.get(lang) or WATCHER["English"]
-    return " | ".join(items)

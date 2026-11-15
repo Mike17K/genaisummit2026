@@ -10,7 +10,7 @@ from google import genai
 from google.genai import types
 
 from ..utils import config, trace
-from . import fal, phrases
+from . import fal, phrases, tempo
 
 _client: genai.Client | None = None
 _cache: "OrderedDict[str, bytes]" = OrderedDict()
@@ -160,6 +160,24 @@ async def stream_tts(text: str) -> AsyncIterator[bytes]:
         _store_cache(key, bytes(collected))
 
 
+_fast_cache: "OrderedDict[str, bytes]" = OrderedDict()
+
+
+async def synthesize_fast(text: str, rate: float | None = None) -> bytes:
+    """Like `synthesize` but trimmed + pitch-preserving sped up (emergency guidance). Cached."""
+    rate = config.GUIDE_SPEECH_RATE if rate is None else rate
+    key = f"{rate:.2f}|{text.strip().lower()}"
+    if key in _fast_cache:
+        _fast_cache.move_to_end(key)
+        return _fast_cache[key]
+    pcm = await synthesize(text)
+    fast = await asyncio.to_thread(tempo.fast_speech, pcm, rate)
+    _fast_cache[key] = fast
+    while len(_fast_cache) > 80:
+        _fast_cache.popitem(last=False)
+    return fast
+
+
 def is_cached(text: str) -> bool:
     return text.strip().lower() in _cache
 
@@ -187,4 +205,12 @@ async def warm_common() -> None:
     rest = [t for t in phrases.all_phrases() if not is_cached(t)]
     if rest:
         await asyncio.gather(*[one(t) for t in rest])
+    # Pre-compute the sped-up emergency phrases so "Stop!" and "Turn right 30 degrees." play in 0 ms
+    for code in phrases.GUIDE_CODES:
+        for text in phrases.ACTION_CODES[code]:
+            if is_cached(text):
+                try:
+                    await synthesize_fast(text)
+                except Exception:
+                    pass
     trace.log("tts_warm", phrases=len(priority_codes) + len(rest), ms=round((time.time() - started) * 1000))

@@ -13,22 +13,23 @@ flowchart LR
     Phone["Mobile Web Client (app/static/)"] <-->|"WebSocket /live"| Main["server/main.py"]
     Main --> Core["server/core/ (live, router, state, memory)"]
     Core -->|"Questions & Commands"| Asst["server/assistant/ (info_pipeline, turns, tools)"]
-    Core -->|"Sustained Movement >= 0.058"| Safe["server/safety/ (alerts, watch, policy, attention)"]
-    Core -->|"Hold 1s Sonar"| Depth["server/depth/ (local_depth ONNX)"]
+    Core -->|"Depth <= 0.9 m: image + compass"| Safe["server/safety/alerts.py (depth emergency stop)"]
+    Core -->|"Hold 1s Sonar · Stop Guard"| Depth["server/depth/ (local_depth ONNX, center_probe)"]
     Asst --> Audio["server/audio/ (speak, fal, phrases)"]
     Safe --> Audio
-    Core --> Utils["server/utils/ (config, compose, similarity, trace, debug_report)"]
+    Safe -->|"Blocks answers, asks what to do"| Asst
+    Core --> Utils["server/utils/ (config, trace)"]
 ```
 
 ### Core Pipeline Summary
 1. **Centralized Command, Memory & Answer Router (`app/server/core/router.py`)**: Evaluates every English/Greek utterance to decide whether to ignore room noise, execute a system/memory command, or answer a visual question—keeping `UserMemory` strictly for explicit goals/notes (`keep_memory=True`) while guaranteeing a spoken reply (`should_answer=True`) whenever asked.
-2. **Movement-Gated Risk Pipeline (`app/server/safety/`)**: Only invokes the 3-frame trajectory risk model when sustained user movement exceeds `0.058` (ignoring camera panning and stationary sway), maps hazards to pre-cached standard navigation phrases (`Slide right.`, `Turn left.`, and `Stop!` only on large movement `>= 0.115`), cuts ongoing speech, laconically names the obstacle, and resumes the interrupted answer.
+2. **Depth Emergency Stop (`app/server/safety/alerts.py`)**: The camera-video watcher is gone. An always-on Depth-Anything-V2 guard (phone WebGPU or laptop ONNX) watches the camera center; at `<= 0.9 m` the phone sends one image + compass, the server says "Stop!", blocks the answering pipeline, and speaks the model's instruction on what to do (e.g. *"Turn right 30 degrees. Box one step ahead."*, spoken fast) before releasing the block.
 3. **Auto Mobile / Laptop Depth Sonar (`app/static/depth_worker.js` + `app/server/depth/local_depth.py`)**: Holding the screen for 1 second runs continuous proximity sonar on Mobile WebGPU when fast (`<= 280 ms`) or auto-switches to Laptop ONNX Depth-Anything-V2-Small.
 
 ### Core User Stories
 - **Ask & Always Hear an Answer**: Ask *"What is ahead?"* or *"Πού είναι η πόρτα;"* and receive an immediate spoken clock-face + step answer without cluttering memory.
 - **Explicit Memory Only When Needed**: Say *"I'm looking for the exit"* or *"Remember my cane is by the door"* to persist explicit context across turns and safety detours.
-- **Movement-Gated Safety & Interrupt/Resume**: Walk toward an obstacle while VoxEye is speaking—only real sustained movement triggers an alert, cutting speech, guiding around the hazard with standard words, and continuing the interrupted answer.
+- **Depth Emergency Stop with Guidance**: Walk up to an obstacle—VoxEye cuts whatever it was saying, says "Stop!", then tells you what is there and which way to go using the picture and your compass heading.
 - **Hold-1s Tactile Depth Sonar**: Press and hold for 1 second for continuous Geiger-style beep and vibration distance feedback.
 
 ---

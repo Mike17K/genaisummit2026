@@ -167,7 +167,8 @@ self.onmessage = async (e) => {
         self.postMessage({ type: "skipped", seq: msg.seq });
       }
     } catch (err) {
-      self.postMessage({ type: "error", error: String((err && err.message) || err) });
+      // Per-frame failure: the main thread backs off and retries instead of treating the engine as dead
+      self.postMessage({ type: "frame_error", seq: msg.seq, error: String((err && err.message) || err) });
     } finally {
       busy = false;
     }

@@ -7,13 +7,12 @@
      never on routine visual questions).
    - Guarantees every valid question or command receives a spoken answer (`should_answer=True` + fallback).
 
-2. Movement-Gated Risk Identification (`evaluate_movement_risk_gate`):
-   - Enforces that the proactive safety pipeline only calls the 3-frame risk model and fires obstacle alerts
-     when the user exhibits sustained, clearly visible movement (`score >= MIN_ALERT_MOVEMENT`, not panning),
-     reserving `STOP!` (`lvl >= 4`) for large movement (`score >= MIN_STOP_MOVEMENT`).
+2. Depth Emergency Stop (`safety.alerts.depth_emergency_stop`):
+   - The browser's depth model (phone WebGPU or laptop ONNX) triggers a single `depth_stop` with an image +
+     compass when something is within the stop distance; while it is handled the answering pipeline is blocked.
 
 3. Session Event Dispatch (`handle_audio_chunk`, `handle_client_message`):
-   - Routes incoming WebSocket audio chunks, camera frames, IMU/PDAF telemetry, and depth probes cleanly
+   - Routes incoming WebSocket audio chunks, camera frames, IMU telemetry, depth probes and depth stops
      across `assistant`, `safety`, and `depth` modules.
 """
 import base64
@@ -23,11 +22,10 @@ import time
 from typing import Literal
 
 from ..audio import phrases
-from ..depth import local_depth
-from ..safety import attention
-from ..utils import config, similarity, trace
+from ..depth import center_probe, local_depth
+from ..utils import config, trace
 from . import memory
-from .state import State
+from .state import ALERT_MODES, State
 
 MIN_VOICE_PCM_BYTES = 4800  # ~150 ms of 16 kHz mono PCM16
 MIN_VOICED_S = 0.20         # Ignore sub-200 ms room clicks/blips
@@ -164,11 +162,20 @@ _COMPASS_CLEAR_RE = re.compile(
     r"σταμάτα\s+να\s+με\s+κατευθύνεις)",
     re.IGNORECASE,
 )
+# "Which way / how many degrees am I facing?" Greek part tolerates the frequent STT slip μοίρες -> μέρες.
 _COMPASS_FACING_QUERY_RE = re.compile(
-    r"\b(what\s+(?:direction|way)\s+am\s+i\s+(?:facing|looking|heading)|"
-    r"which\s+way\s+am\s+i\s+(?:facing|looking|heading)|what\s+is\s+my\s+(?:heading|bearing|compass))\b|"
-    r"(προς\s+τα\s+πού\s+(?:κοιτάω|κοιτάζω|πηγαίνω|βλέπω)|"
-    r"τι\s+(?:δείχνει\s+η\s+πυξίδα|κατεύθυνση\s+(?:έχω|κοιτάω|βλέπω)))",
+    r"\b(what\s+(?:direction|way|heading)\s+am\s+i\s+(?:facing|looking|heading|pointing)|"
+    r"which\s+(?:way|direction)\s+am\s+i\s+(?:facing|looking|heading|pointing)|"
+    r"where\s+am\s+i\s+(?:facing|looking|pointing)|"
+    r"how\s+many\s+degrees\s+am\s+i(?:\s+(?:facing|looking|pointing|at))?|"
+    r"what(?:'s|\s+is)\s+my\s+(?:heading|bearing|compass(?:\s+heading)?|direction)|"
+    r"what\s+does\s+the\s+compass\s+say)\b|"
+    r"((?:πόσες|ποσες)\s+(?:μοίρες|μοιρες|μέρες|μερες)|"
+    r"(?:μοίρες|μοιρες)\s+(?:κοιτ|βλέπ|βλεπ|δείχν|δειχν|έχω|εχω)|"
+    r"(?:προς\s+τα\s+)?(?:πού|που)\s+(?:κοιτάω|κοιταω|κοιτάζω|κοιταζω|βλέπω|βλεπω)|"
+    r"(?:ποια|ποιά|τι)\s+κατεύθυνση\s+(?:κοιτ|βλέπ|βλεπ|έχω|εχω|είμαι|ειμαι)|"
+    r"(?:σε|προς)\s+(?:ποια|ποιά)\s+κατεύθυνση\s+(?:κοιτ|βλέπ|βλεπ|είμαι|ειμαι|πάω|παω)|"
+    r"τι\s+(?:δείχνει|δειχνει)\s+η\s+(?:πυξίδα|πυξιδα))",
     re.IGNORECASE,
 )
 _COMPASS_NAV_INTENT_RE = re.compile(
@@ -192,20 +199,6 @@ class CommandDecision:
     keep_memory: bool
     memory_directive: str = "NONE"
     action: str = ""
-
-
-@dataclass
-class MovementGateResult:
-    """Centralized movement evaluation before invoking the proactive safety risk model."""
-
-    panning: bool
-    moved_enough: bool
-    can_say_stop: bool
-    score: float
-    min_step: float
-    span: float
-    sustained: bool
-    user_moving: bool | None
 
 
 def is_valid_en_el_heard(text: str) -> bool:
@@ -244,6 +237,79 @@ def _relative_turn_phrase_en(delta: float) -> str:
     return f"{qual}{side} ({delta:+.0f}°)"
 
 
+def relative_turn_words(delta: float, lang: str) -> str:
+    """Spoken relative direction for a signed delta (+ right): 'right 40 degrees' / 'δεξιά 40 μοίρες'."""
+    is_gr = phrases.normalize_lang(lang) == "Greek"
+    ad = abs(round(delta))
+    if ad <= 12:
+        return "ακριβώς μπροστά σου" if is_gr else "straight ahead of you"
+    if ad >= 160:
+        return "πίσω σου" if is_gr else "behind you"
+    if is_gr:
+        return f"{'δεξιά' if delta > 0 else 'αριστερά'} σου, {ad} μοίρες"
+    return f"{ad} degrees to your {'right' if delta > 0 else 'left'}"
+
+
+def current_compass_deg(state: "State", now: float | None = None, max_age_s: float = 20.0) -> float | None:
+    now = time.time() if now is None else now
+    imu = state.imu if isinstance(state.imu, dict) and (now - state.imu_at) <= max_age_s else None
+    comp = imu.get("compassDeg") if imu else None
+    return float(comp) % 360.0 if isinstance(comp, (int, float)) else None
+
+
+def facing_reply(state: "State", lang: str) -> str:
+    """Exact spoken answer to "which way / how many degrees am I facing?" straight from the phone compass."""
+    is_gr = phrases.normalize_lang(lang) == "Greek"
+    comp = current_compass_deg(state)
+    if comp is None:
+        return (
+            "Η πυξίδα του κινητού δεν στέλνει δεδομένα ακόμα. Κράτα το κινητό όρθιο και κούνησέ το λίγο."
+            if is_gr
+            else "The phone compass is not sending data yet. Hold the phone upright and move it a little."
+        )
+    deg = round(comp) % 360
+    _, en_l, el_l = cardinal_labels(deg)
+    text = f"Κοιτάς {deg} μοίρες, {el_l.lower()}." if is_gr else f"You are facing {deg} degrees, {en_l.lower()}."
+    if state.target_bearing_deg is not None:
+        t = round(state.target_bearing_deg) % 360
+        _, t_en, t_el = cardinal_labels(t)
+        rel = relative_turn_words(compass_delta_deg(t, deg), lang)
+        text += (
+            f" Ο στόχος σου, {t_el.lower()} ({t} μοίρες), είναι {rel}."
+            if is_gr
+            else f" Your target, {t_en.lower()} ({t} degrees), is {rel}."
+        )
+    return text
+
+
+def compass_target_from_goal(goal: str) -> float | None:
+    """A memory goal like "να πάω νότια" / "go north-east" implies a compass bearing to guide toward."""
+    g = re.sub(r"[.!?;]+$", "", (goal or "").strip())
+    if not g:
+        return None
+    parsed = parse_compass_spec(g)
+    if parsed is None:
+        return None
+    words = [w for w in g.split() if w]
+    if len(words) <= 4 or _COMPASS_NAV_INTENT_RE.search(g) or re.match(r"^(?:να\s+)?(?:πάω|παω|go|head|walk)\b", g, re.I):
+        return float(parsed[0])
+    return None
+
+
+async def sync_goal_compass_target(state: "State", by: str = "goal") -> None:
+    """Keep `target_bearing_deg` consistent with a direction stored in the memory goal (set, change or clear).
+
+    A goal like "να πάω νότια" sets the target; replacing/clearing that goal clears a goal-derived target.
+    An explicit voice/tool target is only replaced when the goal names a different direction.
+    """
+    deg = compass_target_from_goal(state.memory.goal)
+    if deg is not None:
+        if state.target_bearing_deg is None or abs(compass_delta_deg(deg, state.target_bearing_deg)) > 1:
+            await apply_compass_target(state, deg, by=by)
+    elif state.target_from_goal and state.target_bearing_deg is not None:
+        await apply_compass_target(state, None, by=by)
+
+
 def parse_compass_spec(spec: str) -> tuple[int, str, str, str] | None:
     """Parse a cardinal/intercardinal name, code, or degree spec into `(deg, code, en_label, el_label)`."""
     s = (spec or "").strip()
@@ -277,9 +343,10 @@ def detect_compass_action(heard_text: str, raw_compass: str = "") -> str:
         return "compass:clear"
     if raw_up in ("CLEAR", "STOP", "OFF", "CANCEL"):
         return "compass:clear"
-    # Never treat pure orientation questions ("Προς τα πού κοιτάω;", "Which way am I facing?") as setting a target
+    # Orientation questions ("Πόσες μοίρες κοιτάω;", "Which way am I facing?") are answered from the
+    # compass deterministically and never set a target
     if txt and _COMPASS_FACING_QUERY_RE.search(txt):
-        return ""
+        return "compass:facing"
     if raw_up and raw_up not in ("NONE", "NO", "N/A", "-", "NULL"):
         parsed = parse_compass_spec(raw_compass)
         if parsed is not None:
@@ -308,7 +375,10 @@ def compass_context_text(state: State, now: float | None = None) -> str:
             f"{lbl}({b}°): {_relative_turn_phrase_en(compass_delta_deg(b, deg))}"
             for b, lbl in ((0, "North/Βόρεια"), (90, "East/Ανατολικά"), (180, "South/Νότια"), (270, "West/Δυτικά"))
         )
-        parts.append(f"Phone compass: facing {deg}° ({code} / {en_l} / {el_l}). Relative bearings now: {card_rel}.")
+        parts.append(
+            f"Phone compass: the user is facing EXACTLY {deg} degrees ({code} / {en_l} / {el_l}); quote this number "
+            f"when asked which way or how many degrees they face. Relative bearings now: {card_rel}."
+        )
         if state.target_bearing_deg is not None:
             t_deg = round(state.target_bearing_deg) % 360
             delta = compass_delta_deg(t_deg, deg)
@@ -447,6 +517,8 @@ def fallback_reply(decision: CommandDecision, lang: str = "English") -> str:
         return "Μιλάω ελληνικά τώρα." if target == "Greek" else "Switched to English."
     if decision.action == "compass:clear":
         return "Έκλεισα την καθοδήγηση πυξίδας." if is_gr else "Compass guidance turned off."
+    if decision.action == "compass:facing":
+        return ""  # answered deterministically by facing_reply() with live compass data
     if decision.action.startswith("compass:"):
         parts = decision.action.split(":")
         deg = int(parts[1]) if len(parts) >= 2 and parts[1].isdigit() else 0
@@ -470,6 +542,9 @@ def fallback_reply(decision: CommandDecision, lang: str = "English") -> str:
 async def apply_compass_target(state: State, deg: float | None, label: str = "", by: str = "voice_router") -> None:
     """Set or clear the active compass guidance bearing on `state` and notify the browser."""
     now = time.time()
+    state.target_from_goal = by == "goal"
+    if not by.startswith("place"):
+        state.target_place = None  # a new/cleared direction replaces any place guidance
     if deg is None:
         state.target_bearing_deg = None
         state.target_bearing_label = ""
@@ -494,6 +569,11 @@ async def apply_compass_target(state: State, deg: float | None, label: str = "",
     await state.send({"type": "compass_target", "deg": round(norm_deg), "label": label})
 
 
+def _place_target_just_set(state: State, window_s: float = 20.0) -> bool:
+    tp = state.target_place
+    return bool(tp and time.time() - float(tp.get("set_at") or 0) < window_s)
+
+
 async def apply_command_decision(state: State, decision: CommandDecision) -> bool:
     """Apply system actions and explicit memory updates from `decision` onto `state`. Returns True if memory changed."""
     if decision.intent == "ignore":
@@ -501,8 +581,8 @@ async def apply_command_decision(state: State, decision: CommandDecision) -> boo
 
     if decision.action.startswith("mode:"):
         mode_val = decision.action.split(":", 1)[1]
-        if mode_val in state.policy.MODES and state.policy.mode != mode_val:
-            state.policy.mode = mode_val
+        if mode_val in ALERT_MODES and state.alert_mode != mode_val:
+            state.alert_mode = mode_val
             trace.log("alert_mode", mode=mode_val, by="voice_router")
             await state.send({"type": "mode", "mode": mode_val})
     elif decision.action.startswith("lang:"):
@@ -515,6 +595,11 @@ async def apply_command_decision(state: State, decision: CommandDecision) -> boo
             await state.send({"type": "lang", "lang": target_lang})
     elif decision.action == "compass:clear":
         await apply_compass_target(state, None, by="voice_router")
+    elif decision.action == "compass:facing":
+        pass
+    elif decision.action.startswith("compass:") and _place_target_just_set(state):
+        # guide_to_place just aimed the compass at a place; a bearing echoed in the COMPASS header must not replace it
+        trace.log("compass_header_ignored", action=decision.action, place=state.target_place.get("name"))
     elif decision.action.startswith("compass:"):
         parts = decision.action.split(":")
         deg_val = float(int(parts[1]) % 360) if len(parts) >= 2 and parts[1].isdigit() else 0.0
@@ -526,6 +611,8 @@ async def apply_command_decision(state: State, decision: CommandDecision) -> boo
         memory.save_persisted(state.memory)
         trace.log("memory_update", **state.memory.to_dict())
         await state.send({"type": "memory", **state.memory.to_dict()})
+        if not decision.action.startswith("compass:") or decision.action == "compass:facing":
+            await sync_goal_compass_target(state)
 
     trace.log(
         "command_decision",
@@ -538,55 +625,27 @@ async def apply_command_decision(state: State, decision: CommandDecision) -> boo
     return mem_changed
 
 
-def is_panning(imu: dict | None) -> bool:
-    """True when phone gyroscope indicates rapid camera panning rather than walking."""
-    if not imu:
-        return False
-    speed = imu.get("angularSpeed")
-    if isinstance(speed, (int, float)):
-        return speed > config.PAN_DEG_S
-    return bool(imu.get("panning"))
-
-
-def evaluate_movement_risk_gate(
-    frames: list[tuple[float, bytes]],
-    imu: dict | None = None,
-) -> MovementGateResult:
-    """Centralized movement gate deciding whether the user moved enough to run risk identification."""
-    panning = is_panning(imu)
-    mv = similarity.frame_movement(frames)
-    moved_enough = (not panning) and bool(mv["enough_for_alert"])
-    can_say_stop = moved_enough and mv["score"] >= config.MIN_STOP_MOVEMENT
-    return MovementGateResult(
-        panning=panning,
-        moved_enough=moved_enough,
-        can_say_stop=can_say_stop,
-        score=mv["score"],
-        min_step=mv["min_step"],
-        span=mv["span"],
-        sustained=mv["sustained"],
-        user_moving=attention.user_moving(imu),
-    )
-
-
 async def run_depth_probe(state: State, b64_data: str, seq: int = 0, disp: float | None = None) -> None:
     """Metric center-crop anchor / fast pipelined fallback (up to 3 concurrent staggered calls)."""
-    from ..safety import watch
 
-    if state.depth_probes_inflight >= 3 or not state.depth_mode_active:
+    def wanted() -> bool:
+        # Hold scan, or the always-on stop guard re-anchoring its metric scale
+        return state.depth_mode_active or state.alert_mode != "off"
+
+    if state.depth_probes_inflight >= 3 or not wanted():
         return
     state.depth_probes_inflight += 1
     try:
         jpeg = base64.b64decode(b64_data)
         t0 = time.time()
-        dist = await watch.estimate_center_distance(jpeg)
+        dist = await center_probe.estimate_center_distance(jpeg)
         ms = round((time.time() - t0) * 1000)
-        if state.depth_mode_active and dist is not None:
+        if wanted() and dist is not None:
             if seq and seq < state.depth_probe_latest_seq:
                 return
             if seq:
                 state.depth_probe_latest_seq = seq
-            trace.log("depth_probe", dist_m=dist, ms=ms, seq=seq or None)
+            trace.log("depth_probe", dist_m=dist, ms=ms, seq=seq or None, guard=not state.depth_mode_active)
             payload: dict = {"type": "depth_result", "dist_m": dist, "source": "center-crop", "ms": ms}
             if seq:
                 payload["seq"] = seq
@@ -598,18 +657,25 @@ async def run_depth_probe(state: State, b64_data: str, seq: int = 0, disp: float
 
 
 async def run_local_depth_probe(state: State, b64_data: str, seq: int = 0) -> None:
-    """Run Depth-Anything-V2-Small locally on the laptop/server via ONNX Runtime."""
-    if not state.depth_mode_active:
+    """Run Depth-Anything-V2-Small locally on the laptop/server via ONNX Runtime (hold scan or stop guard)."""
+
+    def wanted() -> bool:
+        return state.depth_mode_active or state.alert_mode != "off"
+
+    if not wanted():
+        await state.send({"type": "depth_local_skip", "seq": seq})
         return
     try:
         jpeg = base64.b64decode(b64_data)
         stats, provider, ms = await local_depth.predict_center_disparity(jpeg)
-        if not state.depth_mode_active:
+        if not wanted():
+            await state.send({"type": "depth_local_skip", "seq": seq})
             return
         if stats is None:
             await state.send({"type": "depth_local_skip", "seq": seq, "provider": provider})
             return
-        trace.log("depth_local", center_disp=stats["center_disp"], provider=provider, ms=ms, seq=seq or None)
+        if state.depth_mode_active:
+            trace.log("depth_local", center_disp=stats["center_disp"], provider=provider, ms=ms, seq=seq or None)
         await state.send({
             "type": "depth_local",
             "seq": seq,
@@ -621,8 +687,30 @@ async def run_local_depth_probe(state: State, b64_data: str, seq: int = 0) -> No
         })
     except Exception as exc:
         trace.log("depth_local_error", error=f"{type(exc).__name__}: {exc}"[:160])
-        if state.depth_mode_active:
-            await state.send({"type": "depth_local_skip", "seq": seq})
+        await state.send({"type": "depth_local_skip", "seq": seq})
+
+
+async def handle_gps(state: State, msg: dict) -> None:
+    """Store the phone's GPS fix (browser geolocation) and keep place guidance aimed at the target."""
+    from ..geo import service
+    from ..safety import alerts
+
+    try:
+        lat, lon = float(msg["lat"]), float(msg["lon"])
+    except (KeyError, TypeError, ValueError):
+        return
+    if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
+        return
+    acc = msg.get("acc")
+    first = state.gps is None
+    state.gps = {"lat": lat, "lon": lon, "acc": float(acc) if isinstance(acc, (int, float)) else None}
+    state.gps_at = time.time()
+    if first:
+        trace.log("gps_first_fix", acc_m=round(state.gps["acc"] or 0))
+    arrival = await service.on_gps_update(state)
+    if arrival:
+        trace.log("place_arrived", text=arrival)
+        alerts.spawn(alerts.speak_notice(state, arrival))
 
 
 async def handle_audio_chunk(state: State, chunk: bytes) -> None:
@@ -633,14 +721,16 @@ async def handle_audio_chunk(state: State, chunk: bytes) -> None:
     if not state.assistant_enabled:
         return
     now_c = time.time()
-    if state.depth_mode_active or state.alert_locked(now_c):
+    if state.mic_blocked(now_c):
+        # Hold-scan, or the "Stop!" phrase itself is playing
         state.reset_mic_turn()
         return
     info_generating = state.info_task is not None and not state.info_task.done()
-    assistant_busy = state.audible(now_c) or state.model_speaking or info_generating
+    assistant_busy = state.audible(now_c) or state.model_speaking or info_generating or state.emergency_active
     for action in state.turn.feed(chunk, now_c, assistant_busy):
         if action[0] == "start":
-            was_cut = info_pipeline.cancel_for_user(state)
+            # The user is talking: stop whatever the assistant is saying or doing and listen
+            was_cut = info_pipeline.interrupt_everything(state, "user_turn")
             trace.log("user_turn", state="start", cut_assistant=was_cut)
             if was_cut:
                 await state.send({"type": "interrupted"})
@@ -671,9 +761,9 @@ async def handle_audio_chunk(state: State, chunk: bytes) -> None:
 
 
 async def handle_client_message(state: State, msg: dict, frame_count: int) -> int:
-    """Route JSON control, camera frames, on-device hazard alerts, and depth probes from the browser."""
+    """Route JSON control, camera frames, IMU, depth probes and depth emergency stops from the browser."""
     from ..assistant import info_pipeline
-    from ..safety import alerts, watch
+    from ..safety import alerts
 
     kind = msg.get("type")
     if kind == "frame":
@@ -685,18 +775,24 @@ async def handle_client_message(state: State, msg: dict, frame_count: int) -> in
         state.frames.append((now_f, jpeg))
         if isinstance(msg.get("imu"), dict):
             state.imu, state.imu_at = msg["imu"], now_f
-        if isinstance(msg.get("motion"), (int, float)):
-            state.motion.append((now_f, float(msg["motion"])))
         if msg.get("fresh"):
             trace.log("fresh_frame")
             if state.turn.active:
                 state.turn_frame_jpeg = jpeg
+    elif kind == "barge_in":
+        # Phone heard the user's voice open while the assistant was busy: it already silenced playback locally
+        if state.assistant_enabled and not state.mic_blocked(time.time()):
+            if info_pipeline.interrupt_everything(state, "client_voice"):
+                await state.send({"type": "interrupted"})
+    elif kind == "gps":
+        await handle_gps(state, msg)
     elif kind == "imu" and isinstance(msg.get("imu"), dict):
         state.imu, state.imu_at = msg["imu"], time.time()
-    elif kind == "local_alert":
-        alerts.spawn(alerts.local_alert(state, msg))
-    elif kind == "mode" and msg.get("mode") in watch.AlertPolicy.MODES:
-        state.policy.mode = msg["mode"]
+    elif kind == "depth_stop":
+        if not state.emergency_active:
+            alerts.spawn(alerts.depth_emergency_stop(state, msg))
+    elif kind == "mode" and msg.get("mode") in ALERT_MODES:
+        state.alert_mode = msg["mode"]
         trace.log("alert_mode", mode=msg["mode"], by="button")
     elif kind == "assistant":
         enabled = bool(msg.get("enabled", True))

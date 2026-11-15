@@ -1,4 +1,4 @@
-"""Per-connection runtime state shared between the voice assistant and movement-gated safety pipeline."""
+"""Per-connection runtime state shared between the voice assistant and the depth emergency-stop pipeline."""
 import asyncio
 from collections import deque
 from dataclasses import dataclass, field
@@ -7,30 +7,20 @@ import time
 from fastapi import WebSocket
 
 from ..assistant import turns
-from ..safety.attention import Attention
-from ..safety.policy import AlertPolicy
 from .memory import UserMemory
+
+ALERT_MODES = ("normal", "urgent_only", "off")
 
 
 @dataclass
 class ActiveSpeech:
     """Tracks clause-by-clause playback timing while the assistant is speaking."""
 
-    kind: str  # "answer" | "explain_resume"
+    kind: str  # "answer" | "depth_stop"
     user_question: str = ""
     generated_text: str = ""
     # List of [play_start_epoch, play_end_epoch, clause_text]
     clause_timeline: list[list] = field(default_factory=list)
-
-
-@dataclass
-class InterruptedSpeech:
-    """Preserves what the assistant was answering when cut off by a danger alert."""
-
-    user_question: str
-    spoken_so_far: str
-    draft_reply: str
-    created_at: float = field(default_factory=time.time)
 
 
 @dataclass
@@ -43,28 +33,29 @@ class State:
     session: object = None
     assistant_enabled: bool = True
 
-    # Camera & watcher state
-    frames: deque = field(default_factory=lambda: deque(maxlen=40))
-    attention: Attention = field(default_factory=Attention)
-    last_live_frame: float = 0.0
-    policy: AlertPolicy = field(default_factory=AlertPolicy)
-    recent_alerts: deque = field(default_factory=lambda: deque(maxlen=4))
-    last_judged_frame: float = 0.0
-    motion: deque = field(default_factory=lambda: deque(maxlen=12))
-    last_look_at: float = 0.0
-    last_look_silent: bool = True
-    last_watch_idle_at: float = 0.0
-    watch_inflight: int = 0
-    watch_seq: int = 0
-    watch_applied_seq: int = 0
-    last_alert_fired_at: float = 0.0
+    # Camera, sensors & compass guidance
+    frames: deque = field(default_factory=lambda: deque(maxlen=12))
+    alert_mode: str = "normal"
     imu: dict | None = None
     imu_at: float = 0.0
     target_bearing_deg: float | None = None
     target_bearing_label: str = ""
+    target_from_goal: bool = False  # target came from a direction in the memory goal ("να πάω νότια")
     compass_aligned_announced: bool = False
     last_compass_cue_at: float = 0.0
-    danger_frame_jpeg: bytes | None = None
+
+    # Phone GPS + places (tour guide tools)
+    gps: dict | None = None          # {"lat", "lon", "acc", "heading"?, "speed"?}
+    gps_at: float = 0.0
+    geo_area: dict | None = None     # cached reverse-geocode of the current spot
+    geo_places: list = field(default_factory=list)  # last places results, to resolve "the second one"
+    target_place: dict | None = None  # {"name","lat","lon"} while guide_to_place is active
+
+    # Depth-triggered emergency stop: while active, the answering pipeline is blocked
+    emergency_active: bool = False
+    emergency_task: asyncio.Task | None = None
+    last_emergency_at: float = 0.0
+    stop_phrase_until: float = 0.0  # only the "Stop!" itself cannot be talked over; everything after it can
 
     # Streaming information pipeline & turn state
     turn: turns.TurnTracker = field(default_factory=turns.TurnTracker)
@@ -73,7 +64,6 @@ class State:
     chat_history: deque = field(default_factory=lambda: deque(maxlen=8))
     info_task: asyncio.Task | None = None
     active_speech: ActiveSpeech | None = None
-    interrupted_speech: InterruptedSpeech | None = None
 
     expect_interrupt: bool = False
     model_speaking: bool = False
@@ -97,9 +87,13 @@ class State:
         """True while previously streamed 24 kHz PCM16 speech is still playing on the client."""
         return now < self.audible_until
 
+    def mic_blocked(self, now: float) -> bool:
+        """User speech is ignored only while holding the depth scan or while "Stop!" itself plays."""
+        return self.depth_mode_active or now < self.stop_phrase_until
+
     def alert_locked(self, now: float) -> bool:
-        """True while an alert + its 'why' explanation are generating/playing, plus 0.5 s after."""
-        return self.explaining_alert or now < self.explain_lock_until
+        """True while a depth emergency stop + its guidance are generating/playing (plus a short tail)."""
+        return self.emergency_active or self.explaining_alert or now < self.explain_lock_until
 
     def reset_mic_turn(self) -> None:
         """Clear any partial user voice turn so pre-alert speech or speaker echo cannot cut explanations."""
