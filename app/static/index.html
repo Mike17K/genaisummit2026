@@ -12,10 +12,12 @@
     * { box-sizing: border-box; }
     html, body { height: 100%; margin: 0; background: #000; color: #fff; font-family: system-ui, sans-serif; }
     body { display: flex; flex-direction: column; }
-    #go { flex: 1; min-height: 40%; border: 0; font-size: 2rem; background: #0b5fff; color: #fff; padding: 0 1rem; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; transition: background .12s ease; }
-    #go[aria-pressed="true"] { background: #1a7f37; }
-    #go[data-state="depth"] { background: #0e7490; }
-    #go[data-state="error"] { background: #b42318; }
+    #stage { flex: 1; min-height: 40%; position: relative; background: #05040f; overflow: hidden; }
+    #depthView { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    #go { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; font-size: 2rem; background: rgba(11,95,255,0.9); color: #fff; padding: 0 1rem; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; transition: background .12s ease; text-shadow: 0 2px 6px rgba(0,0,0,.9), 0 0 2px #000; }
+    #go[aria-pressed="true"] { background: rgba(26,127,55,0.18); }
+    #go[aria-pressed="true"][data-state="hearing"] { background: rgba(11,95,255,0.35); }
+    #go[data-state="error"] { background: rgba(180,35,24,0.85); }
     #top { display: flex; align-items: center; gap: .6rem; padding: .45rem .8rem; font-size: 1.1rem; background: #1f1c2f; border-bottom: 1px solid #33304a; min-height: 3.2rem; }
     #logo { height: 30px; width: 30px; border-radius: 7px; flex: none; }
     #status { flex: 1; min-width: 0; }
@@ -40,10 +42,9 @@
     #memlist .mem-tag { color: #e3b341; }
     #memempty { color: #8b949e; font-style: italic; }
     #log { margin-top: .4rem; border-top: 1px solid #30363d; padding-top: .3rem; color: #8b949e; white-space: pre-wrap; word-break: break-word; }
-    #audiobar, #sonarbar, #gatebar, #agentbar, #depthbar { display: flex; align-items: center; gap: .6rem; padding: .4rem .8rem; background: #161b22; font: 12px ui-monospace, monospace; color: #8b949e; border-top: 1px solid #21262d; }
-    #gatebar span, #audiobar span, #sonarbar span, #agentbar span, #depthbar span { flex: 1; }
-    #gatebar button, #audiobar button, #sonarbar button, #agentbar button, #depthbar button { width: 3rem; height: 2.2rem; font-size: 1.05rem; border: 1px solid #30363d; border-radius: 6px; background: #21262d; color: #fff; }
-    #gatebar b { color: #fff; min-width: 3.5rem; text-align: center; }
+    #audiobar, #sonarbar, #agentbar, #depthbar { display: flex; align-items: center; gap: .6rem; padding: .4rem .8rem; background: #161b22; font: 12px ui-monospace, monospace; color: #8b949e; border-top: 1px solid #21262d; }
+    #audiobar span, #sonarbar span, #agentbar span, #depthbar span { flex: 1; }
+    #audiobar button, #sonarbar button, #agentbar button, #depthbar button { width: 3rem; height: 2.2rem; font-size: 1.05rem; border: 1px solid #30363d; border-radius: 6px; background: #21262d; color: #fff; }
     #sonarSettings { background: #161b22; border-top: 1px solid #21262d; padding: .3rem .8rem .6rem; font: 12px ui-monospace, monospace; color: #8b949e; }
     #sonarSettings summary { cursor: pointer; padding: .3rem 0; color: #c9d1d9; }
     #sonarSettings .sgroup { margin-top: .5rem; color: #e3b341; }
@@ -57,10 +58,9 @@
 </head>
 <body>
   <div id="top" aria-live="off"><img id="logo" src="/static/logo.png" width="30" height="30" alt="VoxEye"><span id="badge">idle</span><span id="status">Tap the button to start</span></div>
-  <button id="go" aria-pressed="false" aria-label="Start assistant. When running, tap to stop or hold 1 second for center depth mode.">Tap to start</button>
-  <div id="gatebar" class="bar" aria-hidden="true">
-    <span>voice gate (higher = must speak louder)</span>
-    <button id="gateDown" type="button">&minus;</button><b id="gateVal">0.045</b><button id="gateUp" type="button">+</button>
+  <div id="stage">
+    <canvas id="depthView" aria-hidden="true"></canvas>
+    <button id="go" aria-pressed="false" aria-label="Tap to start the assistant. When running, hold to talk and release to send; tap to stop.">Tap to start</button>
   </div>
   <div id="agentbar" class="bar" aria-hidden="true">
     <span>conversational assistant (tap to toggle)</span>
@@ -85,7 +85,7 @@
     </div>
   </details>
   <div id="depthbar" class="bar" aria-hidden="true">
-    <span>depth inference (hold 1s, tap to cycle)</span>
+    <span>sonar depth engine (tap to cycle)</span>
     <button id="depthBtn" type="button" style="width:auto;padding:0 .8rem">depth: auto (mobile)</button>
   </div>
   <div id="debug" aria-hidden="true">
@@ -99,11 +99,10 @@
   </div>
   <video id="cam" playsinline muted></video>
   <canvas id="canvas" hidden></canvas>
-  <script src="/static/micgate.js?v=22"></script>
-  <script src="/static/looming.js?v=22"></script>
-  <script src="/static/depth_engine.js?v=22"></script>
-  <script src="/static/spatial_sonar.js?v=22"></script>
-  <script src="/static/xr_depth.js?v=22"></script>
-  <script src="/static/app.js?v=22"></script>
+  <script src="/static/looming.js?v=27"></script>
+  <script src="/static/depth_engine.js?v=27"></script>
+  <script src="/static/spatial_sonar.js?v=27"></script>
+  <script src="/static/depth_view.js?v=27"></script>
+  <script src="/static/app.js?v=27"></script>
 </body>
 </html>

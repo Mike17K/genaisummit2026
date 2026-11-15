@@ -1,5 +1,6 @@
-// Realtime voice: mic (PCM16 16 kHz) -> /live -> Gemini -> speech (PCM16 24 kHz) back, plus phone compass + GPS for
-// guidance and places, and a hold-1s depth sonar (Depth-Anything-V2 on phone WebGPU or laptop ONNX).
+// Push-to-talk voice (hold the button, PCM16 16 kHz) -> /live -> Gemini -> speech (PCM16 24 kHz) back, plus phone
+// compass + GPS for guidance and places, and an always-on stereo depth sonar for earphones. The mic is CLOSED unless
+// the user holds the button, so Android keeps the earphones in stereo media audio.
 (function () {
 "use strict";
 const go = document.getElementById("go");
@@ -11,30 +12,9 @@ const canvas = document.getElementById("canvas");
 
 const IN_RATE = 16000;
 const OUT_RATE = 24000;
-const SILENCE_WAIT_MS = 400; // Fixed 400 ms wait after user stops talking
-const GATE_DEFAULT = 0.045;  // Balanced manual floor paired with adaptive room-noise floor
-const GATE_STEP = 0.010;
-const GATE_MAX = 0.50;
-const ECHO_FACTOR = 1.6;        // gate multiplier while the assistant is audible (echo guard; AEC removes most echo)
-
-function loadGate() {
-  const q = parseFloat(new URLSearchParams(location.search).get("gate"));
-  if (q > 0) return q;
-  try { const v = parseFloat(localStorage.getItem("eyesGateV4")); if (v > 0) return v; } catch (_) {}
-  return GATE_DEFAULT;
-}
-let gate = loadGate();
-const micGate = new MicGate({
-  onsetMs: 170,
-  hangMs: 500,
-  rate: IN_RATE,
-  grace: 1,
-  sustainFactor: 0.78,
-  adaptiveFloor: true,
-  peakDropFactor: 0.35,
-  maxOpenMs: 7500,
-});
-
+const SILENCE_WAIT_MS = 400; // server turn-tracker setting (unused with push-to-talk, kept for the URL contract)
+const HOLD_TALK_MS = 280;    // press longer than this = talk; a shorter tap starts / stops the assistant
+const PTT_TAIL_MS = 250;     // keep recording briefly after release so the last syllable is not cut
 const imu = new Looming.ImuState({ panDegS: 160, stableDegS: 110 });
 const INFO_FRAME_MIN_GAP_MS = 2500; // Max 0.4 fps on-demand Q&A frame when user speaks
 const IMU_PUSH_MIN_GAP_MS = 250;
@@ -137,32 +117,84 @@ function micConstraints(deviceId) {
   return deviceId ? { ...base, deviceId: { exact: deviceId } } : base;
 }
 
-// Earphone mode: if the mic in use belongs to a Bluetooth headset, switch to the phone's own mic so the
-// earbuds stay on the stereo media profile instead of the mono call profile.
-async function preferPhoneMic() {
-  if (!earphoneMode || !stream) return;
-  const track = stream.getAudioTracks()[0];
-  if (!track || !BT_MIC_RE.test(track.label || "")) return;
+async function sendAudioDiag(event, extra = {}) {
   try {
-    const inputs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audioinput");
-    const phone = inputs.find((d) => d.deviceId && d.deviceId !== "default" && d.label && !BT_MIC_RE.test(d.label));
-    if (!phone) return;
-    const fresh = await navigator.mediaDevices.getUserMedia({ audio: micConstraints(phone.deviceId) });
-    const nt = fresh.getAudioTracks()[0];
-    stream.removeTrack(track);
-    track.stop();
-    stream.addTrack(nt);
-    note(`mic: switched from "${track.label}" to phone mic "${nt.label}" to keep earphones in stereo`);
-  } catch (err) {
-    note("mic switch failed: " + ((err && err.name) || err));
-  }
+    const t = stream && stream.getAudioTracks()[0];
+    const st = t && typeof t.getSettings === "function" ? t.getSettings() : {};
+    let devices = [];
+    try {
+      devices = (await navigator.mediaDevices.enumerateDevices())
+        .filter((d) => d.kind !== "videoinput")
+        .map((d) => `${d.kind === "audioinput" ? "in" : "out"}: ${d.label || "(no label)"}`);
+    } catch (_) {}
+    const ac = sonarCtx;
+    const payload = {
+      event,
+      earphone_mode: earphoneMode,
+      mic_open: !!(t && t.readyState === "live"),
+      mic_label: t ? t.label : null,
+      mic_settings: t ? {
+        echoCancellation: st.echoCancellation, noiseSuppression: st.noiseSuppression,
+        autoGainControl: st.autoGainControl, channelCount: st.channelCount, sampleRate: st.sampleRate,
+      } : null,
+      out_max_channels: ac ? ac.destination.maxChannelCount : null,
+      out_channels: ac ? ac.destination.channelCount : null,
+      ctx_sample_rate: ac ? ac.sampleRate : null,
+      ctx_state: ac ? ac.state : null,
+      ctx_kind: sonarCtx ? `sonar #${sonarCtxGen}` : "none",
+      main_ctx_channels: ctx ? ctx.destination.maxChannelCount : null,
+      devices,
+      settings: SpatialSonarLib.getSettings(),
+      ua: navigator.userAgent,
+      ...extra,
+    };
+    fetch("/audio_diag", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }).catch(() => {});
+  } catch (_) {}
+}
+
+// Pick which mic push-to-talk opens. Earphone mode avoids a Bluetooth headset mic (it forces mono call audio).
+// Earphone mode must ALWAYS open the phone's built-in mic explicitly. Verified over ADB on a realme C55 + REDMI
+// Buds 8 Pro: Chrome's "default" mic on Android IS the Bluetooth headset when one is connected; opening it makes
+// Chrome pin the Bluetooth call route (SCO: mono, 8-16 kHz) and it stays pinned after the mic closes, so all audio
+// (sonar included) loses stereo. Opening the built-in mic moves the route off SCO and the Buds return to stereo A2DP.
+// Matching is language independent: never the "default"/"communications" pseudo-devices, never a Bluetooth device.
+const BUILTIN_MIC_RE = /speakerphone|built-?in|internal|bottom|phone|handset|μικρόφωνο|τηλέφωνο/i;
+
+async function pickBuiltInMic() {
+  const inputs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audioinput");
+  const real = inputs.filter((d) => d.deviceId && !["default", "communications"].includes(d.deviceId) && !BT_MIC_RE.test(d.label || ""));
+  return real.find((d) => BUILTIN_MIC_RE.test(d.label || "")) || real.find((d) => !/headset|earpiece/i.test(d.label || "")) || real[0] || null;
+}
+
+async function chooseMicDevice() {
+  micDeviceId = null;
+  if (!earphoneMode) return;
+  try {
+    const mic = await pickBuiltInMic();
+    if (mic) {
+      micDeviceId = mic.deviceId;
+      note(`mic: built-in "${mic.label}" (keeps Bluetooth earphones in stereo)`);
+    } else {
+      note("mic: no built-in mic found, using default");
+    }
+  } catch (_) {}
+}
+
+// If a Bluetooth call link is already pinned (e.g. by an earlier default-mic session), briefly opening the built-in
+// mic moves Chrome's call route off the headset and releases it (verified over ADB).
+async function releaseBluetoothCallRoute() {
+  if (!earphoneMode || !micDeviceId) return;
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({ audio: micConstraints(micDeviceId) });
+    s.getTracks().forEach((t) => t.stop());
+  } catch (_) {}
 }
 
 function describeAudio() {
   const outCh = ctx && ctx.destination ? ctx.destination.maxChannelCount : null;
   const t = stream && stream.getAudioTracks()[0];
   const st = t && typeof t.getSettings === "function" ? t.getSettings() : {};
-  micInfo = t ? `${t.label || "mic"} (echo cancel ${st.echoCancellation ? "ON" : "off"})` : "-";
+  micInfo = t ? `OPEN: ${t.label || "mic"} (echo cancel ${st.echoCancellation ? "ON" : "off"})` : `closed (hold to talk) · uses ${micDeviceId ? "built-in mic" : "default mic"}`;
   return `${earphoneMode ? "earphones (stereo)" : "speaker (echo cancel)"} · output ${outCh === null ? "?" : outCh >= 2 ? "stereo" : "MONO (" + outCh + " ch)"} · mic: ${micInfo}`;
 }
 
@@ -193,7 +225,6 @@ let nextPlayTime = 0;
 const playing = new Set();
 
 // Depth-Anything-V2-Small (Auto mobile->laptop perf switch | Mobile WebGPU | Laptop Server ONNX) + Web PDAF + Hold > 1s
-const HOLD_DEPTH_MS = 1000;
 const DEPTH_MODES = ["auto", "mobile", "laptop"];
 let depthMode = "auto"; // Default: auto (starts mobile, switches to laptop if phone >280ms/frame)
 try {
@@ -213,16 +244,52 @@ let laptopRttEmaMs = null;
 let laptopProvider = "Laptop ONNX";
 let holdTimer = null;
 let activePointerId = null;
-let depthScanActive = false;
 let suppressNextClick = false;
 let suppressClickUntil = 0;
 let smoothedDepthM = null;
 let depthSource = "-";
-let depthPollTimer = null;
+// Push-to-talk state: pttPending = pressed, mic opening; pttActive = mic open and streaming; pttReleasing = tail
+let pttPending = false;
+let pttActive = false;
+let pttReleasing = false;
+let micSource = null;
+let micDeviceId = null;
+let micOp = Promise.resolve();
 // Stereo depth sonar (earphones): LEFT / CENTER / RIGHT nearest surfaces -> beeps in that ear. It is the danger
-// feedback: always on while running (unless switched off), and a focused full-speed scan while holding 1s.
-const sonar = new SpatialSonar(() => ctx, {
-  isMuted: () => micGate.open || dbg.voiceOpen,          // never beep over the user's own voice (mic leak)
+// feedback: always on while the assistant runs (unless switched off).
+// The sonar plays through its OWN AudioContext. On Android, opening the mic switches every running AudioContext
+// to mono call audio (often left channel only) and it stays that way even after the mic closes. A context created
+// while no mic is open is a normal stereo media context, so we recreate this one after every time the mic closes.
+let sonarCtx = null;
+let sonarCtxGen = 0;
+const STEREO_REFRESH_DELAY_MS = 400; // let Android leave call mode before opening the new output
+
+function getSonarCtx() {
+  if (!sonarCtx || sonarCtx.state === "closed") {
+    sonarCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: "interactive" });
+    sonarCtxGen++;
+  }
+  if (sonarCtx.state === "suspended") sonarCtx.resume().catch(() => {});
+  return sonarCtx;
+}
+
+let stereoRefreshTimer = null;
+function refreshSonarAudio(reason) {
+  clearTimeout(stereoRefreshTimer);
+  stereoRefreshTimer = setTimeout(() => {
+    stereoRefreshTimer = null;
+    if (pttPending || pttActive) return; // the mic is open again: refresh after it closes
+    const old = sonarCtx;
+    sonarCtx = null;
+    const fresh = getSonarCtx();
+    if (old && old !== fresh) setTimeout(() => old.close().catch(() => {}), 300); // let queued beeps finish
+    note(`stereo audio refreshed (${reason}), sonar context #${sonarCtxGen}`);
+    sendAudioDiag("stereo_refreshed", { reason, sonar_ctx_gen: sonarCtxGen });
+  }, STEREO_REFRESH_DELAY_MS);
+}
+
+const sonar = new SpatialSonar(getSonarCtx, {
+  isMuted: () => pttPending || pttActive,               // never beep while the user is talking (mic leak)
   duck: () => (playing.size > 0 ? 0.45 : 1),             // quieter while VoxEye is speaking
 });
 // Sonar settings (per-ear pitch / max volume / max beep rate, range, pitch offsets): saved on this device, then
@@ -257,12 +324,14 @@ try { if (localStorage.getItem("eyesSonar") === "0") sonarEnabled = false; } cat
 let sonarTimer = null;
 let sonarSentState = null;
 const smoothedSectors = { left: null, center: null, right: null };
-// WebXR Depth Sensing (Chrome + ARCore) is the preferred hold-scan source; ?xr=0 disables it
-const XR_ALLOWED = new URLSearchParams(location.search).get("xr") !== "0";
-let xrSupported = null;   // null = unknown yet, then true / false
-let xrBroken = "";        // set when a session failed on this phone, so later holds use the model directly
-let xrSource = null;
-let xrStatus = "-";
+// The inspected depth image + ear dividing lines, drawn behind the main button
+const depthView = new DepthView(document.getElementById("depthView"));
+function b64ToBytes(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
 let lastDepthProbeAt = 0;
 let depthProbeSeq = 0;
 
@@ -356,7 +425,6 @@ function renderDebug() {
   const now = Date.now();
   const wsState = socket ? ["connecting", "open", "closing", "closed"][socket.readyState] : "-";
   const sinceAudio = dbg.lastModelAudioAt ? ((now - dbg.lastModelAudioAt) / 1000).toFixed(1) + "s ago" : "never";
-  const talkingNow = !!dbg.voiceOpen;
   const up = dbg.startedAt ? Math.round((now - dbg.startedAt) / 1000) + "s" : "-";
   const compassText = imu.compassDeg !== null
     ? `${imu.compassDeg}° ${imu.compassDir || ""}${imu.compassAbs ? "" : " (rel)"}${dbg.compassTarget ? "  -> target: " + dbg.compassTarget : ""}`
@@ -365,9 +433,9 @@ function renderDebug() {
     ["state", cls(dbg.state === "error" ? false : dbg.state === "idle" ? null : true, dbg.state) + "  up " + up],
     ["camera", cls(dbg.camera === "ok" ? true : dbg.camera === "-" ? null : false, dbg.camera) + `  context: ${dbg.sentWatchFrames} frames · Q&A: ${dbg.sentInfoFrames} frames (on speech)`],
     ["camera rate", `${dbg.fps} fps context frames (measured ${(dbg.frameStamps.length / 3).toFixed(1)}), Q&A <=0.4 fps`],
-    ["mic", cls(dbg.mic === "ok" ? true : dbg.mic === "-" ? null : false, dbg.mic) + `  sent ${dbg.sentKB.toFixed(0)} KB` +
-      `<div id="meter"><div style="width:${Math.min(100, dbg.micLevel * 250)}%"></div><i style="left:${Math.min(99, (micGate.lastOpenThresh || dbg.effGate || gate) * 250)}%"></i></div>` +
-      `level ${dbg.micLevel.toFixed(3)} floor ${micGate.noiseFloor.toFixed(3)} open ${(micGate.lastOpenThresh || dbg.effGate || gate).toFixed(3)} gate ${gate.toFixed(3)}${dbg.effGate > gate ? " (raised: assistant speaking)" : ""} ${talkingNow ? cls(true, "(voice open: sending speech)") : dbg.micLevel > (micGate.lastOpenThresh || dbg.effGate || gate) ? cls(null, "(sound above gate, waiting to confirm)") : cls(null, "(below gate: sending silence)")}`],
+    ["mic", cls(pttActive ? true : null, pttActive ? "OPEN (talking)" : pttPending ? "opening..." : "closed") + `  sent ${dbg.sentKB.toFixed(0)} KB` +
+      `<div id="meter"><div style="width:${Math.min(100, (pttActive ? dbg.micLevel : 0) * 250)}%"></div></div>` +
+      (pttActive ? `level ${dbg.micLevel.toFixed(3)}` : "hold the big button to talk")],
     ["audio ctx", cls(dbg.audioCtx === "running" ? true : dbg.audioCtx === "-" ? null : false, dbg.audioCtx)],
     ["audio mode", esc(describeAudio())],
     ["session id", esc(dbg.conn) + "  (filter the server trace with /panel?conn=" + esc(dbg.conn) + ")"],
@@ -379,12 +447,11 @@ function renderDebug() {
     ["user memory", esc(dbg.memory || "empty")],
     ["depth model", esc(`[${depthMode === "auto" ? "auto->" + depthDevice : depthMode}] ` + (dbg.depthModel || "-"))],
     ["center depth", esc(dbg.depth || "-")],
-    ["webxr depth", esc(!XR_ALLOWED ? "disabled (?xr=0)" : xrSupported === null ? "checking..." : xrSupported ? (xrBroken ? "failed: " + xrBroken : "supported (" + xrStatus + ")") : "not supported on this browser/phone")],
     ["sonar settings", esc((() => {
       const c = SpatialSonarLib.getSettings(), e = (k) => `${c.ears[k].pitchHz}Hz vol ${Math.round(c.ears[k].maxVolume * 100)}% max ${c.ears[k].maxRateHz}/s`;
       return `L ${e("left")} · R ${e("right")} · range ${c.rangeM} m · sides ±${c.sideOffset} st · split ±${c.centerSplit} st · closer +${c.proximityRise} st`;
     })())],
-    ["stereo sonar", esc(!sonarEnabled && !depthScanActive ? "off" : sonar.running ? `${depthScanActive ? "[HOLD] " : ""}${sonar.summary()}${sonar.isMuted() ? " (paused: you are talking)" : ""}` : "starts with the assistant")],
+    ["stereo sonar", esc(!sonarEnabled ? "off" : sonar.running ? `${sonar.summary()}${sonar.isMuted() ? " (paused: you are talking)" : ""}` : "starts with the assistant")],
     ["compass", esc(compassText)],
     ["gps", esc(gpsStatus + (gpsFix ? `  (${gpsFix.lat.toFixed(5)}, ${gpsFix.lon.toFixed(5)}, ${Math.round((Date.now() - gpsFix.at) / 1000)}s ago)` : ""))],
     ["phone motion", esc(imu.panning ? "panning" : imu.walking === true ? "walking" : imu.walking === false ? "stationary" : "movement unknown") + `  gyro ${imu.angularSpeed} deg/s, pitch ${imu.pitchDeg ?? "?"}`],
@@ -397,22 +464,21 @@ function renderDebug() {
 }
 
 function updateLiveState() {
-  if (!running || depthScanActive || reconnecting || !socket || socket.readyState !== 1) return;
+  if (!running || reconnecting || !socket || socket.readyState !== 1) return;
   const now = Date.now();
-  if (dbg.voiceOpen && assistantEnabled) dbg.lastSpeechAt = now;
   const speaking = playing.size > 0 || (dbg.lastModelAudioAt && now - dbg.lastModelAudioAt < 700);
   let next = "listening";
-  if (speaking) next = "speaking";
-  else if (dbg.voiceOpen && assistantEnabled) next = "hearing";
-  else if (assistantEnabled && dbg.lastSpeechAt && now - dbg.lastSpeechAt < 6000 && dbg.lastSpeechAt > dbg.lastModelAudioAt) next = "thinking";
+  if (pttPending || pttActive || pttReleasing) next = "hearing";
+  else if (speaking) next = "speaking";
+  else if (assistantEnabled && dbg.lastSpeechAt && now - dbg.lastSpeechAt < 8000 && dbg.lastSpeechAt > dbg.lastModelAudioAt) next = "thinking";
   const label = !assistantEnabled && next === "listening"
-    ? "Assistant off. Hold 1s for depth."
-    : { listening: "Listening. Ask me anything.", hearing: "Hearing you...", thinking: "Thinking...", speaking: "Speaking..." }[next];
+    ? "Assistant off. Sonar still running."
+    : { listening: "Ready. Hold the button and talk.", hearing: "Listening... release when done.", thinking: "Thinking...", speaking: "Speaking... hold to interrupt." }[next];
   const btnLabel = {
-    listening: "Listening. Tap to stop · Hold 1s for depth",
-    hearing: "Hearing you... · Tap to stop",
-    thinking: "Thinking... · Tap to stop",
-    speaking: "Speaking... · Tap to stop",
+    listening: "Hold to talk · Tap to stop",
+    hearing: "Listening · Release to send",
+    thinking: "Thinking... · Hold to talk",
+    speaking: "Speaking... · Hold to interrupt",
   }[next];
   if (btnLabel && go.textContent !== btnLabel) go.textContent = btnLabel;
   if (next !== dbg.state) setState(next, label);
@@ -477,11 +543,6 @@ function downsampleToInt16(float32, fromRate) {
   return out;
 }
 
-function effectiveGate(now) {
-  const assistantSpeaking = playing.size > 0 || (dbg.lastModelAudioAt && now - dbg.lastModelAudioAt < 600);
-  return assistantSpeaking ? gate * ECHO_FACTOR : gate;
-}
-
 function sendAudio(pcm, flag) {
   const out = new Uint8Array(1 + pcm.byteLength);
   out[0] = flag;
@@ -490,25 +551,28 @@ function sendAudio(pcm, flag) {
   if (flag === 1 || pcm.some((v) => v !== 0)) dbg.sentKB += pcm.byteLength / 1024;
 }
 
-// Is the assistant saying or doing anything the user's voice should cut?
-function assistantBusyLocal() {
-  let ttsSpeaking = false;
-  try { ttsSpeaking = speechSynthesis.speaking; } catch (_) {}
-  return playing.size > 0 || ttsSpeaking || dbg.state === "thinking" || dbg.state === "speaking";
+// Short earcons so a blind user knows exactly when the mic opened (speak now) and closed (sent)
+function talkCue(open) {
+  if (!ctx) return;
+  const t0 = ctx.currentTime + 0.01;
+  const [a, b] = open ? [660, 880] : [880, 587];
+  [[a, 0], [b, 0.07]].forEach(([f, at]) => {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = "sine";
+    o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, t0 + at);
+    g.gain.linearRampToValueAtTime(0.09, t0 + at + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + 0.07);
+    o.connect(g).connect(ctx.destination);
+    o.start(t0 + at);
+    o.stop(t0 + at + 0.08);
+  });
 }
 
-// The user's voice just opened the gate: silence everything at once (no round trip) and tell the server to cancel too.
-function bargeIn() {
-  if (!assistantBusyLocal()) return;
-  stopPlayback();
-  if (socket && socket.readyState === 1) socket.send(JSON.stringify({ type: "barge_in" }));
-  dbg.lastModelAudioAt = 0;
-  note("barge-in: you spoke, assistant stopped");
-}
-
+// Mic pipeline for one push-to-talk turn: everything captured while pttActive is streamed as speech.
 function startMic() {
-  micGate.reset();
   const source = ctx.createMediaStreamSource(stream);
+  micSource = source;
   processor = ctx.createScriptProcessor(4096, 1, 1);
   processor.onaudioprocess = (e) => {
     const input = e.inputBuffer.getChannelData(0);
@@ -516,32 +580,81 @@ function startMic() {
     for (let i = 0; i < input.length; i++) sum += input[i] * input[i];
     dbg.micLevel = Math.sqrt(sum / input.length);
     dbg.micPeak = Math.max(dbg.micPeak * 0.995, dbg.micLevel);
-    if (!socket || socket.readyState !== 1 || !assistantEnabled || depthScanActive) {
-      dbg.voiceOpen = false;
-      return;
-    }
-    const pcm = downsampleToInt16(input, ctx.sampleRate);
-    const now = Date.now();
-    dbg.effGate = effectiveGate(now);
-    const wasOpen = micGate.open;
-    for (const [chunk, flag] of micGate.process(pcm, dbg.micLevel, now, dbg.effGate)) {
-      sendAudio(chunk, flag);
-    }
-    dbg.voiceOpen = micGate.open;
-    if (!wasOpen && micGate.open) bargeIn();
-    if (!wasOpen && micGate.open && now - lastInfoFrameAt >= INFO_FRAME_MIN_GAP_MS) {
-      lastInfoFrameAt = now;
-      setTimeout(() => sendFrame(true), 0);
-    }
+    if (!pttActive || !socket || socket.readyState !== 1) return;
+    sendAudio(downsampleToInt16(input, ctx.sampleRate), 1);
+    dbg.lastSpeechAt = Date.now();
   };
   const mute = ctx.createGain(); mute.gain.value = 0;
   source.connect(processor); processor.connect(mute); mute.connect(ctx.destination);
-  const track = stream.getAudioTracks()[0];
-  dbg.mic = "ok";
-  note(`mic: ${track ? track.label || "default" : "no track"} @ ${ctx.sampleRate} Hz`);
 }
 
-// Low-rate context frames so a spoken question always has a recent picture (no video safety watcher any more)
+function openMic() {
+  micOp = micOp.then(async () => {
+    if (stream.getAudioTracks().length) return;
+    let fresh;
+    try {
+      fresh = await navigator.mediaDevices.getUserMedia({ audio: micConstraints(micDeviceId) });
+    } catch (_) {
+      fresh = await navigator.mediaDevices.getUserMedia({ audio: micConstraints() });
+    }
+    stream.addTrack(fresh.getAudioTracks()[0]);
+    startMic();
+  });
+  return micOp;
+}
+
+function closeMic() {
+  micOp = micOp.then(() => {
+    try { if (processor) processor.disconnect(); if (micSource) micSource.disconnect(); } catch (_) {}
+    processor = null;
+    micSource = null;
+    for (const t of stream ? stream.getAudioTracks() : []) { stream.removeTrack(t); t.stop(); }
+  }).catch(() => {});
+  return micOp;
+}
+
+// Hold to talk: stop whatever VoxEye is saying/doing at once, open the mic, stream the user's words.
+async function startTalk() {
+  if (!running || !assistantEnabled || pttPending || pttActive || pttReleasing) return;
+  pttPending = true;
+  stopPlayback();
+  if (socket && socket.readyState === 1) socket.send(JSON.stringify({ type: "ptt_start" }));
+  setState("hearing", "Opening the microphone...");
+  try {
+    await openMic();
+  } catch (err) {
+    pttPending = false;
+    dbg.mic = "blocked (" + ((err && err.name) || err) + ")";
+    note("mic open failed: " + dbg.mic);
+    if (socket && socket.readyState === 1) socket.send(JSON.stringify({ type: "ptt_end" }));
+    return;
+  }
+  if (!pttPending) { closeMic().then(() => refreshSonarAudio("after push-to-talk")); return; } // released while opening
+  pttPending = false;
+  pttActive = true;
+  talkCue(true); // "speak now"
+  sendFrame(true);
+  if (!dbg.micDiagSent) { dbg.micDiagSent = true; sendAudioDiag("ptt_mic_open"); }
+}
+
+function stopTalk() {
+  if (pttPending) { // released before the mic was ready: nothing was said
+    pttPending = false;
+    if (socket && socket.readyState === 1) socket.send(JSON.stringify({ type: "ptt_end" }));
+    return;
+  }
+  if (!pttActive || pttReleasing) return;
+  pttReleasing = true;
+  setTimeout(() => {
+    pttActive = false;
+    pttReleasing = false;
+    closeMic().then(() => refreshSonarAudio("after push-to-talk"));
+    talkCue(false); // "sent"
+    if (socket && socket.readyState === 1) socket.send(JSON.stringify({ type: "ptt_end" }));
+    dbg.lastSpeechAt = Date.now();
+  }, PTT_TAIL_MS);
+}
+
 function setFrameRate(fps) {
   fps = Math.min(3.0, Math.max(0.5, +fps || 1));
   dbg.fps = fps;
@@ -573,8 +686,9 @@ function ensureDepthEngine() {
       video: cam,
       onStatus: (s) => { if (depthDevice === "mobile") dbg.depthModel = s; },
       onDepth: (distM, backend, ms, _disp, sectors) => {
-        if (depthDevice === "mobile" && !xrSource) updateDepthReading(distM, `${backend} ${ms}ms`, sectors);
+        if (depthDevice === "mobile") updateDepthReading(distM, `${backend} ${ms}ms`, sectors);
       },
+      onDepthImage: (data, w, h) => { if (depthDevice === "mobile") depthView.setImage(data, w, h, "phone"); },
       // Called on every frame: must stay cheap and must never (re)start the depth loop itself
       onPerfChange: () => evaluateDepthTarget(true),
     });
@@ -594,26 +708,24 @@ function sonarContinuous() {
   return running && sonarEnabled;
 }
 
-// Depth is needed for the hold scan or the always-on sonar
 function depthWanted() {
-  return depthScanActive || sonarContinuous();
+  return sonarContinuous();
 }
 
 // One place that decides what runs: depth engine rate, continuous feed timer, sonar, server flag. Idempotent.
 function syncDepthEngine() {
   const wanted = depthWanted();
   if (depthEngine) {
-    if (depthDevice === "mobile" && wanted && !xrSource) {
-      depthEngine.setIntervalMs(depthScanActive ? 0 : SONAR_MOBILE_INTERVAL_MS);
+    if (depthDevice === "mobile" && wanted) {
+      depthEngine.setIntervalMs(SONAR_MOBILE_INTERVAL_MS);
       depthEngine.start();
     } else {
       depthEngine.stop();
     }
   }
-  const feed = sonarContinuous() && !depthScanActive;
+  const feed = sonarContinuous();
   if (feed && !sonarTimer) sonarTimer = setInterval(sonarTick, 60);
   else if (!feed && sonarTimer) { clearInterval(sonarTimer); sonarTimer = null; }
-  sonar.aliveTick = depthScanActive;
   if (wanted) sonar.start();
   else sonar.stop();
   const serverState = sonarContinuous();
@@ -625,7 +737,7 @@ function syncDepthEngine() {
 
 // Continuous sonar feed between depth frames: laptop-ONNX probes, metric re-anchoring.
 function sonarTick() {
-  if (depthScanActive || !sonarContinuous()) return;
+  if (!sonarContinuous()) return;
   const now = Date.now();
   if (laptopInFlight && now - laptopSentAt > 800) laptopInFlight = false;
   const mobile = mobileDepthLive();
@@ -697,165 +809,11 @@ function updateDepthReading(rawM, src, sectors = null) {
   depthSource = src;
   const f = (d) => (d == null ? "-" : d.toFixed(2));
   dbg.depth = `L ${f(smoothedSectors.left)} · C ${f(smoothedSectors.center)} · R ${f(smoothedSectors.right)} m (${src})`;
-  if (!depthWanted()) return;
-  sonar.update(smoothedSectors);
-  if (!depthScanActive) return;
-  statusEl.textContent = `Depth L ${f(smoothedSectors.left)} · C ${f(smoothedSectors.center)} · R ${f(smoothedSectors.right)} m (${src})`;
-  go.textContent = `Depth ${f(smoothedSectors.center)} m ahead · Release to exit`;
-}
-
-function xrUsable() {
-  return XR_ALLOWED && xrSupported === true && !xrBroken && typeof XrDepthSource === "function";
-}
-
-function startDepthScan() {
-  if (!running || depthScanActive) return;
-  depthScanActive = true;
-  stopPlayback();
-  micGate.reset();
-  dbg.voiceOpen = false;
-  lastDepthProbeAt = 0;
-  laptopInFlight = false;
-  smoothedSectors.left = smoothedSectors.center = smoothedSectors.right = null;
-  sonar.update(smoothedSectors);
-  if (xrUsable()) {
-    xrSource = "starting"; // pauses the continuous model feed before the session exists
-    syncDepthEngine();
-    startXrScan();
-    return;
-  }
-  startModelScan();
-}
-
-// Preferred source: WebXR Depth Sensing (ARCore). Falls back to the depth model if the session fails.
-async function startXrScan() {
-  setState("depth", "Starting AR depth...");
-  go.textContent = "Starting AR depth · Release to exit";
-  if (socket && socket.readyState === 1) {
-    socket.send(JSON.stringify({ type: "depth_mode", active: true, pdaf: false, engine: "webxr", device: "phone" }));
-  }
-  if (xrSource === "starting") xrSource = null;
-  const src = new XrDepthSource({
-    overlayRoot: document.body,
-    onStatus: (st) => { xrStatus = st; },
-    onSectors: (sectors) => {
-      if (!depthScanActive || xrSource !== src) return;
-      const c = sectors.center ?? Math.min(...["left", "right"].map((k) => sectors[k] ?? Infinity));
-      updateDepthReading(Number.isFinite(c) ? c : null, "WebXR depth", sectors);
-    },
-  });
-  xrSource = src;
-  src.onEnded = () => {
-    if (xrSource === src) xrSource = null;
-    restoreCameraAfterXr();
-    syncDepthEngine(); // resume the continuous model feed
-    if (depthScanActive) stopDepthScan(true); // system ended AR (back gesture, error) while holding
-  };
-  try {
-    await src.start();
-    note("depth: WebXR depth sensing session started");
-    if (!depthScanActive) await src.stop(); // released while the session was starting
-  } catch (err) {
-    if (xrSource === src) xrSource = null;
-    syncDepthEngine();
-    xrBroken = String((err && err.message) || err).slice(0, 80);
-    xrStatus = "unavailable: " + xrBroken;
-    note("WebXR depth failed, using depth model: " + xrBroken);
-    if (depthScanActive) startModelScan(true);
-  }
-}
-
-// After an AR session ARCore hands the camera back; if our track ended or stays muted, re-open it.
-async function restoreCameraAfterXr() {
-  await new Promise((r) => setTimeout(r, 600));
-  if (!running || !stream) return;
-  const old = stream.getVideoTracks()[0];
-  if (old && old.readyState === "live" && !old.muted) return;
-  try {
-    const fresh = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", focusMode: { ideal: "continuous" } } });
-    const track = fresh.getVideoTracks()[0];
-    if (old) { stream.removeTrack(old); try { old.stop(); } catch (_) {} }
-    stream.addTrack(track);
-    cam.srcObject = stream;
-    await cam.play().catch(() => {});
-    videoTrack = track;
-    videoCaps = typeof track.getCapabilities === "function" ? track.getCapabilities() : {};
-    note("camera restored after AR depth");
-  } catch (err) {
-    note("camera restore failed: " + ((err && err.name) || err));
-  }
-}
-
-function startModelScan(afterXrFailure = false) {
-  if (depthDevice === "mobile") ensureDepthEngine();
-  const gpuReady = mobileDepthLive();
-  const d0 = readPdafDistance();
-  if (d0 !== null) {
-    smoothedDepthM = d0;
-    depthSource = "PDAF";
-    if (depthEngine) depthEngine.anchorMetric(d0);
-    if (lastLaptopDisp !== null) laptopCalibrator.anchor(lastLaptopDisp, d0);
-  } else if (!gpuReady) {
-    smoothedDepthM = null;
-    depthSource = depthDevice === "laptop" ? "laptop" : "scanning";
-  }
-
-  const engineName = depthDevice === "laptop" ? laptopProvider : (gpuReady ? depthEngine.backend : (d0 !== null ? "PDAF" : "local-server-fallback"));
-  if (!afterXrFailure && socket && socket.readyState === 1) {
-    socket.send(JSON.stringify({ type: "depth_mode", active: true, pdaf: d0 !== null, engine: engineName, device: depthDevice }));
-  }
-  setState("depth", smoothedDepthM !== null ? `Center depth: ${smoothedDepthM.toFixed(2)} m (${depthSource})` : "Scanning center depth...");
-  go.textContent = smoothedDepthM !== null ? `Depth: ${smoothedDepthM.toFixed(2)} m · Release to exit` : "Scanning depth · Release to exit";
-  note(`depth mode ON (${depthDevice}: ${engineName})`);
-
-  syncDepthEngine();
-  if (depthDevice === "laptop" || !gpuReady) sendLaptopDepthProbe();
-  if (d0 === null) sendCenterDepthProbe(0);
-
-  depthPollTimer = setInterval(() => {
-    if (laptopInFlight && Date.now() - laptopSentAt > 800) laptopInFlight = false;
-    const d = readPdafDistance();
-    if (d !== null) {
-      if (mobileDepthLive()) depthEngine.anchorMetric(d);
-      else if (depthDevice === "laptop" && lastLaptopDisp !== null) laptopCalibrator.anchor(lastLaptopDisp, d);
-      else if (!xrSource) updateDepthReading(d, "PDAF");
-    }
-    if (depthDevice === "laptop") {
-      if (!laptopInFlight) sendLaptopDepthProbe();
-      if (d === null) sendCenterDepthProbe(2200);
-    } else if (mobileDepthLive()) {
-      if (d === null) sendCenterDepthProbe(2000);
-    } else {
-      // Mobile WebGPU weights still downloading on first visit -> use fast local laptop ONNX in the meantime
-      if (!laptopInFlight) sendLaptopDepthProbe();
-      if (d === null) sendCenterDepthProbe(2000);
-    }
-  }, 80);
-}
-
-function stopDepthScan(notifyServer = true) {
-  if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
-  if (!depthScanActive) return;
-  depthScanActive = false;
-  laptopInFlight = false;
-  suppressClickUntil = Date.now() + 450;
-  clearInterval(depthPollTimer); depthPollTimer = null;
-  if (xrSource && typeof xrSource.stop === "function") xrSource.stop(); // its "end" event restores the camera
-  if (xrSource === "starting") xrSource = null;
-  try { navigator.vibrate?.(0); } catch (_) {}
-  if (notifyServer && socket && socket.readyState === 1) {
-    socket.send(JSON.stringify({ type: "depth_mode", active: false }));
-  }
-  note("depth mode OFF");
-  if (running) {
-    go.textContent = "Listening. Tap to stop · Hold 1s for depth";
-    setState("listening", assistantEnabled ? "Listening. Ask me anything." : "Assistant off. Hold 1s for depth.");
-  }
-  syncDepthEngine();
+  if (depthWanted()) sonar.update(smoothedSectors);
 }
 
 function sendFrame(fresh = false) {
-  if (!cam.videoWidth || !socket || socket.readyState !== 1 || depthScanActive) return;
+  if (!cam.videoWidth || !socket || socket.readyState !== 1) return;
   const now = Date.now();
   if (fresh !== true && now - lastAnyFrameAt < 280) return;
   const w = fresh === true ? 512 : 352;
@@ -867,7 +825,7 @@ function sendFrame(fresh = false) {
   const pdafM = readPdafDistance();
   if (pdafM !== null) {
     imuSnap.focusDistM = pdafM;
-    if (!depthScanActive) dbg.depth = `${pdafM.toFixed(2)} m (PDAF)`;
+    if (!sonar.running) dbg.depth = `${pdafM.toFixed(2)} m (PDAF)`;
   }
   const msg = { type: "frame", data, imu: imuSnap };
   if (fresh === true) msg.fresh = true;
@@ -887,11 +845,13 @@ function scheduleReconnect() {
   reconnecting = true;
   reconnectAttempts++;
   stopPlayback();
-  micGate.reset();
-  dbg.voiceOpen = false;
+  if (pttPending || pttActive) {
+    pttPending = pttActive = pttReleasing = false;
+    closeMic().then(() => refreshSonarAudio("after reconnect"));
+  }
   laptopInFlight = false;
   dbg.gemini = "reconnecting";
-  if (!depthScanActive) {
+  {
     setState("connecting", `Reconnecting in 0.5s (attempt ${reconnectAttempts})...`);
     go.textContent = "Reconnecting... · Tap to stop";
   }
@@ -909,7 +869,7 @@ function openLiveSocket(isInitial = false) {
     try { if (socket.readyState <= 1) socket.close(); } catch (_) {}
   }
   reconnecting = true;
-  if (!depthScanActive) {
+  {
     setState("connecting", isInitial ? "Connecting to the assistant..." : `Reconnecting (attempt ${reconnectAttempts})...`);
     go.textContent = (isInitial ? "Connecting..." : "Reconnecting...") + " · Tap to stop";
   }
@@ -926,15 +886,13 @@ function openLiveSocket(isInitial = false) {
     dbg.error = "";
     dbg.ws = "open";
     note(isInitial ? "websocket open" : "websocket reconnected");
-    if (!depthScanActive) {
-      go.textContent = "Listening. Tap to stop · Hold 1s for depth";
-      setState("listening", assistantEnabled ? "Listening. Ask me anything." : "Assistant off. Hold 1s for depth.");
-    }
+    go.textContent = "Hold to talk · Tap to stop";
+    setState("listening", assistantEnabled ? "Ready. Hold the button and talk." : "Assistant off. Sonar still running.");
   };
 
   ws.onmessage = (e) => {
     if (ws !== socket) return;
-    if (e.data instanceof ArrayBuffer) { if (!depthScanActive) playPcm(e.data); return; }
+    if (e.data instanceof ArrayBuffer) { if (!pttActive && !pttPending) playPcm(e.data); return; }
     const m = JSON.parse(e.data);
     dbg.lastEvent = m.type + (m.name ? ":" + m.name : "");
     if (m.type === "ready") {
@@ -949,11 +907,6 @@ function openLiveSocket(isInitial = false) {
       dbg.gemini = "ready"; dbg.conn = m.conn || "-"; chime(); note(`gemini session ready, id ${dbg.conn} (${sessionLang || "English"})`);
       ws.send(JSON.stringify({ type: "assistant", enabled: assistantEnabled }));
       ws.send(JSON.stringify({ type: "depth_device", device: depthDevice, mode: depthMode, reason: depthReason }));
-      if (depthScanActive) {
-        const d0 = readPdafDistance();
-        ws.send(JSON.stringify({ type: "depth_mode", active: true, pdaf: d0 !== null, device: depthDevice }));
-        if (!mobileDepthLive()) sendLaptopDepthProbe();
-      }
     }
     else if (m.type === "depth_device_status") {
       if (m.provider) laptopProvider = m.provider;
@@ -973,7 +926,12 @@ function openLiveSocket(isInitial = false) {
           const rttTag = laptopRttEmaMs ? ` (rtt ${Math.round(laptopRttEmaMs)}ms)` : "";
           dbg.depthModel = `${laptopProvider}, ${m.ms} ms/frame${rttTag}${laptopCalibrator.anchored ? " [cal]" : ""}`;
         }
-        if (depthWanted() && distM !== null && !mobileDepthLive() && !xrSource) {
+        if (depthWanted() && !mobileDepthLive() && typeof m.depth_thumb === "string") {
+          const bytes = b64ToBytes(m.depth_thumb);
+          const side = Math.round(Math.sqrt(bytes.length));
+          if (side * side === bytes.length) depthView.setImage(bytes, side, side, "laptop");
+        }
+        if (depthWanted() && distM !== null && !mobileDepthLive()) {
           const sd = Array.isArray(m.sector_disp) ? m.sector_disp : null;
           const toM = (v) => (typeof v === "number" && v > 0 ? laptopCalibrator.toMeters(v) : null);
           const sectors = sd ? { left: toM(sd[0]), center: toM(sd[1]), right: toM(sd[2]) } : null;
@@ -981,15 +939,9 @@ function openLiveSocket(isInitial = false) {
         }
       }
       if (depthMode === "auto") evaluateDepthTarget(true);
-      if (depthScanActive && !mobileDepthLive()) {
-        requestAnimationFrame(sendLaptopDepthProbe);
-      }
     }
     else if (m.type === "depth_local_skip") {
       laptopInFlight = false;
-      if (depthScanActive && !mobileDepthLive()) {
-        setTimeout(sendLaptopDepthProbe, 35);
-      }
     }
     else if (m.type === "memory") {
       renderMemories(m);
@@ -1073,9 +1025,11 @@ async function start() {
   ctx.onstatechange = () => { dbg.audioCtx = ctx.state; note("audio context: " + ctx.state); };
 
   note("asking for camera and microphone");
+  // If mic permission was already granted, pick the built-in mic BEFORE opening anything (never the BT default)
+  try { if (earphoneMode) { const m = await pickBuiltInMic(); if (m) micDeviceId = m.deviceId; } } catch (_) {}
   try {
     stream = await navigator.mediaDevices.getUserMedia({
-      audio: micConstraints(),
+      audio: micConstraints(micDeviceId),
       video: { facingMode: "environment", focusMode: { ideal: "continuous" } },
     });
   } catch (err) {
@@ -1095,18 +1049,20 @@ async function start() {
     }
   }
   const initPdaf = readPdafDistance();
-  dbg.depth = initPdaf !== null ? `${initPdaf.toFixed(2)} m (PDAF)` : (videoCaps.focusDistance ? "PDAF ready" : "hold 1s (center-crop)");
+  dbg.depth = initPdaf !== null ? `${initPdaf.toFixed(2)} m (PDAF)` : "waiting for the sonar";
   dbg.camera = "ok";
   note(`camera: ${cam.videoWidth}x${cam.videoHeight}, pdaf: ${videoCaps.focusDistance ? "supported" : "fallback"}`);
 
-  await preferPhoneMic();
-  startMic();
+  // Permission + device choice now, then close the mic: it only opens while the user holds the button
+  const firstMicWasDefault = !micDeviceId;
+  await chooseMicDevice();
+  for (const t of stream.getAudioTracks()) { stream.removeTrack(t); t.stop(); }
+  if (firstMicWasDefault) await releaseBluetoothCallRoute(); // first-ever permission used the default mic
+  refreshSonarAudio("after mic permission");
   note("audio: " + describeAudio());
+  sendAudioDiag("assistant_started");
   setFrameRate(1);
   ensureDepthEngine(); // Pre-load & pre-compile WebGPU Depth-Anything-V2-Small in background worker (fallback)
-  if (XR_ALLOWED && typeof XrDepthSource === "function" && xrSupported === null) {
-    XrDepthSource.supported().then((ok) => { xrSupported = ok; note(`WebXR depth: ${ok ? "supported" : "not supported, using depth model"}`); });
-  }
   try { wakeLock = await navigator.wakeLock?.request("screen"); note("screen wake lock on"); } catch (_) { note("screen wake lock unavailable"); }
 
   running = true;
@@ -1115,13 +1071,14 @@ async function start() {
   dbg.startedAt = Date.now();
   go.setAttribute("aria-pressed", "true");
   startGps();
-  note(`wait after you stop talking: ${SILENCE_WAIT_MS} ms`);
+  note("push-to-talk: hold the button to talk, release to send");
   openLiveSocket(true);
 }
 
 function stop(announce = true) {
   const wasError = dbg.state === "error";
-  stopDepthScan(false);
+  if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+  pttPending = pttActive = pttReleasing = false;
   running = false;
   reconnecting = false;
   reconnectAttempts = 0;
@@ -1129,13 +1086,17 @@ function stop(announce = true) {
   videoTrack = null;
   videoCaps = {};
   smoothedDepthM = null;
+  smoothedSectors.left = smoothedSectors.center = smoothedSectors.right = null;
+  depthView.clear();
   dbg.depth = "-";
   syncDepthEngine();
   stopGps();
   clearInterval(frameTimer);
   stopPlayback();
   processor?.disconnect();
+  const hadMic = !!(stream && stream.getAudioTracks().length);
   stream?.getTracks().forEach((t) => t.stop());
+  refreshSonarAudio(hadMic ? "after stop (mic was open)" : "after stop");
   if (socket) {
     socket.onopen = socket.onmessage = socket.onerror = socket.onclose = null;
     try { if (socket.readyState <= 1) socket.close(); } catch (_) {}
@@ -1148,23 +1109,10 @@ function stop(announce = true) {
   if (!wasError) setState("idle", announce ? "Stopped. Tap to start." : "Tap to start");
 }
 
-const gateVal = document.getElementById("gateVal");
-function setGate(v) {
-  gate = Math.min(GATE_MAX, Math.max(0.01, Math.round(v * 1000) / 1000));
-  gateVal.textContent = gate.toFixed(3);
-  if (micGate.open) {
-    micGate.reset(true);
-    dbg.voiceOpen = false;
-  }
-  try { localStorage.setItem("eyesGateV4", String(gate)); } catch (_) {}
-  note("gate set to " + gate.toFixed(3));
-}
 window.addEventListener("pointerdown", () => {
   if (ctx && ctx.state === "suspended") ctx.resume().catch(() => {});
+  if (sonarCtx && sonarCtx.state === "suspended") sonarCtx.resume().catch(() => {});
 }, { passive: true });
-document.getElementById("gateDown").addEventListener("click", () => setGate(gate - GATE_STEP));
-document.getElementById("gateUp").addEventListener("click", () => setGate(gate + GATE_STEP));
-gateVal.textContent = gate.toFixed(3);
 
 const sonarBtn = document.getElementById("sonarBtn");
 function syncSonarButton() {
@@ -1180,8 +1128,7 @@ if (sonarBtn) sonarBtn.addEventListener("click", () => {
 });
 
 // Sonar settings panel: sliders generated from the engine's LIMITS, applied live, saved on this device.
-let previewCtx = null;
-const previewSonar = new SpatialSonar(() => ctx || (previewCtx = previewCtx || new (window.AudioContext || window.webkitAudioContext)()));
+const previewSonar = new SpatialSonar(getSonarCtx); // test beeps use the same fresh stereo context as the sonar
 const SONAR_FIELDS = [
   { group: "Left ear", path: ["ears", "left", "pitchHz"], label: "pitch", unit: "Hz", limit: "pitchHz" },
   { group: "Left ear", path: ["ears", "left", "maxVolume"], label: "max volume", unit: "%", limit: "maxVolume", pct: true },
@@ -1241,7 +1188,11 @@ function buildSonarPanel() {
 buildSonarPanel();
 for (const [id, sector] of [["sonarTestL", "left"], ["sonarTestC", "center"], ["sonarTestR", "right"]]) {
   const b = document.getElementById(id);
-  if (b) b.addEventListener("click", () => { const v = previewSonar.test(sector, 0.8); if (v) note(`test ${sector}: L ${v.freqL}Hz ${v.gainL} · R ${v.freqR}Hz ${v.gainR}`); });
+  if (b) b.addEventListener("click", () => {
+    const v = previewSonar.test(sector, 0.8);
+    if (v) note(`test ${sector}: L ${v.freqL}Hz ${v.gainL} · R ${v.freqR}Hz ${v.gainR}`);
+    sendAudioDiag("test_beep", { sector, gainL: v ? v.gainL : null, gainR: v ? v.gainR : null });
+  });
 }
 const sonarResetBtn = document.getElementById("sonarReset");
 if (sonarResetBtn) sonarResetBtn.addEventListener("click", () => {
@@ -1309,7 +1260,7 @@ function evaluateDepthTarget(announceAuto = true) {
 
   if (depthDevice === "laptop") {
     dbg.depthModel = `ready (${laptopProvider}, ${res.reason})`;
-    if (depthScanActive) sendLaptopDepthProbe();
+    if (depthWanted()) sendLaptopDepthProbe();
   } else if (running) {
     ensureDepthEngine();
   }
@@ -1351,8 +1302,8 @@ go.addEventListener("pointerdown", (e) => {
     holdTimer = null;
     if (!running) return;
     suppressNextClick = true;
-    startDepthScan();
-  }, HOLD_DEPTH_MS);
+    startTalk();
+  }, HOLD_TALK_MS);
 });
 
 function releaseGoHold(e) {
@@ -1362,13 +1313,32 @@ function releaseGoHold(e) {
     clearTimeout(holdTimer);
     holdTimer = null;
   }
-  if (depthScanActive) stopDepthScan(true);
+  if (pttPending || pttActive) {
+    suppressClickUntil = Date.now() + 450;
+    stopTalk();
+  }
 }
 
 window.addEventListener("pointerup", releaseGoHold);
 window.addEventListener("pointercancel", releaseGoHold);
 window.addEventListener("blur", () => releaseGoHold(null));
 document.addEventListener("visibilitychange", () => { if (document.hidden) releaseGoHold(null); });
+
+// Desktop / keyboard: hold Space to talk
+let spaceDown = false;
+window.addEventListener("keydown", (e) => {
+  if (e.code !== "Space" || e.repeat || spaceDown || !running) return;
+  if (e.target && /input|textarea|select|button/i.test(e.target.tagName)) return;
+  e.preventDefault();
+  spaceDown = true;
+  startTalk();
+});
+window.addEventListener("keyup", (e) => {
+  if (e.code !== "Space" || !spaceDown) return;
+  e.preventDefault();
+  spaceDown = false;
+  stopTalk();
+});
 
 go.addEventListener("click", (e) => {
   if (suppressNextClick || Date.now() < suppressClickUntil) {
@@ -1380,6 +1350,11 @@ go.addEventListener("click", (e) => {
   else start().catch((err) => { fail("start", err); stop(false); });
 });
 
-debugTimer = setInterval(() => { updateLiveState(); renderDebug(); if (running) maybeSendGps(); }, 200);
+debugTimer = setInterval(() => {
+  updateLiveState();
+  renderDebug();
+  if (running) maybeSendGps();
+  depthView.draw(smoothedSectors, sonar.running ? sonar.voices.map((v) => v.sector) : [], { running: running && sonarEnabled });
+}, 200);
 renderDebug();
 })();

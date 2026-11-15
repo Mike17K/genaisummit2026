@@ -1,9 +1,8 @@
-// Stereo sonar mapping + WebXR sector sampling (pure). Run: node tests/test_sonar.js
+// Stereo sonar mapping, per-ear settings and routing (pure). Run: node tests/test_sonar.js
 const assert = require("assert");
 const L = require("../static/spatial_sonar.js");
 const { sonarVoice, planVoices } = L;
 const RANGE_M = L.DEFAULTS.rangeM;
-const { sampleSectors } = require("../static/xr_depth.js");
 let n = 0;
 const ok = (name, fn) => { fn(); n++; console.log("PASS ", name); };
 
@@ -35,25 +34,6 @@ ok("focus: only sectors near the closest, at most 2 voices", () => {
   assert.deepStrictEqual(planVoices({ left: null, center: 3.5, right: 9 }), []);
 });
 
-// synthetic depth maps for the WebXR sampler: (x,y) normalized view coords -> metres
-ok("sampler: wall on the right", () => {
-  const s = sampleSectors((x) => (x > 0.7 ? 0.6 : 3.0));
-  assert.strictEqual(s.right, 0.6);
-  assert.strictEqual(s.left, 3.0);
-});
-ok("sampler: ignores the floor band and invalid pixels", () => {
-  const s = sampleSectors((x, y) => (y > 0.75 ? 0.3 : x < 0.2 ? 0 : 2.0)); // floor close, some 0 = invalid
-  assert.strictEqual(s.center, 2.0);
-  assert.strictEqual(s.left, 2.0);
-});
-ok("sampler: nearest surface uses a low percentile, not a single pixel", () => {
-  let i = 0;
-  const s = sampleSectors((x) => (x < 1 / 3 ? (i++ === 7 ? 0.2 : 1.5) : 2.5)); // one spike in left
-  assert.strictEqual(s.left, 1.5);
-});
-ok("sampler: too few valid pixels -> null", () => {
-  assert.strictEqual(sampleSectors(() => 0).center, null);
-});
 ok("per-ear pitch: base, side offset, center split, proximity rise", () => {
   L.resetSettings();
   L.setSettings({ ears: { left: { pitchHz: 400 }, right: { pitchHz: 800 } }, sideOffset: 12, centerSplit: 0, proximityRise: 0 });

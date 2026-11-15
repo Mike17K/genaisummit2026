@@ -640,6 +640,7 @@ async def run_local_depth_probe(state: State, b64_data: str, seq: int = 0) -> No
             "p10": stats["p10"],
             "p90": stats["p90"],
             "sector_disp": stats.get("sector_disp"),
+            "depth_thumb": stats.get("depth_thumb"),
             "provider": provider,
             "ms": ms,
         })
@@ -671,12 +672,58 @@ async def handle_gps(state: State, msg: dict) -> None:
         alerts.spawn(alerts.speak_notice(state, arrival))
 
 
-async def handle_audio_chunk(state: State, chunk: bytes) -> None:
-    """Track user voice turns and launch the streaming command/answer pipeline on turn end."""
+PTT_MAX_S = 30.0  # safety cap for one push-to-talk turn
+
+
+async def ptt_start(state: State) -> None:
+    """Push-to-talk pressed: stop everything VoxEye is saying or doing and start collecting the user's words."""
     from ..assistant import info_pipeline
+
+    if not state.assistant_enabled:
+        return
+    was_cut = info_pipeline.interrupt_everything(state, "push_to_talk")
+    state.reset_mic_turn()
+    state.ptt_active = True
+    state.ptt_started_at = time.time()
+    state.turn_frame_jpeg = state.frames[-1][1] if state.frames else None
+    trace.log("user_turn", state="start", mode="push_to_talk", cut_assistant=was_cut)
+    if was_cut:
+        await state.send({"type": "interrupted"})
+
+
+async def ptt_end(state: State) -> None:
+    """Push-to-talk released: answer what was said right away (no silence timeout)."""
+    from ..assistant import info_pipeline, turns
+    from ..safety import alerts
+
+    if not state.ptt_active:
+        return
+    state.ptt_active = False
+    pcm_bytes = bytes(state.mic_turn_pcm)
+    state.mic_turn_pcm.clear()
+    frame_jpeg = state.turn_frame_jpeg or (state.frames[-1][1] if state.frames else None)
+    state.turn_frame_jpeg = None
+    held_s = round(time.time() - state.ptt_started_at, 1)
+    trace.log("user_turn", state="end", mode="push_to_talk", held_s=held_s,
+              audio_s=round(len(pcm_bytes) / turns.BYTES_PER_S, 1))
+    if len(pcm_bytes) >= MIN_VOICE_PCM_BYTES:
+        info_pipeline.cancel_for_user(state)
+        state.info_task = alerts.spawn(info_pipeline.answer_user_audio(state, pcm_bytes, frame_jpeg))
+    else:
+        await state.send({"type": "heard_ignored"})
+
+
+async def handle_audio_chunk(state: State, chunk: bytes) -> None:
+    """Collect push-to-talk audio; legacy always-on clients still use the voice-activity turn tracker."""
+    from ..assistant import info_pipeline, turns
     from ..safety import alerts
 
     if not state.assistant_enabled:
+        return
+    if state.ptt_active:
+        pcm, _flag = turns.parse_chunk(chunk)
+        if len(state.mic_turn_pcm) < PTT_MAX_S * turns.BYTES_PER_S:
+            state.mic_turn_pcm.extend(pcm)
         return
     now_c = time.time()
     if state.mic_blocked(now_c):
@@ -737,6 +784,10 @@ async def handle_client_message(state: State, msg: dict, frame_count: int) -> in
             trace.log("fresh_frame")
             if state.turn.active:
                 state.turn_frame_jpeg = jpeg
+    elif kind == "ptt_start":
+        await ptt_start(state)
+    elif kind == "ptt_end":
+        await ptt_end(state)
     elif kind == "barge_in":
         # Phone heard the user's voice open while the assistant was busy: it already silenced playback locally
         if state.assistant_enabled and not state.mic_blocked(time.time()):

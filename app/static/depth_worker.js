@@ -39,6 +39,26 @@ function extractCenterStats(data, width, height) {
   return { centerDisp, p10, p90, sectorDisp: sectorDisparities(data, width, height) };
 }
 
+// Small normalized depth image for the on-screen view: 0 = far .. 255 = near (disparity grows when closer).
+const THUMB = 64;
+function depthThumb(data, width, height) {
+  const out = new Uint8Array(THUMB * THUMB);
+  let lo = Infinity, hi = -Infinity;
+  const vals = new Float32Array(THUMB * THUMB);
+  for (let y = 0; y < THUMB; y++) {
+    const sy = Math.min(height - 1, Math.floor(((y + 0.5) * height) / THUMB));
+    for (let x = 0; x < THUMB; x++) {
+      const sx = Math.min(width - 1, Math.floor(((x + 0.5) * width) / THUMB));
+      const v = Number(data[sy * width + sx]);
+      vals[y * THUMB + x] = v;
+      if (Number.isFinite(v)) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    }
+  }
+  const span = hi > lo ? hi - lo : 1;
+  for (let i = 0; i < vals.length; i++) out[i] = Number.isFinite(vals[i]) ? Math.round(((vals[i] - lo) / span) * 255) : 0;
+  return out;
+}
+
 // LEFT / CENTER / RIGHT thirds of a horizontal band (floor and ceiling skipped): 75th percentile disparity =
 // the nearest surface in each third (disparity grows as things get closer).
 function sectorDisparities(data, width, height) {
@@ -174,6 +194,7 @@ self.onmessage = async (e) => {
       const oh = dims[dims.length - 2];
       const ow = dims[dims.length - 1];
       const stats = extractCenterStats(predicted_depth.data, ow, oh);
+      const thumb = stats ? depthThumb(predicted_depth.data, ow, oh) : null; // before dispose frees the tensor
       predicted_depth.dispose?.();
       const ms = Math.round(performance.now() - t0);
       if (stats) {
@@ -182,8 +203,10 @@ self.onmessage = async (e) => {
           seq: msg.seq,
           ms,
           backend: backendLabel,
+          thumb: thumb.buffer,
+          thumbSize: THUMB,
           ...stats,
-        });
+        }, [thumb.buffer]);
       } else {
         self.postMessage({ type: "skipped", seq: msg.seq });
       }
