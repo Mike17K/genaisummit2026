@@ -1,7 +1,8 @@
 // On-device looming logic. Run: node tests/test_looming.js   (Node is needed only for this test)
 const {
   RollingBaseline, ImuState, LoomingTracker, zone, distanceMeters, lumaMotion,
-  parseFocusDistance, depthFeedback,
+  parseFocusDistance, depthFeedback, extractCenterDisparity, DepthCalibrator,
+  MOBILE_SLOW_MS, chooseDepthTarget,
 } = require("../static/looming.js");
 
 let pass = 0, fail = 0;
@@ -168,6 +169,33 @@ check("a tiny box gives no distance", distanceMeters("car", 0.005) === null);
   check("beep volume increases strictly as object gets closer", far.volume < mid.volume && mid.volume < near.volume, `${far.volume} < ${mid.volume} < ${near.volume}`);
   check("vibration power (vibeMs) increases strictly as object gets closer", far.vibeMs < mid.vibeMs && mid.vibeMs < near.vibeMs, `${far.vibeMs} < ${mid.vibeMs} < ${near.vibeMs}`);
   check("pulse interval shortens strictly as object gets closer", far.intervalMs > mid.intervalMs && mid.intervalMs > near.intervalMs, `${far.intervalMs} > ${mid.intervalMs} > ${near.intervalMs}`);
+
+  // Phase 2: Depth-Anything-V2-Small center disparity & metric calibration
+  const grid = new Float32Array(20 * 20).fill(1.5); // far background disparity = 1.5
+  for (let y = 8; y < 12; y++) for (let x = 9; x < 12; x++) grid[y * 20 + x] = 9.0; // narrow pole in center crosshair
+  const stats = extractCenterDisparity(grid, 20, 20);
+  check("extractCenterDisparity locks onto obstacle inside center crosshair", stats && stats.centerDisp === 9.0 && stats.p10 === 1.5, JSON.stringify(stats));
+
+  const cal = new DepthCalibrator(4.5);
+  check("unanchored DepthCalibrator responds immediately with inverse-depth metres", cal.toMeters(4.5) === 1.0 && cal.toMeters(9.0) === 0.5);
+  check("anchoring calibrator locks metric scale (doubling disparity halves distance)", cal.anchor(6.0, 2.0) && cal.anchored && cal.toMeters(6.0) === 2.0 && cal.toMeters(12.0) === 1.0);
+
+  // Auto mobile <-> laptop performance switch
+  check("MOBILE_SLOW_MS threshold is 280 ms", MOBILE_SLOW_MS === 280);
+  check("auto keeps mobile before benchmark and when phone is fast",
+    chooseDepthTarget({ mode: "auto" }).target === "mobile" &&
+    chooseDepthTarget({ mode: "auto", mobileBenchMs: 75, mobileEmaMs: 90, mobileFrames: 6 }).target === "mobile");
+  check("auto switches to laptop when phone warmup bench is slow (>280 ms)",
+    chooseDepthTarget({ mode: "auto", mobileBenchMs: 420 }).target === "laptop");
+  check("auto switches to laptop when live phone EMA slows down (>280 ms over >=3 frames)",
+    chooseDepthTarget({ mode: "auto", mobileBenchMs: 110, mobileEmaMs: 360, mobileFrames: 4 }).target === "laptop");
+  check("auto switches to laptop when mobile worker/WebGPU errors out",
+    chooseDepthTarget({ mode: "auto", mobileError: true }).target === "laptop");
+  check("auto stays on mobile if laptop network RTT is even slower than mobile",
+    chooseDepthTarget({ mode: "auto", mobileEmaMs: 320, mobileFrames: 4, laptopRttMs: 900 }).target === "mobile");
+  check("explicit mobile and laptop modes override auto heuristics",
+    chooseDepthTarget({ mode: "mobile", mobileBenchMs: 600, mobileError: true }).target === "mobile" &&
+    chooseDepthTarget({ mode: "laptop", mobileBenchMs: 45 }).target === "laptop");
 }
 
 console.log(`\n${pass}/${pass + fail} passed`);

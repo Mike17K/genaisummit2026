@@ -72,7 +72,9 @@ class State:
     explaining_alert: bool = False
     explain_lock_until: float = 0.0
     depth_mode_active: bool = False
-    depth_probe_busy: bool = False
+    depth_device: str = "mobile"
+    depth_probes_inflight: int = 0
+    depth_probe_latest_seq: int = 0
     drop_audio_since: float = 0.0
     lang: str = "English"
     memory: UserMemory = field(default_factory=UserMemory)

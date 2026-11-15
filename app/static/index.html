@@ -32,9 +32,9 @@
     #meter { height: 8px; background: #21262d; border-radius: 4px; overflow: hidden; margin: 2px 0 4px; }
     #meter > div { height: 100%; width: 0; background: #7ee787; transition: width .08s linear; }
     #log { margin-top: .4rem; border-top: 1px solid #30363d; padding-top: .3rem; color: #8b949e; white-space: pre-wrap; word-break: break-word; }
-    #modebar, #gatebar, #agentbar { display: flex; align-items: center; gap: .6rem; padding: .4rem .8rem; background: #161b22; font: 12px ui-monospace, monospace; color: #8b949e; border-top: 1px solid #21262d; }
-    #gatebar span, #modebar span, #agentbar span { flex: 1; }
-    #gatebar button, #modebar button, #agentbar button { width: 3rem; height: 2.2rem; font-size: 1.05rem; border: 1px solid #30363d; border-radius: 6px; background: #21262d; color: #fff; }
+    #modebar, #gatebar, #agentbar, #depthbar { display: flex; align-items: center; gap: .6rem; padding: .4rem .8rem; background: #161b22; font: 12px ui-monospace, monospace; color: #8b949e; border-top: 1px solid #21262d; }
+    #gatebar span, #modebar span, #agentbar span, #depthbar span { flex: 1; }
+    #gatebar button, #modebar button, #agentbar button, #depthbar button { width: 3rem; height: 2.2rem; font-size: 1.05rem; border: 1px solid #30363d; border-radius: 6px; background: #21262d; color: #fff; }
     #gatebar b { color: #fff; min-width: 3.5rem; text-align: center; }
     video { display: none; }
   </style>
@@ -54,12 +54,17 @@
     <span>conversational assistant (tap to toggle)</span>
     <button id="agentBtn" type="button" style="width:auto;padding:0 .8rem">assistant: on</button>
   </div>
+  <div id="depthbar" class="bar" aria-hidden="true">
+    <span>depth inference (hold 1s, tap to cycle)</span>
+    <button id="depthBtn" type="button" style="width:auto;padding:0 .8rem">depth: auto (mobile)</button>
+  </div>
   <div id="debug" aria-hidden="true"></div>
   <video id="cam" playsinline muted></video>
   <canvas id="canvas" hidden></canvas>
-  <script src="/static/micgate.js?v=4"></script>
-  <script src="/static/looming.js?v=4"></script>
-  <script src="/static/spatial.js?v=4"></script>
-  <script src="/static/app.js?v=4"></script>
+  <script src="/static/micgate.js?v=7"></script>
+  <script src="/static/looming.js?v=7"></script>
+  <script src="/static/spatial.js?v=7"></script>
+  <script src="/static/depth_engine.js?v=7"></script>
+  <script src="/static/app.js?v=7"></script>
 </body>
 </html>

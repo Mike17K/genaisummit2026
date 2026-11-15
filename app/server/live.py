@@ -12,7 +12,7 @@ import uuid
 
 from fastapi import WebSocket
 
-from . import alerts, config, info_pipeline, memory, phrases, speak, tools, trace, turns, watch
+from . import alerts, config, info_pipeline, local_depth, memory, phrases, speak, tools, trace, turns, watch
 from .state import State
 
 __all__ = ["State", "run"]
@@ -79,21 +79,58 @@ async def _handle_audio_chunk(state: State, chunk: bytes) -> None:
                 )
 
 
-async def _run_depth_probe(state: State, b64_data: str) -> None:
-    """Fallback center-crop distance probe when hardware Web PDAF focusDistance is unavailable."""
-    if state.depth_probe_busy or not state.depth_mode_active:
+async def _run_depth_probe(state: State, b64_data: str, seq: int = 0, disp: float | None = None) -> None:
+    """Metric center-crop anchor / fast pipelined fallback (up to 3 concurrent staggered calls)."""
+    if state.depth_probes_inflight >= 3 or not state.depth_mode_active:
         return
-    state.depth_probe_busy = True
+    state.depth_probes_inflight += 1
     try:
         jpeg = base64.b64decode(b64_data)
         t0 = time.time()
         dist = await watch.estimate_center_distance(jpeg)
         ms = round((time.time() - t0) * 1000)
         if state.depth_mode_active and dist is not None:
-            trace.log("depth_probe", dist_m=dist, ms=ms)
-            await state.send({"type": "depth_result", "dist_m": dist, "source": "center-crop", "ms": ms})
+            if seq and seq < state.depth_probe_latest_seq:
+                return
+            if seq:
+                state.depth_probe_latest_seq = seq
+            trace.log("depth_probe", dist_m=dist, ms=ms, seq=seq or None)
+            payload: dict = {"type": "depth_result", "dist_m": dist, "source": "center-crop", "ms": ms}
+            if seq:
+                payload["seq"] = seq
+            if isinstance(disp, (int, float)) and disp > 0:
+                payload["disp"] = float(disp)
+            await state.send(payload)
     finally:
-        state.depth_probe_busy = False
+        state.depth_probes_inflight = max(0, state.depth_probes_inflight - 1)
+
+
+async def _run_local_depth_probe(state: State, b64_data: str, seq: int = 0) -> None:
+    """Run Depth-Anything-V2-Small locally on the laptop/server via ONNX Runtime."""
+    if not state.depth_mode_active:
+        return
+    try:
+        jpeg = base64.b64decode(b64_data)
+        stats, provider, ms = await local_depth.predict_center_disparity(jpeg)
+        if not state.depth_mode_active:
+            return
+        if stats is None:
+            await state.send({"type": "depth_local_skip", "seq": seq, "provider": provider})
+            return
+        trace.log("depth_local", center_disp=stats["center_disp"], provider=provider, ms=ms, seq=seq or None)
+        await state.send({
+            "type": "depth_local",
+            "seq": seq,
+            "center_disp": stats["center_disp"],
+            "p10": stats["p10"],
+            "p90": stats["p90"],
+            "provider": provider,
+            "ms": ms,
+        })
+    except Exception as exc:
+        trace.log("depth_local_error", error=f"{type(exc).__name__}: {exc}"[:160])
+        if state.depth_mode_active:
+            await state.send({"type": "depth_local_skip", "seq": seq})
 
 
 async def _handle_json_message(state: State, msg: dict, frame_count: int) -> int:
@@ -130,13 +167,34 @@ async def _handle_json_message(state: State, msg: dict, frame_count: int) -> int
     elif kind == "depth_mode":
         active = bool(msg.get("active", False))
         state.depth_mode_active = active
-        trace.log("depth_mode", active=active, pdaf=msg.get("pdaf"))
+        if active:
+            state.depth_probe_latest_seq = 0
+        trace.log("depth_mode", active=active, pdaf=msg.get("pdaf"), engine=msg.get("engine"))
         if active:
             if info_pipeline.cancel_for_user(state):
                 await state.send({"type": "interrupted"})
             state.reset_mic_turn()
+    elif kind == "depth_device" and msg.get("device") in ("auto", "mobile", "laptop"):
+        dev = str(msg["device"])
+        mode = str(msg.get("mode") or dev)
+        state.depth_device = dev
+        trace.log("depth_device", device=dev, mode=mode, reason=msg.get("reason"))
+        if dev == "laptop" or mode == "auto":
+            prov = await local_depth.warm()
+            await state.send({"type": "depth_device_status", "device": dev, "mode": mode, "provider": prov})
+    elif kind == "depth_local_probe" and msg.get("data"):
+        alerts.spawn(_run_local_depth_probe(state, str(msg["data"]), seq=int(msg.get("seq") or 0)))
     elif kind == "depth_probe" and msg.get("data"):
-        alerts.spawn(_run_depth_probe(state, str(msg["data"])))
+        seq = int(msg.get("seq") or 0)
+        disp = msg.get("disp")
+        alerts.spawn(
+            _run_depth_probe(
+                state,
+                str(msg["data"]),
+                seq=seq,
+                disp=float(disp) if isinstance(disp, (int, float)) else None,
+            )
+        )
     elif kind == "memory_clear":
         if state.memory.clear():
             memory.save_persisted(state.memory)
@@ -173,6 +231,7 @@ async def _serve(socket: WebSocket, conn_id: str) -> None:
     state.client_tts = socket.query_params.get("client_tts", "1") != "0"
     state.turn = turns.TurnTracker(end_wait=silence_ms / 1000)
     asyncio.create_task(speak.warm_common())
+    asyncio.create_task(local_depth.warm())
 
     def set_alert_mode(mode: str) -> dict:
         """Change how often camera safety alerts interrupt the user. mode: 'normal', 'urgent_only' or 'off'."""

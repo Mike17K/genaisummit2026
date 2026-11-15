@@ -335,6 +335,90 @@ def run():
 
         asyncio.run(test_stream_header_memory())
 
+    # 11. Pipelined depth_probe sequence guard & WebGPU disparity echo
+    async def test_pipelined_depth_probe():
+        sent_p = []
+
+        class _ProbeSock:
+            async def send_json(self, p):
+                sent_p.append(p)
+
+        st_p = State(socket=_ProbeSock(), depth_mode_active=True)
+        orig_est = watch.estimate_center_distance
+
+        async def fake_est(jpeg: bytes):
+            if jpeg == b"slow_old":
+                await asyncio.sleep(0.04)
+                return 3.2
+            return 0.45
+
+        watch.estimate_center_distance = fake_est
+        try:
+            import base64
+            t_old = asyncio.create_task(
+                live._run_depth_probe(st_p, base64.b64encode(b"slow_old").decode(), seq=1, disp=2.0)
+            )
+            t_new = asyncio.create_task(
+                live._run_depth_probe(st_p, base64.b64encode(b"fast_new").decode(), seq=2, disp=8.5)
+            )
+            await asyncio.gather(t_old, t_new)
+            check(
+                "pipelined depth_probe drops stale out-of-order seq=1 after seq=2 and echoes WebGPU disp",
+                len(sent_p) == 1 and sent_p[0].get("seq") == 2 and sent_p[0].get("disp") == 8.5 and sent_p[0].get("dist_m") == 0.45,
+                sent_p,
+            )
+        finally:
+            watch.estimate_center_distance = orig_est
+
+    asyncio.run(test_pipelined_depth_probe())
+
+    # 12. Local Laptop ONNX Depth-Anything-V2-Small + Mobile/Laptop switch (default mobile)
+    from server import local_depth
+    from PIL import Image
+    import io
+
+    check("default State.depth_device is mobile", State(socket=None).depth_device == "mobile")
+
+    async def test_local_laptop_depth():
+        ev_out = []
+
+        class _LocalSock:
+            async def send_json(self, p):
+                ev_out.append(p)
+
+        st_l = State(socket=_LocalSock(), depth_mode_active=True)
+        await live._handle_json_message(st_l, {"type": "depth_device", "device": "laptop"}, 0)
+        check(
+            "depth_device message switches state to laptop and reports ONNX provider",
+            st_l.depth_device == "laptop" and any(e.get("type") == "depth_device_status" and "Laptop" in str(e.get("provider", "")) for e in ev_out),
+            ev_out,
+        )
+
+        buf = io.BytesIO()
+        im = Image.new("RGB", (168, 168), (60, 80, 100))
+        for y in range(60, 108):
+            for x in range(60, 108):
+                im.putpixel((x, y), (220, 200, 180))
+        im.save(buf, format="JPEG", quality=70)
+        jpeg_bytes = buf.getvalue()
+
+        stats, prov, ms = await local_depth.predict_center_disparity(jpeg_bytes)
+        check(
+            "local_depth.predict_center_disparity runs ONNX Depth-Anything-V2-Small locally",
+            stats is not None and stats["center_disp"] > 0 and "Laptop" in prov and ms >= 0,
+            (stats, prov, ms),
+        )
+
+        import base64
+        await live._run_local_depth_probe(st_l, base64.b64encode(jpeg_bytes).decode(), seq=7)
+        check(
+            "depth_local_probe emits depth_local event with center_disp and ms",
+            any(e.get("type") == "depth_local" and e.get("seq") == 7 and e.get("center_disp", 0) > 0 for e in ev_out),
+            ev_out,
+        )
+
+    asyncio.run(test_local_laptop_depth())
+
     print(f"\n{sum(results)}/{len(results)} passed")
     return all(results)
 

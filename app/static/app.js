@@ -62,10 +62,25 @@ let running = false;
 let nextPlayTime = 0;
 const playing = new Set();
 
-// Approach 1 (Web PDAF focusDistance) + Hold > 1s Center Depth Identification Mode state
+// Depth-Anything-V2-Small (Auto mobile->laptop perf switch | Mobile WebGPU | Laptop Server ONNX) + Web PDAF + Hold > 1s
 const HOLD_DEPTH_MS = 1000;
+const DEPTH_MODES = ["auto", "mobile", "laptop"];
+let depthMode = "auto"; // Default: auto (starts mobile, switches to laptop if phone >280ms/frame)
+try {
+  const savedMode = localStorage.getItem("eyesDepthMode");
+  if (DEPTH_MODES.includes(savedMode)) depthMode = savedMode;
+} catch (_) {}
+let depthDevice = depthMode === "laptop" ? "laptop" : "mobile";
+let depthReason = depthMode === "auto" ? "mobile fast" : `forced ${depthMode}`;
 let videoTrack = null;
 let videoCaps = {};
+let depthEngine = null;
+const laptopCalibrator = new Looming.DepthCalibrator(4.5);
+let lastLaptopDisp = null;
+let laptopInFlight = false;
+let laptopSentAt = 0;
+let laptopRttEmaMs = null;
+let laptopProvider = "Laptop ONNX";
 let holdTimer = null;
 let activePointerId = null;
 let depthScanActive = false;
@@ -75,14 +90,16 @@ let smoothedDepthM = null;
 let depthSource = "-";
 let depthPollTimer = null;
 let depthPulseTimer = null;
+let lastPulseAt = 0;
 let lastDepthProbeAt = 0;
+let depthProbeSeq = 0;
 
 const dbg = {
   state: "idle", camera: "-", mic: "-", audioCtx: "-", ws: "-", gemini: "-",
   micLevel: 0, micPeak: 0, sentKB: 0, sentFrames: 0, recvKB: 0, recvChunks: 0,
   lastHeard: "", lastReply: "", lastEvent: "", lastModelAudioAt: 0, lastSpeechAt: 0,
   error: "", startedAt: 0, log: [],
-  watch: "-", lastAlert: "-", alertMode: "normal", alerts: 0, conn: "-", fps: 2, attention: "normal", frameStamps: [], voiceOpen: false, effGate: 0, depth: "-", memory: "empty",
+  watch: "-", lastAlert: "-", alertMode: "normal", alerts: 0, conn: "-", fps: 2, attention: "normal", frameStamps: [], voiceOpen: false, effGate: 0, depth: "-", depthModel: "idle", memory: "empty",
 };
 const hideDebug = new URLSearchParams(location.search).get("debug") === "0";
 if (hideDebug) debugEl.style.display = "none";
@@ -137,6 +154,7 @@ function renderDebug() {
     ["eyes said", esc(dbg.lastReply || "-")],
     ["user memory", esc(dbg.memory || "empty")],
     ["on-device", esc(spatial ? spatial.summary() : (ON_DEVICE ? "waiting to start" : "off (add ?ondevice=1 to try it)"))],
+    ["depth model", esc(`[${depthMode === "auto" ? "auto->" + depthDevice : depthMode}] ` + (dbg.depthModel || "-"))],
     ["center depth", esc(dbg.depth || "-")],
     ["phone motion", esc(imu.panning ? "panning" : imu.walking === true ? "walking" : imu.walking === false ? "stationary" : "movement unknown") + `  gyro ${imu.angularSpeed} deg/s, pitch ${imu.pitchDeg ?? "?"}`],
     ["watcher", esc(dbg.watch) + "  (mode: " + esc(dbg.alertMode) + ")"],
@@ -317,30 +335,88 @@ function readPdafDistance() {
 }
 
 const depthCanvas = document.createElement("canvas");
-depthCanvas.width = depthCanvas.height = 192;
+depthCanvas.width = depthCanvas.height = 128;
 const depthCtx = depthCanvas.getContext("2d");
 
-function sendCenterDepthProbe() {
+const laptopCanvas = document.createElement("canvas");
+laptopCanvas.width = laptopCanvas.height = 168;
+const laptopCtx = laptopCanvas.getContext("2d");
+
+function ensureDepthEngine() {
+  if (depthMode === "laptop") return;
+  if (!depthEngine && typeof DepthEngine === "function") {
+    depthEngine = new DepthEngine({
+      video: cam,
+      onStatus: (s) => { if (depthDevice === "mobile") dbg.depthModel = s; },
+      onDepth: (distM, backend, ms) => {
+        if (depthDevice === "mobile") updateDepthReading(distM, `${backend} ${ms}ms`);
+      },
+      onPerfChange: () => evaluateDepthTarget(true),
+    });
+  }
+  if (depthEngine) {
+    depthEngine.video = cam;
+    depthEngine.init();
+  }
+}
+
+function sendLaptopDepthProbe() {
+  if (!depthScanActive || laptopInFlight || !cam.videoWidth || !socket || socket.readyState !== 1) return;
+  laptopInFlight = true;
+  laptopSentAt = Date.now();
+  const vw = cam.videoWidth, vh = cam.videoHeight;
+  const side = Math.round(Math.min(vw, vh) * 0.70);
+  const sx = Math.round((vw - side) / 2), sy = Math.round((vh - side) / 2);
+  laptopCtx.drawImage(cam, sx, sy, side, side, 0, 0, 168, 168);
+  const data = laptopCanvas.toDataURL("image/jpeg", 0.55).split(",")[1];
+  socket.send(JSON.stringify({ type: "depth_local_probe", data, seq: ++depthProbeSeq }));
+}
+
+function sendCenterDepthProbe(minGapMs = 260) {
   if (!depthScanActive || !cam.videoWidth || !socket || socket.readyState !== 1) return;
   const now = Date.now();
-  if (now - lastDepthProbeAt < 420) return;
+  if (now - lastDepthProbeAt < minGapMs) return;
   lastDepthProbeAt = now;
   const vw = cam.videoWidth, vh = cam.videoHeight;
   const cw = Math.round(vw * 0.4), ch = Math.round(vh * 0.4);
   const sx = Math.round((vw - cw) / 2), sy = Math.round((vh - ch) / 2);
-  depthCtx.drawImage(cam, sx, sy, cw, ch, 0, 0, 192, 192);
-  const data = depthCanvas.toDataURL("image/jpeg", 0.55).split(",")[1];
-  socket.send(JSON.stringify({ type: "depth_probe", data }));
+  depthCtx.drawImage(cam, sx, sy, cw, ch, 0, 0, 128, 128);
+  const data = depthCanvas.toDataURL("image/jpeg", 0.52).split(",")[1];
+  const seq = ++depthProbeSeq;
+  const disp = depthDevice === "laptop"
+    ? lastLaptopDisp
+    : (depthEngine && depthEngine.ready ? depthEngine.lastDisp : null);
+  socket.send(JSON.stringify({ type: "depth_probe", data, seq, disp }));
 }
 
 function updateDepthReading(rawM, src) {
   if (typeof rawM !== "number" || !Number.isFinite(rawM) || rawM <= 0) return;
-  smoothedDepthM = smoothedDepthM === null ? rawM : Number((0.45 * smoothedDepthM + 0.55 * rawM).toFixed(2));
+  if (smoothedDepthM === null) {
+    smoothedDepthM = Number(rawM.toFixed(2));
+  } else {
+    // Fast jump (85%) on real distance shifts (>0.30m) so pointing from far to close reacts immediately
+    const alpha = Math.abs(rawM - smoothedDepthM) > 0.30 ? 0.85 : 0.68;
+    smoothedDepthM = Number(((1 - alpha) * smoothedDepthM + alpha * rawM).toFixed(2));
+  }
   depthSource = src;
   dbg.depth = `${smoothedDepthM.toFixed(2)} m (${src})${depthScanActive ? " [HOLD]" : ""}`;
   if (depthScanActive) {
     statusEl.textContent = `Center depth: ${smoothedDepthM.toFixed(2)} m (${src})`;
     go.textContent = `Depth: ${smoothedDepthM.toFixed(2)} m · Release to exit`;
+
+    // Immediately shorten active timer when moving closer so a sudden close obstacle buzzes with 0 lag
+    const fb = Looming.depthFeedback(smoothedDepthM);
+    if (fb && depthPulseTimer && lastPulseAt > 0) {
+      const elapsed = performance.now() - lastPulseAt;
+      if (elapsed >= fb.intervalMs) {
+        clearTimeout(depthPulseTimer);
+        depthPulseTimer = null;
+        depthPulseTick();
+      } else {
+        clearTimeout(depthPulseTimer);
+        depthPulseTimer = setTimeout(depthPulseTick, Math.max(15, Math.round(fb.intervalMs - elapsed)));
+      }
+    }
   }
 }
 
@@ -363,10 +439,11 @@ function depthBeep(freqHz, volume) {
 
 function depthPulseTick() {
   if (!depthScanActive) return;
+  lastPulseAt = performance.now();
   const fb = smoothedDepthM !== null ? Looming.depthFeedback(smoothedDepthM) : null;
   if (!fb) {
     depthBeep(440, 0.02);
-    depthPulseTimer = setTimeout(depthPulseTick, 200);
+    depthPulseTimer = setTimeout(depthPulseTick, 160);
     return;
   }
   let vibrated = false;
@@ -384,15 +461,20 @@ function startDepthScan() {
   micGate.reset();
   dbg.voiceOpen = false;
   lastDepthProbeAt = 0;
+  lastPulseAt = 0;
+  laptopInFlight = false;
 
+  if (depthDevice === "mobile") ensureDepthEngine();
+  const gpuReady = depthDevice === "mobile" && !!(depthEngine && depthEngine.ready);
   const d0 = readPdafDistance();
   if (d0 !== null) {
     smoothedDepthM = d0;
     depthSource = "PDAF";
-    dbg.depth = `${d0.toFixed(2)} m (PDAF) [HOLD]`;
-  } else {
+    if (depthEngine) depthEngine.anchorMetric(d0);
+    if (lastLaptopDisp !== null) laptopCalibrator.anchor(lastLaptopDisp, d0);
+  } else if (!gpuReady) {
     smoothedDepthM = null;
-    depthSource = "scanning";
+    depthSource = depthDevice === "laptop" ? "laptop" : "scanning";
     if (spatial && spatial.latest && Array.isArray(spatial.latest.objects)) {
       const centerObj = spatial.latest.objects.find((o) => o.inPath && typeof o.distM === "number");
       if (centerObj) {
@@ -402,18 +484,36 @@ function startDepthScan() {
     }
   }
 
+  const engineName = depthDevice === "laptop" ? laptopProvider : (gpuReady ? depthEngine.backend : (d0 !== null ? "PDAF" : "local-server-fallback"));
   if (socket && socket.readyState === 1) {
-    socket.send(JSON.stringify({ type: "depth_mode", active: true, pdaf: d0 !== null }));
+    socket.send(JSON.stringify({ type: "depth_mode", active: true, pdaf: d0 !== null, engine: engineName, device: depthDevice }));
   }
   setState("depth", smoothedDepthM !== null ? `Center depth: ${smoothedDepthM.toFixed(2)} m (${depthSource})` : "Scanning center depth...");
   go.textContent = smoothedDepthM !== null ? `Depth: ${smoothedDepthM.toFixed(2)} m · Release to exit` : "Scanning depth · Release to exit";
-  note(`depth mode ON (${d0 !== null ? "Web PDAF " + d0.toFixed(2) + "m" : "center-crop fallback"})`);
+  note(`depth mode ON (${depthDevice}: ${engineName})`);
 
-  if (d0 === null) sendCenterDepthProbe();
+  if (depthDevice === "mobile" && depthEngine) depthEngine.start();
+  if (depthDevice === "laptop" || !gpuReady) sendLaptopDepthProbe();
+  if (d0 === null) sendCenterDepthProbe(0);
+
   depthPollTimer = setInterval(() => {
+    if (laptopInFlight && Date.now() - laptopSentAt > 800) laptopInFlight = false;
     const d = readPdafDistance();
-    if (d !== null) updateDepthReading(d, "PDAF");
-    else sendCenterDepthProbe();
+    if (d !== null) {
+      if (depthDevice === "mobile" && depthEngine && depthEngine.ready) depthEngine.anchorMetric(d);
+      else if (depthDevice === "laptop" && lastLaptopDisp !== null) laptopCalibrator.anchor(lastLaptopDisp, d);
+      else updateDepthReading(d, "PDAF");
+    }
+    if (depthDevice === "laptop") {
+      if (!laptopInFlight) sendLaptopDepthProbe();
+      if (d === null) sendCenterDepthProbe(2200);
+    } else if (depthEngine && depthEngine.ready) {
+      if (d === null) sendCenterDepthProbe(2000);
+    } else {
+      // Mobile WebGPU weights still downloading on first visit -> use fast local laptop ONNX in the meantime
+      if (!laptopInFlight) sendLaptopDepthProbe();
+      if (d === null) sendCenterDepthProbe(2000);
+    }
   }, 80);
   depthPulseTick();
 }
@@ -422,7 +522,9 @@ function stopDepthScan(notifyServer = true) {
   if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
   if (!depthScanActive) return;
   depthScanActive = false;
+  laptopInFlight = false;
   suppressClickUntil = Date.now() + 450;
+  if (depthEngine) depthEngine.stop();
   clearInterval(depthPollTimer); depthPollTimer = null;
   clearTimeout(depthPulseTimer); depthPulseTimer = null;
   try { navigator.vibrate?.(0); } catch (_) {}
@@ -478,7 +580,7 @@ async function start() {
   try {
     stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
-      video: { facingMode: "environment" },
+      video: { facingMode: "environment", focusMode: { ideal: "continuous" } },
     });
   } catch (err) {
     dbg.camera = dbg.mic = "blocked (" + err.name + ")";
@@ -520,6 +622,40 @@ async function start() {
       dbg.gemini = "ready"; dbg.conn = m.conn || "-"; chime(); note(`gemini session ready, id ${dbg.conn} (${sessionLang || "English"})`);
       socket.send(JSON.stringify({ type: "mode", mode: dbg.alertMode }));
       socket.send(JSON.stringify({ type: "assistant", enabled: assistantEnabled }));
+      socket.send(JSON.stringify({ type: "depth_device", device: depthDevice, mode: depthMode, reason: depthReason }));
+    }
+    else if (m.type === "depth_device_status") {
+      if (m.provider) laptopProvider = m.provider;
+      if (depthDevice === "laptop") dbg.depthModel = `ready (${laptopProvider})`;
+    }
+    else if (m.type === "depth_local") {
+      laptopInFlight = false;
+      if (laptopSentAt > 0) {
+        const rtt = Math.max(1, Date.now() - laptopSentAt);
+        laptopRttEmaMs = laptopRttEmaMs === null ? rtt : 0.7 * laptopRttEmaMs + 0.3 * rtt;
+      }
+      if (m.provider) laptopProvider = m.provider;
+      if (typeof m.center_disp === "number" && m.center_disp > 0) {
+        lastLaptopDisp = m.center_disp;
+        const distM = laptopCalibrator.toMeters(m.center_disp);
+        if (depthDevice === "laptop") {
+          const rttTag = laptopRttEmaMs ? ` (rtt ${Math.round(laptopRttEmaMs)}ms)` : "";
+          dbg.depthModel = `${laptopProvider}, ${m.ms} ms/frame${rttTag}${laptopCalibrator.anchored ? " [cal]" : ""}`;
+        }
+        if (depthScanActive && distM !== null && (depthDevice === "laptop" || !(depthEngine && depthEngine.ready))) {
+          updateDepthReading(distM, `${laptopProvider} ${m.ms}ms`);
+        }
+      }
+      if (depthMode === "auto") evaluateDepthTarget(true);
+      if (depthScanActive && (depthDevice === "laptop" || !(depthEngine && depthEngine.ready))) {
+        requestAnimationFrame(sendLaptopDepthProbe);
+      }
+    }
+    else if (m.type === "depth_local_skip") {
+      laptopInFlight = false;
+      if (depthScanActive && (depthDevice === "laptop" || !(depthEngine && depthEngine.ready))) {
+        setTimeout(sendLaptopDepthProbe, 35);
+      }
     }
     else if (m.type === "memory") {
       dbg.memory = formatMemory(m);
@@ -539,8 +675,16 @@ async function start() {
     else if (m.type === "error") { dbg.gemini = "error"; fail("server", m.text); chime(330); stop(false); }
     else if (m.type === "go_away") note("server says the session will end soon");
     else if (m.type === "depth_result") {
-      if (depthScanActive && typeof m.dist_m === "number" && readPdafDistance() === null) {
-        updateDepthReading(m.dist_m, m.source || "center-crop");
+      if (depthScanActive && typeof m.dist_m === "number") {
+        if (depthDevice === "laptop") {
+          laptopCalibrator.anchor(m.disp || lastLaptopDisp, m.dist_m);
+        } else if (depthEngine && depthEngine.ready) {
+          // Calibrate on-phone WebGPU Depth-Anything-V2 scale without injecting stale network latency
+          depthEngine.anchorMetric(m.dist_m, m.disp);
+        } else if (readPdafDistance() === null) {
+          if (lastLaptopDisp !== null) laptopCalibrator.anchor(m.disp || lastLaptopDisp, m.dist_m);
+          else updateDepthReading(m.dist_m, m.source || "center-crop");
+        }
       }
     }
     else if (m.type === "alert") {
@@ -582,6 +726,7 @@ async function start() {
 
   startMic();
   setFrameRate(3);
+  ensureDepthEngine(); // Pre-load & pre-compile WebGPU Depth-Anything-V2-Small in background worker
   if (ON_DEVICE && typeof SpatialSentry === "function") spatial = new SpatialSentry({
     video: cam, imu,
     onLocalAlert: (h) => { if (socket && socket.readyState === 1) socket.send(JSON.stringify({ type: "local_alert", ...h })); note(`on-device: ${h.label} approaching (growth ${h.growth}/s)`); },
@@ -658,6 +803,64 @@ agentBtn.addEventListener("click", () => {
     socket.send(JSON.stringify({ type: "assistant", enabled: assistantEnabled }));
   }
   note(`assistant is now ${assistantEnabled ? "on" : "off"}`);
+});
+
+const depthBtn = document.getElementById("depthBtn");
+function syncDepthButton() {
+  depthBtn.textContent = depthMode === "auto"
+    ? `depth: auto (${depthDevice})`
+    : `depth: ${depthMode}`;
+  if (depthDevice === "laptop" && (dbg.depthModel === "idle" || !dbg.depthModel.includes("Laptop"))) {
+    dbg.depthModel = `ready (${laptopProvider}, ${depthReason})`;
+  } else if (depthDevice === "mobile" && depthEngine && depthEngine.status) {
+    dbg.depthModel = depthEngine.status;
+  }
+}
+
+function evaluateDepthTarget(announceAuto = true) {
+  const res = Looming.chooseDepthTarget({
+    mode: depthMode,
+    mobileBenchMs: depthEngine ? depthEngine.benchMs : null,
+    mobileEmaMs: depthEngine ? depthEngine.emaMs : null,
+    mobileFrames: depthEngine ? depthEngine.frames : 0,
+    mobileError: !!(depthEngine && depthEngine.hasError),
+    laptopRttMs: laptopRttEmaMs,
+  });
+  const changed = res.target !== depthDevice;
+  depthDevice = res.target;
+  depthReason = res.reason;
+  syncDepthButton();
+  if (!changed) return;
+
+  if (depthDevice === "laptop") {
+    if (depthEngine) depthEngine.stop();
+    dbg.depthModel = `ready (${laptopProvider}, ${res.reason})`;
+    if (depthScanActive) sendLaptopDepthProbe();
+  } else {
+    if (running) ensureDepthEngine();
+    if (depthScanActive && depthEngine) depthEngine.start();
+  }
+  if (socket && socket.readyState === 1) {
+    socket.send(JSON.stringify({ type: "depth_device", device: depthDevice, mode: depthMode, reason: res.reason }));
+  }
+  if (announceAuto && depthMode === "auto") {
+    note(`depth auto-switched -> ${depthDevice} (${res.reason})`);
+  }
+}
+
+evaluateDepthTarget(false);
+depthBtn.addEventListener("click", () => {
+  depthMode = DEPTH_MODES[(DEPTH_MODES.indexOf(depthMode) + 1) % DEPTH_MODES.length];
+  try { localStorage.setItem("eyesDepthMode", depthMode); } catch (_) {}
+  const prevTarget = depthDevice;
+  evaluateDepthTarget(false);
+  if (depthDevice === prevTarget) {
+    if (depthDevice === "mobile" && running) ensureDepthEngine();
+    if (socket && socket.readyState === 1) {
+      socket.send(JSON.stringify({ type: "depth_device", device: depthDevice, mode: depthMode, reason: depthReason }));
+    }
+  }
+  note(`depth mode: ${depthMode} (running on ${depthDevice})`);
 });
 
 go.addEventListener("contextmenu", (e) => e.preventDefault());

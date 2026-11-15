@@ -9,13 +9,14 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import agent, config, live, speak, tools, trace
+from . import agent, config, live, local_depth, speak, tools, trace
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    asyncio.create_task(local_depth.warm())
     if config.API_KEY:
         asyncio.create_task(speak.warm_common())
     yield

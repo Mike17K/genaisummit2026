@@ -182,9 +182,104 @@
     };
   }
 
+  // Extract 75th-percentile inverse depth (disparity) inside the central 20%x20% crosshair of a Depth-Anything-V2 map.
+  function extractCenterDisparity(data, width, height) {
+    if (!data || !width || !height || data.length < width * height) return null;
+    const x0 = Math.max(0, Math.floor(width * 0.40));
+    const x1 = Math.min(width, Math.ceil(width * 0.60));
+    const y0 = Math.max(0, Math.floor(height * 0.40));
+    const y1 = Math.min(height, Math.ceil(height * 0.60));
+    const center = [];
+    for (let y = y0; y < y1; y++) {
+      const row = y * width;
+      for (let x = x0; x < x1; x++) {
+        const v = Number(data[row + x]);
+        if (Number.isFinite(v) && v > 0) center.push(v);
+      }
+    }
+    if (!center.length) return null;
+    center.sort((a, b) => a - b);
+    const centerDisp = center[Math.min(center.length - 1, Math.floor(center.length * 0.75))];
+
+    const sample = [];
+    const step = Math.max(1, Math.floor(data.length / 512));
+    for (let i = 0; i < data.length; i += step) {
+      const v = Number(data[i]);
+      if (Number.isFinite(v) && v > 0) sample.push(v);
+    }
+    sample.sort((a, b) => a - b);
+    const p10 = sample.length ? sample[Math.floor(sample.length * 0.10)] : centerDisp;
+    const p90 = sample.length ? sample[Math.floor(sample.length * 0.90)] : centerDisp;
+    return { centerDisp, p10, p90 };
+  }
+
+  // Calibrates Depth-Anything-V2 inverse-depth disparity (disp ~ k / Z) into metric metres.
+  // Responds in 0 ms with a sensible prior (k=4.5) and locks onto exact metric scale whenever an anchor arrives.
+  class DepthCalibrator {
+    constructor(defaultScaleK = 4.5) {
+      this.defaultScaleK = defaultScaleK;
+      this.scaleK = defaultScaleK;
+      this.anchored = false;
+    }
+    reset() {
+      this.scaleK = this.defaultScaleK;
+      this.anchored = false;
+    }
+    anchor(dispAtCapture, metricMeters) {
+      if (!(dispAtCapture > 0.05) || !(metricMeters >= 0.10 && metricMeters <= 8.0)) return false;
+      const obsK = Math.max(0.25, Math.min(120.0, dispAtCapture * metricMeters));
+      if (!this.anchored) {
+        this.scaleK = obsK;
+        this.anchored = true;
+      } else {
+        this.scaleK = 0.65 * this.scaleK + 0.35 * obsK;
+      }
+      return true;
+    }
+    toMeters(centerDisp) {
+      if (!(centerDisp > 0.02) || !Number.isFinite(centerDisp)) return null;
+      const rawM = this.scaleK / centerDisp;
+      const clamped = Math.max(0.12, Math.min(6.0, rawM));
+      return Number(clamped.toFixed(2));
+    }
+  }
+
+  const MOBILE_SLOW_MS = 280; // >280 ms/frame (<3.5 fps) counts as "slow AF" -> auto-switch to laptop
+
+  // Decide whether depth inference runs on "mobile" or "laptop".
+  // In "auto" mode (default), keeps "mobile" unless the phone's steady-state benchmark or live EMA exceeds MOBILE_SLOW_MS
+  // (or mobile WebGPU/WASM errors out), provided the laptop round-trip isn't even slower.
+  function chooseDepthTarget({
+    mode = "auto",
+    mobileBenchMs = null,
+    mobileEmaMs = null,
+    mobileFrames = 0,
+    mobileError = false,
+    laptopRttMs = null,
+  } = {}) {
+    if (mode === "mobile") return { target: "mobile", reason: "forced mobile" };
+    if (mode === "laptop") return { target: "laptop", reason: "forced laptop" };
+    if (mobileError) return { target: "laptop", reason: "mobile unavailable" };
+
+    if (mobileFrames >= 3 && typeof mobileEmaMs === "number" && mobileEmaMs > MOBILE_SLOW_MS) {
+      if (typeof laptopRttMs === "number" && laptopRttMs > mobileEmaMs * 1.25) {
+        return { target: "mobile", reason: "laptop slower than mobile" };
+      }
+      return { target: "laptop", reason: `mobile slow (${Math.round(mobileEmaMs)} ms/frame)` };
+    }
+    if (mobileFrames < 3 && typeof mobileBenchMs === "number" && mobileBenchMs > MOBILE_SLOW_MS) {
+      if (typeof laptopRttMs === "number" && laptopRttMs > mobileBenchMs * 1.25) {
+        return { target: "mobile", reason: "laptop slower than mobile" };
+      }
+      return { target: "laptop", reason: `mobile bench slow (${Math.round(mobileBenchMs)} ms/frame)` };
+    }
+    return { target: "mobile", reason: "mobile fast" };
+  }
+
   const api = {
     KNOWN_WIDTHS_M, DEFAULTS, distanceMeters, zone, RollingBaseline, ImuState, LoomingTracker,
-    lumaMotion, parseFocusDistance, depthFeedback,
+    lumaMotion, parseFocusDistance, depthFeedback, extractCenterDisparity, DepthCalibrator,
+    MOBILE_SLOW_MS, chooseDepthTarget,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else Object.assign(root, { Looming: api });
