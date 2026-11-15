@@ -1,0 +1,44 @@
+{
+  "kind": "storyboard",
+  "version": 3,
+  "submittedAt": "2026-11-15T12:33:58.807Z",
+  "decision": "approve",
+  "overall": "",
+  "panels": [
+    {
+      "id": "the-person",
+      "n": 1,
+      "verdict": "approve"
+    },
+    {
+      "id": "reveal",
+      "n": 2,
+      "verdict": "approve"
+    },
+    {
+      "id": "sonar-safety",
+      "n": 3,
+      "verdict": "approve"
+    },
+    {
+      "id": "voice-memory",
+      "n": 4,
+      "verdict": "approve"
+    },
+    {
+      "id": "places-tech",
+      "n": 5,
+      "verdict": "approve"
+    },
+    {
+      "id": "live-demo",
+      "n": 6,
+      "verdict": "approve"
+    },
+    {
+      "id": "whats-next-cta",
+      "n": 7,
+      "verdict": "approve"
+    }
+  ]
+}

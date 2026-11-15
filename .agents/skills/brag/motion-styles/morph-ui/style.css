@@ -1,0 +1,16 @@
+/* Morph UI: one black shape reshapes itself into the product's parts. Warm grey ground, Geist, one accent. */
+@font-face { font-family: 'MUGeist'; src: url(assets/geist.ttf); font-weight: 100 900; }
+#stage.ms-morph-ui {
+  --ground: #E7E5E0; --ground2: #DEDCD6; --ink: #121212; --paper: #FFFFFF; --mute: #8B887F; --accent: #FF5A1F;
+  --sans: 'MUGeist', 'Helvetica Neue', Arial, sans-serif;
+  font-family: var(--sans); background: var(--ground); color: var(--ink); font-weight: 500; letter-spacing: -0.02em;
+}
+.ms-morph-ui .mu-world { position: absolute; inset: 0; }
+.ms-morph-ui .mu-dots { position: absolute; inset: -400px; background-image: radial-gradient(circle, rgba(18,18,18,.16) 2.5px, transparent 3px); background-size: 80px 80px; }
+.ms-morph-ui .mu-shape { position: absolute; left: 50%; top: 50%; background: var(--ink); color: #fff; overflow: hidden; will-change: width, height; }
+.ms-morph-ui .mu-face { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; visibility: hidden; }
+.ms-morph-ui .mu-cap { position: absolute; font: 600 24px/1 var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--mute); }
+.ms-morph-ui .mu-cap b { color: var(--ink); font-weight: 700; }
+.ms-morph-ui .mu-cursor { position: absolute; left: 0; top: 0; width: 56px; height: 56px; z-index: 50; pointer-events: none; filter: drop-shadow(0 6px 10px rgba(0,0,0,.25)); }
+.ms-morph-ui .mu-ripple { position: absolute; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; border: 5px solid var(--accent); z-index: 49; visibility: hidden; }
+.ms-morph-ui .acc { color: var(--accent); }

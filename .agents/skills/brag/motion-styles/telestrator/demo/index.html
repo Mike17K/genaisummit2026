@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Telestrator demo</title>
+<link rel="stylesheet" href="../style.css">
+<style>body{margin:0;background:#000} #s1{z-index:1}#s2{z-index:2}#s3{z-index:3}</style></head>
+<body>
+<div id="stage" class="ms-telestrator">
+  <section class="scene" id="s1"></section>
+  <section class="scene" id="s2" style="opacity:0;visibility:hidden"></section>
+  <section class="scene pad" id="s3" style="opacity:0;visibility:hidden">
+    <div class="ts-win" id="winA" style="top:0"></div>
+    <div class="ts-win" id="winB" style="top:965px;height:955px">
+      <div class="ts-board" id="boardB"></div>
+      <div class="ts-bignum" id="num">12</div>
+      <div class="ts-bigcap" id="cap">Recipes<small>FROM WHAT YOU HAVE</small></div>
+    </div>
+    <div class="ts-cam" id="camA" style="top:880px">A &nbsp;FRIDGE</div>
+    <div class="ts-cam" id="camB" style="top:1010px">B &nbsp;RECIPES</div>
+    <div class="ts-stamp" id="stampC"><b>Pantry.</b><small>Cook what you have.</small></div>
+  </section>
+  <div class="ts-pack">
+    <div class="ts-clock" id="clock"><span></span><span class="m">II 01.00s F30</span><span class="m">&gt; 1/2 00.40s F12</span><span class="m">II 02.80s F84</span><span class="m">A / B SPLIT</span></div>
+    <div class="ts-bug"><b>PANTRY</b><div class="ts-mode" id="mode"><i class="live">LIVE</i><i class="ana">ANALYSIS</i><i class="rep">REPLAY</i><i class="ana">ANALYSIS</i><i class="ana">SPLIT</i></div></div>
+  </div>
+</div>
+<script>window.TIMELINE = { width: 1080, height: 1920, fps: 30, duration: 6 };</script>
+<script src="../../../runtime/gsap.js"></script>
+<script src="../../../runtime/timeline.js"></script>
+<script src="../../../runtime/motion.js"></script>
+<script src="../kit.js"></script>
+<script>
+BRAG.build((tl, fx) => {
+  const T = BRAG.styles.telestrator, SC = -90;
+  T.cycle('#mode', [0, 1.0, 2.4, 2.8, 4.4]);
+  T.cycle('#clock', [0, 1.0, 2.4, 2.8, 4.4]);
+  const focus = (n) => { const a = T.card(0, SC), b = T.card(n - 1, SC); return { cx: 540, cy: (a.y + b.y + b.h) / 2, w: 1000, h: b.y + b.h - a.y + 40, r: 40 }; };
+
+  // ---------- scene 1: live play, freeze, one finding ----------
+  const f1 = T.footage('#s1');
+  T.play(f1, 0, 1.0, SC);
+  T.freeze(f1, 1.0, { hold: 1.6 });
+  T.spotlight(f1, focus(3), 1.12, { dur: 0.4 });
+  T.box(f1, (() => { const a = T.card(0, SC), b = T.card(2, SC); return { x: 44, y: a.y - 12, w: 992, h: b.y + b.h - a.y + 24 }; })(), 1.3, { color: 'yellow', dur: 0.55 });
+  const l1 = T.label(f1.root, { x: 40, y: 170, w: 1000, text: 'Your fridge knows more than you do.', sub: 'Pantry analysis', color: 'yellow', size: 92 }, 1.2);
+  T.markerLine(f1, 'M300,470 C320,560 420,520 470,590', 1.65, { color: 'yellow', dur: 0.4, head: 38 });
+  fx.pulse(l1.el, 2.0, { scale: 1.03, dur: 0.3 });
+
+  // ---------- scene 2: replay, freeze, rings on the expiring items ----------
+  const f2 = T.footage('#s2');
+  T.play(f2, 2.1, 2.8, SC);
+  T.freeze(f2, 2.8, { hold: 1.5 });
+  const c0 = T.card(0, SC), c1 = T.card(1, SC), c2 = T.card(2, SC);
+  T.spotlight(f2, focus(3), 2.9, { dur: 0.35 });
+  T.patch(f2, { x: 772, y: c0.chip.y - 18, w: 240, h: c1.chip.y + c1.chip.h - c0.chip.y + 36 }, 3.0, { color: 'red' });
+  T.ring(f2, { cx: c0.chip.cx, cy: c0.chip.cy, rx: 140, ry: 58 }, 3.1, { color: 'red', seed: 1 });
+  T.ring(f2, { cx: c1.chip.cx, cy: c1.chip.cy, rx: 140, ry: 58 }, 3.4, { color: 'red', seed: 2 });
+  T.ring(f2, { cx: c2.chip.cx, cy: c2.chip.cy, rx: 140, ry: 58 }, 3.7, { color: 'cyan', seed: 3 });
+  T.label(f2.root, { x: 40, y: 170, w: 1000, text: 'See what’s expiring', sub: 'Expiry watch', color: 'red', size: 100 }, 3.0);
+  const lw = T.label(f2.root, { x: 40, y: 1330, w: 560, text: '<span id="swn">0</span> days left', sub: 'Greek yoghurt', color: 'red', size: 84 }, 3.5);
+  T.stopwatch('#swn', 2, 3.6, { dur: 0.5 });
+  fx.pulse('#swn', 4.0, { scale: 1.1, dur: 0.3 });
+
+  // ---------- scene 3: split screen and the stamp ----------
+  const f3 = T.footage('#winA');
+  tl.set(f3.root, { y: -300 }, 0);
+  tl.set(f3.list, { y: SC }, 0);
+  T.box(f3, (() => { const a = T.card(0, SC), b = T.card(1, SC); return { x: 44, y: a.y - 12, w: 992, h: b.y + b.h - a.y + 24 }; })(), 4.65, { color: 'yellow', dur: 0.5 });
+  T.split('#winA', '#winB', 4.3);
+  tl.from(['#camA', '#camB'], { autoAlpha: 0, x: -40, duration: 0.3, stagger: 0.1, immediateRender: true }, 4.55);
+  const names = [['Spinach feta pie', '#e8c547'], ['Greek yoghurt dip', '#e8e2d0'], ['Shakshuka', '#ff5a4d'], ['Herb omelette', '#5fd08a']];
+  names.forEach(([n, c], k) => {
+    const r = document.createElement('div'); r.className = 'ts-rec'; r.style.cssText = `left:${50 + (k % 2) * 490}px;top:${520 + Math.floor(k / 2) * 214}px`;
+    r.innerHTML = `<i style="background:${c}"></i><span>${n}</span>`; document.getElementById('winB').appendChild(r);
+    tl.from(r, { y: 60, autoAlpha: 0, duration: 0.4, ease: 'back.out(1.8)', immediateRender: true }, 4.7 + k * 0.08);
+  });
+  fx.count('#num', 12, 4.55, { dur: 0.6 });
+  T.stamp('#stampC', 5.15);
+  fx.drift('#boardB', 4.3, 6, { scale: 1.03 });
+  T.band('#s1', '#s2', 2.2, 0.38);
+  T.band('#s2', '#s3', 4.1, 0.38);
+});
+</script></body></html>

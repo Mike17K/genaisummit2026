@@ -1,0 +1,154 @@
+{
+  "title": "VoxEye — Pure Hand-Drawn Sketchbook Story (Blindfolded Mascot)",
+  "type": "story",
+  "style": "sketchbook",
+  "styleCustom": false,
+  "tone": "default",
+  "energy": "lively",
+  "aspect": "16:9",
+  "width": 1920,
+  "height": 1080,
+  "fps": 24,
+  "bpm": 120,
+  "duration": 60,
+  "version": 3,
+  "music": {
+    "track": "happy-beats-business-moves-vol-10-by-ende-dot-app.mp3",
+    "gainDb": -14,
+    "voiceover": true
+  },
+  "tokens": {
+    "bg": "#f2ead8",
+    "surface": "#efe3c4",
+    "ink": "#2a2420",
+    "muted": "#6f6a63",
+    "accent": "#d97757",
+    "accent2": "#f7d64a",
+    "radius": "16px",
+    "shadow": "none",
+    "fontDisplay": "Segoe Print",
+    "fontBody": "Ink Free",
+    "fontMono": "JetBrains Mono"
+  },
+  "panels": [
+    {
+      "id": "the-person",
+      "start": 0,
+      "end": 6.8,
+      "t": 5.2,
+      "dur": 6.8,
+      "tag": "THE UNSEEN WORLD",
+      "script": [
+        "a cane feels the ground",
+        "not what hangs *above*"
+      ],
+      "action": "Pure hand-drawn sketchbook scene (zero UI screens, minimal text): our blindfolded terracotta mascot walks with a white cane along a sketched line toward a low overhanging tree branch and dangling street sign at head height, with a yellow pencil drawing the branch and a red '€5,000 / 3s LAG' rubber stamp.",
+      "sfx": "soft pencil sketch hits + gentle puzzled pluck",
+      "notes": "",
+      "image": "panels/v3/p01.jpg",
+      "strip": "panels/v3/p01-strip.jpg"
+    },
+    {
+      "id": "reveal",
+      "start": 6.8,
+      "end": 13.6,
+      "t": 11,
+      "dur": 6.8,
+      "tag": "MEET VOXEYE",
+      "script": [
+        "just your phone & earphones",
+        "now your ears can *see*"
+      ],
+      "action": "The hanging sign morphs into a glowing highlighter-yellow lightbulb above our blindfolded mascot, who puts on stereo earphones, smiles widely, and hops with joy as sound wave arcs radiate from both ears.",
+      "sfx": "warm D-major chord pluck + pencil scribble fill + sparkle chime",
+      "notes": "",
+      "image": "panels/v3/p02.jpg",
+      "strip": "panels/v3/p02-strip.jpg"
+    },
+    {
+      "id": "sonar-safety",
+      "start": 13.6,
+      "end": 21.8,
+      "t": 18.5,
+      "dur": 8.2,
+      "tag": "STEREO SONAR",
+      "script": [
+        "closer means faster *beeps*",
+        "left ear · center · right ear"
+      ],
+      "action": "Our blindfolded mascot walks with stereo earphones as 3 clean hand-drawn sound cones (LEFT EAR, BEEP · BEEP · BEEP!, RIGHT EAR) fan out across the sketchbook page toward a 0.8m street obstacle.",
+      "sfx": "3-sector stereo Geiger sonar pings panning left -> center -> right",
+      "notes": "",
+      "image": "panels/v3/p03.jpg",
+      "strip": "panels/v3/p03-strip.jpg"
+    },
+    {
+      "id": "voice-memory",
+      "start": 21.8,
+      "end": 30.5,
+      "t": 27.2,
+      "dur": 8.7,
+      "tag": "JUST ASK",
+      "script": [
+        "ask in Greek or *English*",
+        "it remembers what *matters*"
+      ],
+      "action": "Our blindfolded mascot asks 'Πού είναι το φαρμακείο; / Where is the pharmacy?' in a hand-drawn speech bubble; a pinned index card saves 'Goal: Pharmacy' with a green checkmark, and a pencil arrow points to the sketched pharmacy door.",
+      "sfx": "spoken Greek/English question + clause-streamed reply + stamp",
+      "notes": "",
+      "image": "panels/v3/p04.jpg",
+      "strip": "panels/v3/p04-strip.jpg"
+    },
+    {
+      "id": "places-tech",
+      "start": 30.5,
+      "end": 38.2,
+      "t": 35.2,
+      "dur": 7.7,
+      "tag": "FIND YOUR WAY",
+      "script": [
+        "a compass in your *ears*",
+        "guiding every step"
+      ],
+      "action": "The pinned note morphs into a large hand-drawn compass rose in the center of the sketchbook page over a winding dashed footpath, guiding our blindfolded mascot step-by-step (with a minimal 'Gemini · Maps · fal.ai' margin doodle).",
+      "sfx": "upbeat marimba/pluck arpeggio + pencil ticks",
+      "notes": "",
+      "image": "panels/v3/p05.jpg",
+      "strip": "panels/v3/p05-strip.jpg"
+    },
+    {
+      "id": "live-demo",
+      "start": 38.2,
+      "end": 53.5,
+      "t": 45.5,
+      "dur": 15.3,
+      "tag": "IN THE REAL WORLD",
+      "script": [
+        "one person, walking *free*",
+        "real world · real time"
+      ],
+      "action": "A clean hand-drawn sketchbook frame taped onto the center of the page (ready for real camera footage or showing our blindfolded mascot walking happily past a sketched street tree with sound waves and flying birds).",
+      "sfx": "live demo audio + stereo sonar + upbeat groove",
+      "notes": "",
+      "image": "panels/v3/p06.jpg",
+      "strip": "panels/v3/p06-strip.jpg"
+    },
+    {
+      "id": "whats-next-cta",
+      "start": 53.5,
+      "end": 60,
+      "t": 57.8,
+      "dur": 6.5,
+      "tag": "OPEN FOR ALL",
+      "script": [
+        "VoxEye — eyes in your *ears*",
+        "free on every phone"
+      ],
+      "action": "The window morphs into a glowing yellow sun over a sketched hilltop with a little house, curling chimney smoke, flying birds, and our blindfolded mascot waving happily at the top of the hill with a 'FREE & OPEN' stamp.",
+      "sfx": "warm D-major resolution chord + cheerful hop plucks + stamp",
+      "notes": "",
+      "image": "panels/v3/p07.jpg",
+      "strip": "panels/v3/p07-strip.jpg"
+    }
+  ]
+}

@@ -1,0 +1,111 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Caption News demo</title>
+<link rel="stylesheet" href="../style.css">
+<style>
+.fridge { position: absolute; left: 290px; top: 150px; width: 500px; height: 1020px; border-radius: 40px; background: linear-gradient(90deg, #e9edf2, #c3cbd8); box-shadow: 0 40px 0 rgba(0,0,0,.35); }
+.fridge::before { content: ''; position: absolute; left: 0; right: 0; top: 330px; height: 8px; background: #8d97a8; }
+.fridge .h { position: absolute; left: 36px; width: 18px; border-radius: 9px; background: #4b5365; }
+.fridge .shelf { position: absolute; left: 90px; right: 50px; height: 12px; background: #aab3c3; border-radius: 6px; }
+.food { position: absolute; border-radius: 14px; }
+#hook .badge { font-size: 70px; }
+#list .doc { position: absolute; left: 70px; top: 230px; width: 940px; height: 800px; background: #F4F1E8; color: #14161c; border-radius: 10px; box-shadow: 14px 14px 0 rgba(0,0,0,.45); }
+#list .doc h3 { margin: 0; padding: 36px 44px 20px; font-family: var(--cap-font); font-size: 44px; letter-spacing: .04em; text-transform: uppercase; border-bottom: 5px solid #14161c; }
+#list .doc .r { display: flex; justify-content: space-between; align-items: center; padding: 0 44px; height: 170px; border-bottom: 2px solid #c9c4b3; font-size: 62px; font-weight: 800; letter-spacing: -.02em; }
+#list .doc .r .mark { font-family: var(--cap-font); font-weight: 400; font-size: 70px; text-transform: uppercase; padding: 0 14px; }
+#list .doc .n { font-size: 24px; letter-spacing: .08em; font-weight: 700; color: #6b6a60; padding: 20px 44px; text-transform: uppercase; }
+#stat .foot { display: flex; align-items: center; justify-content: center; }
+#stat .big { font-family: var(--cap-font); font-size: 880px; line-height: 1; color: var(--yellow); text-shadow: 16px 16px 0 rgba(0,0,0,.45); margin-top: -40px; }
+#stat .badge { left: 90px; top: 860px; font-size: 80px; }
+#cta .foot { background: var(--yellow); }
+#cta .logo { position: absolute; left: 0; right: 0; top: 330px; text-align: center; font-family: var(--cap-font); font-size: 330px; color: var(--ink); line-height: 1; letter-spacing: .01em; }
+#cta .tag { position: absolute; left: 0; right: 0; top: 700px; text-align: center; font-weight: 800; font-size: 40px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink); }
+#cta .shade, #cta .shade-top { display: none; }
+#cta .cap { bottom: 190px; }
+#list .shade { top: 980px; }
+#stat .shade { top: 1000px; }
+.ms-caption-news .foot.docbg { background: linear-gradient(180deg, #11151f, #0b0d12); }
+</style></head><body>
+<div id="stage" class="ms-caption-news">
+  <section class="scene" id="hook"><div class="inner">
+    <div class="foot warm"><div class="fridge" id="fridge">
+      <div class="h" style="top:140px;height:130px"></div><div class="h" style="top:420px;height:300px"></div>
+      <div class="shelf" style="top:640px"></div><div class="shelf" style="top:820px"></div>
+      <div class="food" style="left:130px;top:560px;width:110px;height:80px;background:#f4f1e8"></div>
+      <div class="food" style="left:270px;top:590px;width:90px;height:50px;background:#7bc07a"></div>
+      <div class="food" style="left:150px;top:750px;width:150px;height:70px;background:#ffd400"></div>
+    </div>
+      <div class="badge" id="b1" style="left:60px;top:300px;transform:rotate(-6deg)">Yoghurt: 2 days</div>
+      <div class="badge y" id="b2" style="left:420px;top:700px;transform:rotate(4deg)">Spinach: tomorrow</div>
+    </div>
+    <div class="shade-top"></div><div class="shade"></div>
+    <div class="bug" id="bug1">Pantry News<small>Kitchen</small></div><div class="live">Breaking</div>
+    <div class="cap" id="cap1"><div class="ck"><span class="w">Your</span><span class="w">fridge</span></div><div class="ck"><span class="w key">knows</span><span class="w key">more</span></div><div class="ck"><span class="w">than</span><span class="w">you</span><span class="w">do.</span></div></div>
+  </div></section>
+  <section class="scene" id="list"><div class="inner">
+    <div class="foot docbg"><div class="doc" id="doc"><h3>Fridge scan · today</h3>
+      <div class="r"><span>Greek yoghurt</span><span class="mark">2 days</span></div>
+      <div class="r"><span>Spinach</span><span class="mark">tomorrow</span></div>
+      <div class="r"><span>Feta</span><span class="mark">9 days</span></div>
+      <div class="n">3 items · sorted by days left</div></div></div>
+    <div class="shade-top"></div><div class="shade"></div>
+    <div class="bug">Pantry News<small>Kitchen</small></div>
+    <div class="src" id="src2"><b>Source</b><span>Pantry fridge scan · today</span></div>
+    <div class="strap" id="strap2" style="top:1080px"><b></b><span>Use first</span><em>Spinach</em></div>
+    <div class="cap" id="cap2"><div class="ck"><span class="w">See</span><span class="w">what’s</span></div><div class="ck"><span class="w key">expiring</span></div></div>
+  </div></section>
+  <section class="scene" id="stat"><div class="inner">
+    <div class="foot cool"><div class="big" id="n12">12</div><div class="badge y" id="b3">Recipes</div></div>
+    <div class="shade-top"></div><div class="shade"></div>
+    <div class="bug">Pantry News<small>Kitchen</small></div>
+    <div class="src" id="src3"><b>Source</b><span>Your own fridge</span></div>
+    <div class="cap" id="cap3"><div class="ck"><span class="w">Recipes</span><span class="w">from</span></div><div class="ck"><span class="w">what</span><span class="w">you</span></div><div class="ck"><span class="w key">already</span><span class="w key">have</span></div></div>
+  </div></section>
+  <section class="scene" id="cta"><div class="inner">
+    <div class="foot"><div class="logo" id="logo">Pantry.</div><div class="tag" id="tag">Kitchen app</div></div>
+    <div class="bug" style="background:var(--ink);color:var(--yellow)">Pantry News<small style="border-color:var(--yellow)">Kitchen</small></div>
+    <div class="cap" id="cap4"><div class="ck"><span class="w">Cook</span><span class="w">what</span></div><div class="ck"><span class="w key">you</span><span class="w key">have.</span></div></div>
+  </div></section>
+</div>
+<script>window.TIMELINE = { width: 1080, height: 1920, fps: 30, duration: 6 };</script>
+<script src="../../../runtime/gsap.js"></script><script src="../../../runtime/timeline.js"></script><script src="../../../runtime/motion.js"></script>
+<script src="../kit.js"></script>
+<script>
+BRAG.build((tl, fx) => {
+  const S = BRAG.styles['caption-news'];
+  S.scenes(fx, [
+    { el: '#hook', start: 0,   end: 1.5, out: 'whip-up', outDur: 0.25 },
+    { el: '#list', start: 1.5, end: 3.5, out: 'cut' },
+    { el: '#stat', start: 3.5, end: 4.5, out: 'whip-left', outDur: 0.25 },
+    { el: '#cta',  start: 4.5, end: 6.0 },
+  ]);
+  // 1 hook: bug and caption chunks, fridge pushes in, callouts pop
+  S.caption('#cap1', 0.0);
+  S.callout('#b1', 0.55, { rot: -14 });
+  S.callout('#b2', 0.8, { rot: 12 });
+  fx.drift('#fridge', 0, 1.6, { scale: 1.08, y: -30 });
+  fx.float('#b1', 0.9, 1.5, { y: 8, period: 0.8 });
+  fx.float('#b2', 1.0, 1.5, { y: 8, period: 0.8, phase: 0.5 });
+  // 2 list: cut in with a punch, source slides in, rows are highlighted one by one like evidence
+  S.punch('#list .foot', 1.5);
+  S.bug('#list .bug', 1.52);
+  S.source('#src2', 1.75);
+  S.caption('#cap2', 1.6, { gap: 0.3 });
+  tl.from('#doc .r', { x: 140, autoAlpha: 0, duration: 0.3, ease: 'expo.out', stagger: 0.1, immediateRender: true }, 1.7);
+  S.mark('#doc .mark', 2.2, { stagger: 0.28, dur: 0.28 });
+  S.strap('#strap2', 2.6);
+  fx.shake('#strap2', 2.95, { strength: 6 });
+  fx.drift('#doc', 1.5, 3.55, { scale: 1.05, y: -20 });
+  // 3 stat: giant number rolls, caption slams
+  S.punch('#stat .foot', 3.5, { dur: 0.3 });
+  S.roll('#n12', 12, 3.45, { dur: 0.5 });
+  S.source('#src3', 3.65);
+  S.callout('#b3', 3.7);
+  S.caption('#cap3', 3.55, { gap: 0.2, word: 0.06 });
+  fx.drift('#n12', 3.5, 4.6, { scale: 1.06 });
+  // 4 cta
+  S.punch('#cta .foot', 4.4, { dur: 0.4 });
+  fx.text('#logo', 'slam', 4.45);
+  S.caption('#cap4', 4.7, { gap: 0.25 });
+  fx.text('#tag', 'tracking', 5.0);
+  fx.drift('#logo', 4.8, 6.0, { scale: 1.04 });
+});
+</script></body></html>

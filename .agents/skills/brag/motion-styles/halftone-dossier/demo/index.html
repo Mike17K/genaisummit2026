@@ -1,0 +1,106 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Halftone Dossier demo</title>
+<link rel="stylesheet" href="../style.css">
+<style>
+.blob { position: absolute; border-radius: 50%; overflow: hidden; border: 7px solid var(--ink); background: #F6E9C8; }
+.fr { position: absolute; left: 130px; top: 70px; width: 320px; height: 620px; border-radius: 44px; background: #BFE3DC; border: 8px solid var(--ink); }
+.fr::before { content: ''; position: absolute; left: 0; right: 0; top: 200px; height: 8px; background: var(--ink); }
+.fr i { position: absolute; left: 34px; width: 16px; border-radius: 8px; background: var(--ink); }
+.fr .eyes { position: absolute; left: 70px; top: 60px; width: 180px; height: 56px; }
+.fr .eyes b { position: absolute; width: 38px; height: 54px; border-radius: 50%; background: var(--ink); }
+.fr .eyes b::after { content: ''; position: absolute; left: 9px; top: 9px; width: 12px; height: 12px; border-radius: 50%; background: #fff; }
+#hook .hl { left: 60px; top: 190px; width: 960px; font-size: 120px; }
+#hook .photo { left: 250px; top: 740px; width: 580px; height: 780px; overflow: hidden; }
+#hook .stamp { left: 90px; top: 1560px; font-size: 118px; }
+#list .hl { left: 60px; top: 190px; width: 960px; font-size: 112px; }
+#list .strip { position: absolute; }
+#list .stamp { left: 150px; top: 1250px; font-size: 104px; }
+#list .blob { left: 330px; top: 1180px; width: 700px; height: 700px; }
+#stat .num { position: absolute; left: 50px; top: 160px; font-family: var(--display); font-size: 640px; line-height: 1; color: var(--teal); -webkit-text-stroke: 12px var(--ink); paint-order: stroke fill; text-shadow: 14px 14px 0 var(--red); }
+#stat .num2 { position: absolute; left: 50px; top: 160px; font-family: var(--display); font-size: 640px; line-height: 1; color: transparent; -webkit-text-stroke: 0; background: radial-gradient(circle, var(--ink) 0 34%, transparent 36%) 0 0/24px 24px; -webkit-background-clip: text; background-clip: text; pointer-events: none; transform: rotate(0deg); }
+#stat .capbar { top: 1140px; }
+#stat .blob { left: 480px; top: 1350px; width: 520px; height: 520px; }
+#cta .hl { left: 60px; top: 360px; font-size: 200px; }
+#cta .stamp { left: 80px; top: 800px; font-size: 108px; }
+#cta .blob { left: 300px; top: 1400px; width: 560px; height: 560px; }
+#cta .capbar { top: 1250px; }
+</style></head><body>
+<div id="stage" class="ms-halftone-dossier">
+  <section class="scene" id="hook"><div class="inner">
+    <div class="ht edge" id="e1"></div>
+    <div class="chip" style="left:60px;top:70px" id="c1">Case file Nº 0417</div>
+    <div class="chip y" style="right:60px;top:70px">Kitchen dept.</div>
+    <h1 class="hl" id="h1">Your fridge knows more than you do.</h1>
+    <div class="exh photo" id="ex1"><div class="tag">Exhibit A</div>
+      <div class="fr"><i style="top:60px;height:100px"></i><i style="top:260px;height:240px"></i><div class="eyes"><b style="left:20px"></b><b style="left:120px"></b></div></div>
+      <div class="ht linear" id="p1" style="--ink-c:#2A9D8F;--dot:22px;--ang:25deg"></div></div>
+    <div class="stamp" id="st1">Classified</div>
+  </div></section>
+  <section class="scene" id="list"><div class="inner">
+    <div class="ht edge" id="e2"></div>
+    <div class="chip" style="left:60px;top:70px">Exhibits B – D</div>
+    <h2 class="hl" id="h2">See what’s expiring</h2>
+    <div class="blob"><div class="ht glow" id="b2" style="--ink-c:#D8452B;--dot:26px;opacity:1"></div></div>
+    <div class="exh strip" style="top:520px"><div class="tag">Exhibit B</div><span>Greek yoghurt</span><b>2 days</b></div>
+    <div class="exh strip" style="top:720px"><div class="tag">Exhibit C</div><span>Spinach</span><b class="hot">tomorrow</b></div>
+    <div class="exh strip" style="top:920px"><div class="tag">Exhibit D</div><span>Feta</span><b>9 days</b></div>
+    <svg class="string" viewBox="0 0 1080 1920"><path id="str" d="M1040 595 C1090 650 1090 740 1040 795 C1090 850 1090 940 1040 995"/></svg>
+    <div class="pin" style="left:1040px;top:595px"></div><div class="pin" style="left:1040px;top:795px"></div><div class="pin" style="left:1040px;top:995px"></div>
+    <div class="stamp" id="st2">Expiring</div>
+  </div></section>
+  <section class="scene" id="stat"><div class="inner">
+    <div class="ht edge" id="e3"></div>
+    <div class="chip" style="left:60px;top:70px">Exhibit E</div>
+    <div class="blob"><div class="ht glow" id="b3" style="--ink-c:#2A9D8F;--dot:24px;opacity:1"></div></div>
+    <div class="num" id="n12">12</div><div class="num2" id="n12b">12</div>
+    <div class="capbar" id="cap3">recipes from what you already have</div>
+  </div></section>
+  <section class="scene" id="cta"><div class="inner">
+    <div class="ht edge" id="e4"></div>
+    <div class="chip" style="left:60px;top:70px">Case Nº 0417</div>
+    <h1 class="hl" id="logo">Pantry.</h1>
+    <div class="blob"><div class="ht glow" id="b4" style="--ink-c:#F2B632;--dot:24px;opacity:1"></div></div>
+    <div class="stamp navy" id="st4">Case closed</div>
+    <div class="capbar" id="cap4">Cook what you have.</div>
+  </div></section>
+</div>
+<script>window.TIMELINE = { width: 1080, height: 1920, fps: 30, duration: 6 };</script>
+<script src="../../../runtime/gsap.js"></script><script src="../../../runtime/timeline.js"></script><script src="../../../runtime/motion.js"></script>
+<script src="../kit.js"></script>
+<script>
+BRAG.build((tl, fx) => {
+  const S = BRAG.styles['halftone-dossier'];
+  S.init(document);
+  S.scenes(fx, [
+    { el: '#hook', start: 0,   end: 1.7, out: 'push-left', outDur: 0.4 },
+    { el: '#list', start: 1.7, end: 3.7, out: 'wipe',      outDur: 0.35 },
+    { el: '#stat', start: 3.7, end: 4.9, out: 'push-up',   outDur: 0.4 },
+    { el: '#cta',  start: 4.9, end: 6.0 },
+  ]);
+  ['#e1', '#e2', '#e3', '#e4'].forEach((e, i) => { tl.set(e, { '--f': 70 }, 0); S.breathe(e, [0, 1.7, 3.7, 4.9][i], [1.7, 3.7, 4.9, 6][i], { a: 80, b: 40 }); });
+  // 1 hook: headline already printed, misregisters, exhibit A slaps on, halftone blooms in the fridge photo, stamp slams
+  S.misregister('#h1', 0);
+  S.exhibit('#ex1', 0.25, { x: 800, rot: 12 });
+  S.bloom('#p1', 0.5, { from: 255, to: 90, dur: 0.7 });
+  S.stamp('#st1', 1.05, { rot: -9 });
+  fx.drift('#ex1', 0.8, 1.8, { scale: 1.03 });
+  // 2 list: headline rises, exhibits slap on, red string pins them, halftone sun blooms, stamp
+  fx.text('#h2', 'rise', 1.75, { dur: 0.5, stagger: 0.08 });
+  S.bloom('#b2', 1.9, { from: 255, to: 20, dur: 0.8 });
+  S.exhibit('#list .strip', 2.0, { x: 900, rot: 6, every: 0.2 });
+  S.string('#str', 2.55, { dur: 0.7, pins: '#list .pin' });
+  S.stamp('#st2', 3.15, { rot: -7 });
+  // 3 stat: the number slams, counts, dotted overprint, caption types with a highlighted keyword
+  fx.text('#n12', 'slam', 3.5);
+  tl.from('#n12b', { autoAlpha: 0, duration: 0.2 }, 3.75);
+  fx.count('#n12', 12, 3.5, { from: 0, dur: 0.7 });
+  fx.count('#n12b', 12, 3.5, { from: 0, dur: 0.7 });
+  S.bloom('#b3', 3.9, { from: 255, to: 20, dur: 0.7 });
+  S.bloom('#b4', 5.0, { from: 255, to: 20, dur: 0.7 });
+  S.caption('#cap3', 4.0, { cps: 48, key: [4] });
+  // 4 cta
+  fx.text('#logo', 'slam', 4.7);
+  S.misregister('#logo', 5.0);
+  S.stamp('#st4', 5.2, { rot: -9 });
+  S.caption('#cap4', 5.35, { cps: 60, key: [3] });
+});
+</script></body></html>

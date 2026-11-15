@@ -1,0 +1,79 @@
+/* Sports telestrator: the product UI as match footage, drawn on with marker lines, rings, spotlights. Scoped under #stage.ms-telestrator. */
+@font-face { font-family: 'TS Cond'; src: url(assets/BarlowCondensed-SemiBold.ttf); font-weight: 600; font-display: block; }
+@font-face { font-family: 'TS Cond'; src: url(assets/BarlowCondensed-ExtraBoldItalic.ttf); font-weight: 800; font-style: italic; font-display: block; }
+@font-face { font-family: 'TS Mono'; src: url(assets/IBMPlexMono-Medium.ttf); font-display: block; }
+
+#stage.ms-telestrator {
+  /* tokens: one colour, one identity */
+  --yellow: #ffd400;  /* what we follow, the main marker lines */
+  --cyan: #3fd8ff;    /* the others */
+  --red: #ff3b30;     /* space / the problem */
+  --chalk: #f4f1e8;   /* traced lines, neutral marks */
+  --board: #0c1411;   /* show board */
+  --card: rgba(8, 12, 14, .92);
+  --accent: #ffd400;
+  --cond: 'TS Cond', 'Barlow Condensed', sans-serif; --mono: 'TS Mono', 'IBM Plex Mono', monospace;
+  font-family: var(--cond); color: #fff; background: var(--board);
+}
+#stage.ms-telestrator .scene { position: absolute; inset: 0; overflow: hidden; background: var(--board); }
+#stage.ms-telestrator .scene.pad { background-image: linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px); background-size: 60px 60px; }
+
+/* ---- the footage: Pantry fridge screen, full frame */
+#stage.ms-telestrator .ts-footage { position: absolute; inset: 0; transform-origin: 50% 50%; }
+#stage.ms-telestrator .ts-ui { position: absolute; inset: 0; background: linear-gradient(180deg, #14241d, #0d1813); color: #f1efe6; font-family: var(--cond); font-weight: 600; }
+#stage.ms-telestrator .ts-status { position: absolute; left: 56px; right: 56px; top: 40px; display: flex; justify-content: space-between; font: 500 28px var(--mono); opacity: .6; }
+#stage.ms-telestrator .ts-title { position: absolute; left: 56px; top: 150px; font: 800 italic 150px/1 var(--cond); letter-spacing: -.01em; }
+#stage.ms-telestrator .ts-pills { position: absolute; left: 56px; top: 350px; display: flex; gap: 16px; }
+#stage.ms-telestrator .ts-pills b { font: 600 38px/1 var(--cond); letter-spacing: .06em; padding: 18px 26px; border-radius: 40px; background: #20352b; color: #cfe3d6; }
+#stage.ms-telestrator .ts-pills b.warn { background: #4a2a1d; color: #ffb27a; }
+#stage.ms-telestrator .ts-pills b.ok { background: #1e4a33; color: #8be8b0; }
+#stage.ms-telestrator .ts-sub { position: absolute; left: 60px; top: 470px; font: 500 26px var(--mono); letter-spacing: .14em; opacity: .55; }
+#stage.ms-telestrator .ts-list { position: absolute; left: 0; top: 540px; width: 1080px; height: 1400px; }
+#stage.ms-telestrator .ts-card { position: absolute; left: 56px; width: 968px; height: 190px; border-radius: 30px; background: #1c2d25; box-shadow: inset 0 0 0 2px #2b4237; display: flex; align-items: center; gap: 28px; padding: 0 28px; box-sizing: border-box; }
+#stage.ms-telestrator .ts-card i { width: 112px; height: 112px; border-radius: 50%; display: grid; place-items: center; font: 800 italic 64px var(--cond); color: #0c1411; font-style: italic; flex: none; }
+#stage.ms-telestrator .ts-card div { flex: 1; min-width: 0; }
+#stage.ms-telestrator .ts-card strong { display: block; font: 600 66px/1 var(--cond); }
+#stage.ms-telestrator .ts-card small { display: block; margin-top: 10px; font: 500 24px var(--mono); letter-spacing: .12em; opacity: .55; }
+#stage.ms-telestrator .ts-card em { font: 800 italic 46px/78px var(--cond); font-style: italic; width: 220px; height: 78px; text-align: center; border-radius: 40px; background: color-mix(in srgb, var(--c) 24%, #10201a); color: var(--c); letter-spacing: .02em; flex: none; }
+#stage.ms-telestrator .ts-grade { position: absolute; inset: 0; background: radial-gradient(120% 90% at 50% 40%, rgba(0,0,0,0) 55%, rgba(0,0,0,.35)); pointer-events: none; }
+#stage.ms-telestrator .ts-ann { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+#stage.ms-telestrator .ts-flash { position: absolute; inset: 0; background: #fff; pointer-events: none; z-index: 30; }
+#stage.ms-telestrator .ts-vig { position: absolute; inset: 0; background: radial-gradient(100% 80% at 50% 50%, rgba(10, 30, 50, 0) 40%, rgba(5, 15, 30, .55)); mix-blend-mode: multiply; pointer-events: none; }
+#stage.ms-telestrator .ts-mk path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+#stage.ms-telestrator .ts-dash { fill: none; stroke-width: 5; stroke-dasharray: 18 14; }
+#stage.ms-telestrator .ts-patch { stroke-width: 4; stroke-dasharray: 16 12; }
+
+/* ---- labels: black card, role-coloured left bar, big italic line, small spaced second line */
+#stage.ms-telestrator .ts-label { position: absolute; z-index: 20; box-sizing: border-box; padding: 20px 34px 18px 44px; background: var(--card); max-width: 1000px; }
+#stage.ms-telestrator .ts-label i { position: absolute; left: 0; top: 0; bottom: 0; width: 16px; background: var(--c); }
+#stage.ms-telestrator .ts-label b { display: block; font: 800 italic var(--fs, 84px)/.95 var(--cond); text-transform: uppercase; letter-spacing: .005em; }
+#stage.ms-telestrator .ts-label small { display: block; margin-top: 10px; font: 600 32px var(--cond); letter-spacing: .16em; color: var(--c); text-transform: uppercase; }
+
+/* ---- packaging: corner bug, source clock, always on top */
+#stage.ms-telestrator .ts-pack { position: absolute; inset: 0; z-index: 8000; pointer-events: none; }
+#stage.ms-telestrator .ts-bug { position: absolute; right: 40px; top: 56px; width: 430px; }
+#stage.ms-telestrator .ts-bug b { display: block; background: var(--yellow); color: #0c1411; font: 800 italic 58px/1 var(--cond); padding: 8px 22px 6px; letter-spacing: .02em; }
+#stage.ms-telestrator .ts-mode { display: grid; background: var(--card); font: 600 34px/1 var(--cond); letter-spacing: .2em; padding: 10px 22px 9px; }
+#stage.ms-telestrator .ts-mode i { font-style: normal; }
+#stage.ms-telestrator .ts-mode .live { color: #fff; } #stage.ms-telestrator .ts-mode .live::before { content: ''; display: inline-block; width: 18px; height: 18px; border-radius: 50%; background: var(--red); margin-right: 14px; vertical-align: 1px; }
+#stage.ms-telestrator .ts-mode .ana { color: var(--yellow); } #stage.ms-telestrator .ts-mode .rep { color: var(--cyan); }
+#stage.ms-telestrator .ts-clock { position: absolute; left: 40px; top: 70px; display: grid; background: var(--card); font: 500 30px var(--mono); padding: 8px 18px; min-width: 280px; box-sizing: border-box; }
+#stage.ms-telestrator .ts-clock span:empty { display: none; }
+
+/* ---- packaging wipe band: a yellow slanted band with dark edges */
+#stage.ms-telestrator .ts-band { position: absolute; inset: 0; z-index: 8500; visibility: hidden; pointer-events: none; }
+#stage.ms-telestrator .ts-band.d { background: #0c1411; } #stage.ms-telestrator .ts-band.y { background: var(--yellow); }
+
+/* ---- split screen */
+#stage.ms-telestrator .ts-win { position: absolute; left: 0; width: 1080px; height: 960px; overflow: hidden; }
+#stage.ms-telestrator .ts-divider { position: absolute; left: 0; top: 957px; width: 1080px; height: 8px; background: var(--yellow); z-index: 15; transform-origin: 50% 50%; box-shadow: 0 0 18px rgba(255, 212, 0, .6); }
+#stage.ms-telestrator .ts-cam { position: absolute; left: 40px; z-index: 16; background: var(--card); border-left: 14px solid var(--yellow); padding: 8px 22px 6px; font: 600 34px/1 var(--cond); letter-spacing: .16em; }
+#stage.ms-telestrator .ts-board { position: absolute; inset: 0; background: var(--board); background-image: linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px); background-size: 60px 60px; }
+#stage.ms-telestrator .ts-bignum { position: absolute; left: 56px; top: 120px; font: 800 italic 330px/1 var(--cond); color: var(--yellow); letter-spacing: -.02em; }
+#stage.ms-telestrator .ts-bigcap { position: absolute; left: 560px; top: 210px; font: 800 italic 110px/.95 var(--cond); text-transform: uppercase; }
+#stage.ms-telestrator .ts-bigcap small { display: block; margin-top: 10px; font: 600 34px var(--cond); letter-spacing: .16em; color: var(--cyan); }
+#stage.ms-telestrator .ts-rec { position: absolute; width: 470px; height: 190px; background: #1c2d25; border-radius: 26px; box-shadow: inset 0 0 0 2px #2b4237; display: flex; align-items: center; gap: 22px; padding: 0 24px; box-sizing: border-box; font: 600 50px/1 var(--cond); color: #f1efe6; }
+#stage.ms-telestrator .ts-rec i { width: 110px; height: 110px; border-radius: 50%; flex: none; }
+#stage.ms-telestrator .ts-stamp { position: absolute; z-index: 25; left: 90px; top: 770px; width: 900px; box-sizing: border-box; background: var(--yellow); color: #0c1411; border: 10px solid #0c1411; padding: 20px 34px 18px; box-shadow: 0 18px 50px rgba(0, 0, 0, .55); text-align: left; }
+#stage.ms-telestrator .ts-stamp b { display: block; font: 800 italic 220px/.9 var(--cond); letter-spacing: -.01em; }
+#stage.ms-telestrator .ts-stamp small { display: block; font: 800 italic 84px/1 var(--cond); text-transform: uppercase; margin-top: 6px; }

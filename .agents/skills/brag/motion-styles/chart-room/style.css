@@ -1,0 +1,39 @@
+/* Chart Room: dark, quiet and numeric. Charts are the picture; one mint accent; every figure is real data. */
+@font-face { font-family: 'CRGeist'; src: url(assets/geist.ttf); font-weight: 100 900; }
+@font-face { font-family: 'CRMono'; src: url(assets/JetBrainsMono.ttf); font-weight: 100 800; }
+#stage.ms-chart-room {
+  --ground: #0B1210; --panel: #111B17; --line: #22312A; --line2: #2F4239;
+  --text: #E8F0EC; --mute: #7F9088; --dim: #4B5B54; --accent: #5CF2A8; --accent-ink: #052014;
+  --sans: 'CRGeist', 'Helvetica Neue', Arial, sans-serif; --mono: 'CRMono', ui-monospace, Menlo, monospace;
+  --mx: 120px;
+  font-family: var(--sans); background: var(--ground); color: var(--text); font-weight: 400; letter-spacing: -0.01em;
+}
+.ms-chart-room .scene { position: absolute; inset: 0; overflow: hidden; background: var(--ground); }
+.ms-chart-room .inner { position: absolute; inset: 0; }
+.ms-chart-room .cr-label { position: absolute; font: 500 22px/1.2 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--mute); }
+.ms-chart-room .cr-label b { color: var(--accent); font-weight: 600; }
+.ms-chart-room .cr-title { position: absolute; margin: 0; font-weight: 600; letter-spacing: -0.035em; line-height: 1.02; }
+.ms-chart-room .cr-hero { position: absolute; font-weight: 600; letter-spacing: -0.05em; line-height: 1; font-variant-numeric: tabular-nums; }
+.ms-chart-room .cr-chip { position: absolute; font: 600 26px/1 var(--mono); padding: 12px 18px; border-radius: 99px; background: rgba(92,242,168,.12); color: var(--accent); border: 1.5px solid rgba(92,242,168,.35); }
+.ms-chart-room .cr-panel { position: absolute; background: var(--panel); border: 1.5px solid var(--line); border-radius: 20px; }
+.ms-chart-room .cr-chart { position: absolute; }
+.ms-chart-room .cr-chart svg { position: absolute; left: 0; top: 0; overflow: visible; }
+.ms-chart-room .cr-grid { stroke: var(--line); stroke-width: 1.5; }
+.ms-chart-room .cr-grid.base { stroke: var(--line2); }
+.ms-chart-room .cr-tick { position: absolute; font: 500 22px/1 var(--mono); color: var(--mute); white-space: nowrap; }
+.ms-chart-room .cr-line { fill: none; stroke: var(--accent); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
+.ms-chart-room .cr-dot { fill: var(--ground); stroke: var(--accent); stroke-width: 5; }
+.ms-chart-room .cr-bar { position: absolute; bottom: 0; background: var(--line2); border-radius: 8px 8px 0 0; transform-origin: 50% 100%; }
+.ms-chart-room .cr-bar.hi { background: var(--accent); }
+.ms-chart-room .cr-val { position: absolute; font: 600 24px/1 var(--mono); color: var(--text); text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ms-chart-room .cr-hrow { position: absolute; left: 0; right: 0; height: 64px; }
+.ms-chart-room .cr-hrow .nm { position: absolute; left: 0; top: 0; font: 500 30px/64px var(--sans); color: var(--text); }
+.ms-chart-room .cr-hrow .trk { position: absolute; left: 260px; right: 130px; top: 18px; height: 28px; background: var(--line); border-radius: 6px; overflow: hidden; }
+.ms-chart-room .cr-hrow .fl { position: absolute; left: 0; top: 0; bottom: 0; background: #3F5A4D; transform-origin: 0 50%; border-radius: 6px; }
+.ms-chart-room .cr-hrow.hi .fl { background: var(--accent); }
+.ms-chart-room .cr-hrow .vl { position: absolute; right: 0; top: 0; font: 600 28px/64px var(--mono); font-variant-numeric: tabular-nums; }
+.ms-chart-room .cr-ring { fill: none; stroke: var(--line); stroke-width: 34; }
+.ms-chart-room .cr-arc { fill: none; stroke: var(--accent); stroke-width: 34; stroke-linecap: butt; }
+.ms-chart-room .cr-callout { position: absolute; font: 500 24px/1.25 var(--mono); color: var(--text); background: var(--panel); border: 1.5px solid var(--accent); padding: 12px 16px; border-radius: 10px; white-space: nowrap; }
+.ms-chart-room .cr-leader { stroke: var(--accent); stroke-width: 2; fill: none; }
+.ms-chart-room .cr-src { position: absolute; font: 400 20px/1 var(--mono); color: var(--dim); }

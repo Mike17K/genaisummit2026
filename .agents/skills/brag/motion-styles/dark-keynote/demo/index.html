@@ -1,0 +1,97 @@
+<!doctype html><html><head><meta charset="utf-8"><title>dark-keynote demo</title>
+<link rel="stylesheet" href="../style.css">
+<style>
+html, body { margin: 0; background: #000; }
+#stage.ms-dark-keynote .abs { position: absolute; left: 0; right: 0; }
+#s1 .dk-label { position: absolute; top: 400px; left: 0; right: 0; text-align: center; }
+#s1 .dk-h1 { position: absolute; top: 640px; left: 90px; text-align: center; width: 900px; max-width: none; }
+#toast { position: absolute; left: 50%; margin-left: -330px; top: 1420px; width: 660px; box-sizing: border-box; justify-content: center; }
+#s2 .dk-h2 { position: absolute; top: 330px; left: 96px; }
+#win { position: absolute; left: 96px; width: 888px; top: 760px; }
+#plan { position: absolute; left: 0; right: 0; top: 1400px; text-align: center; }
+#s3 .dk-big { position: absolute; left: 0; right: 0; top: 520px; text-align: center; }
+#s3 .dk-ticks { top: 830px; }
+#cap { position: absolute; left: 140px; right: 140px; top: 1290px; text-align: center; font-size: 60px; line-height: 1.12; }
+#brand { position: absolute; left: 0; right: 0; top: 700px; text-align: center; }
+#logo { font-family: 'DK Tight', sans-serif; font-weight: 600; font-size: 260px; letter-spacing: -0.05em; margin: 0; line-height: 1; }
+#tag { margin-top: 36px; }
+</style></head><body>
+<div id="stage" class="ms-dark-keynote">
+  <section class="scene" id="s1"><div class="inner">
+    <div class="dk-label" id="k1">Pantry</div>
+    <h1 class="dk-h1 dk-lit" id="h1">Your fridge knows more than you do.</h1>
+    <div class="dk-toast" id="toast"><span class="dk-dot"></span>Spinach expires tomorrow</div>
+  </div></section>
+
+  <section class="scene" id="s2"><div class="inner">
+    <h2 class="dk-h2" id="h2">See what's expiring</h2>
+    <div class="dk-window" id="win">
+      <div class="dk-bar"><span class="dk-glyph"></span><b>Fridge</b></div>
+      <div class="dk-row" id="r1"><div class="dk-thumb" style="background:linear-gradient(140deg,#e9edf5,#7d8aa6)"></div><div class="dk-name">Greek yoghurt</div><span class="dk-badge warn">2 days</span></div>
+      <div class="dk-row" id="r2"><div class="dk-thumb" style="background:linear-gradient(140deg,#4f8a3f,#17331a)"></div><div class="dk-name">Spinach</div><span class="dk-badge warn">tomorrow</span></div>
+      <div class="dk-row" id="r3"><div class="dk-thumb" style="background:linear-gradient(140deg,#f4f1e6,#b9b19a)"></div><div class="dk-name">Feta</div><span class="dk-badge">9 days</span></div>
+    </div>
+    <div id="plan"><span class="dk-btn" id="btn">Plan meals</span></div>
+  </div></section>
+
+  <section class="scene" id="s3"><div class="inner">
+    <div class="dk-label" id="k3" style="position:absolute;top:400px;left:0;right:0;text-align:center">Pantry</div>
+    <div class="dk-ticks"></div>
+    <div id="numwrap"><div class="dk-big" id="num">12</div>
+    <p class="dk-sub" id="cap">recipes from what you already have</p></div>
+    
+  </div></section>
+</div>
+<script>window.TIMELINE = { width: 1080, height: 1920, fps: 30, duration: 6 };</script>
+<script src="../../../runtime/gsap.js"></script><script src="../../../runtime/timeline.js"></script><script src="../../../runtime/motion.js"></script>
+<script src="../kit.js"></script>
+<script>
+BRAG.build((tl, fx) => {
+  const S = BRAG.styles['dark-keynote'];
+  const toastRect = { x: 210, y: 1400, w: 660, h: 100 };
+  const tb = document.getElementById('toast').getBoundingClientRect();
+  const sb = document.getElementById('stage').getBoundingClientRect(), k = sb.width / 1080;
+  toastRect.x = (tb.left - sb.left) / k; toastRect.y = (tb.top - sb.top) / k; toastRect.w = tb.width / k; toastRect.h = tb.height / k;
+
+  const cut1 = 1.8 + 0.42;               // expand ends -> cut
+  fx.scenes([
+    { el: '#s1', start: 0, end: cut1, out: 'cut' },
+    { el: '#s2', start: cut1, end: 3.85, out: 'zoom' },
+    { el: '#s3', start: 3.85, end: 6 },
+  ]);
+
+  // ---- scene 1: light reveals the line, a notification spawns, it expands into scene 2
+  S.sweep(0.0, { dur: 1.0 });
+  S.lightReveal('#h1', 0.05, { dur: 0.85 });
+  tl.fromTo('#k1', { autoAlpha: 0.0 }, { autoAlpha: 1, duration: 0.4 }, 0.15);
+  fx.drift('#s1 .inner', 0, 2.4, { scale: 1.035 });
+  S.snapIn('#toast', 0.9);
+  S.ping(0.95, { x: 540, y: 1470, dur: 0.9, r: 1300 });
+  tl.to('#toast', { y: -6, duration: 0.5, ease: 'sine.inOut', yoyo: true, repeat: 1 }, 1.3);
+  S.expand(1.8, toastRect, { dur: 0.42 });
+
+  // ---- scene 2: window rows snap onto the grid, cursor plans meals, problem badges turn accent
+  fx.text('#h2', 'rise', cut1 + 0.05);
+  S.snapIn('#win', cut1 + 0.2, { dy: -60 });
+  S.snapIn(['#r1', '#r2', '#r3'], cut1 + 0.35, { gap: 0.1, dy: -36 });
+  const tEnd = S.cursor(cut1 + 0.5, [
+    { x: 860, y: 1700 }, { x: 600, y: 1468, dur: 0.5, click: true },
+  ], { out: true });
+  const hit = tEnd - 0.1;
+  tl.fromTo('#btn', { scale: 1 }, { scale: 0.94, duration: 0.07, yoyo: true, repeat: 1, ease: 'power2.out', immediateRender: false }, hit);
+  S.ping(hit, { x: 540, y: 1450, dur: 0.8, r: 1200 });
+  const flip = hit + 0.12;
+  tl.to('#r1 .dk-badge, #r2 .dk-badge', { backgroundColor: '#B7F34A', color: '#0a0d06', borderColor: '#B7F34A', boxShadow: '0 0 36px rgba(183,243,74,.38)', duration: 0.25, ease: 'power2.out', stagger: 0.1 }, flip);
+  tl.fromTo('#r1 .dk-badge, #r2 .dk-badge', { scale: 1.18 }, { scale: 1, duration: 0.3, ease: 'back.out(2.5)', stagger: 0.1, immediateRender: false }, flip);
+  fx.drift('#s2 .inner', cut1, 4.2, { scale: 1.03 });
+
+  // ---- scene 3: the lone number, lit; the name sits above it as the label
+  S.bigNumber('#num', 12, 4.05, { dur: 0.8 });
+  tl.fromTo('.dk-ticks', { scale: 0.7, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, duration: 0.9, ease: 'expo.out', immediateRender: true }, 4.0);
+  tl.fromTo('#k3', { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.4, immediateRender: true }, 4.0);
+  fx.text('#cap', 'blur', 4.3, { by: 'words', stagger: 0.05 });
+  fx.drift('#numwrap', 4.0, 6, { scale: 1.06 });
+  S.ping(4.15, { x: 540, y: 880, dur: 1.0, r: 1500 });
+  S.sweep(5.0, { dur: 0.9, from: -300 });
+});
+</script></body></html>

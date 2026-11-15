@@ -1,0 +1,626 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>VoxEye — #07 Game Show Edition</title>
+  <link rel="stylesheet" href="../../.agents/skills/brag/motion-styles/game-show/style.css">
+  <style>
+    /* Additional candy sets from 07-game-show STYLE.md */
+    .ms-game-show .set.green  { background: #3DDC84; }
+    .ms-game-show .set.green .pat  { background: repeating-linear-gradient(-45deg, #6AE8A2 0 70px, transparent 70px 140px); }
+    .ms-game-show .set.sky    { background: #4CC9F0; }
+    .ms-game-show .set.sky .pat    { background-image: radial-gradient(circle, #82DAFA 0 14px, transparent 15px); background-size: 90px 90px; }
+    .ms-game-show .set.purple { background: #8B5CF6; }
+    .ms-game-show .set.purple .pat { background: repeating-conic-gradient(from 0deg at 50% 50%, #A78BFA 0 7.5deg, transparent 7.5deg 15deg); }
+    .ms-game-show .set.red    { background: #FF4D6D; }
+    .ms-game-show .set.red .pat    { background: repeating-linear-gradient(45deg, #FF7A93 0 70px, transparent 70px 140px); }
+
+    /* 16:9 (1920x1080) layout adjustments */
+    .ms-game-show .floor { height: 220px; }
+    .ms-game-show .sticker.top-left { left: 72px; top: 34px; transform: rotate(-3deg); font-size: 40px; padding: 8px 30px 4px; z-index: 5; }
+    .ms-game-show .pill.top-right   { right: 72px; top: 34px; font-size: 38px; padding: 6px 26px 3px; z-index: 5; }
+
+    /* Left-aligned 16:9 telops */
+    .ms-game-show .tele.left-title {
+      left: 72px;
+      text-align: left;
+      font-size: 88px;
+      line-height: 0.96;
+      -webkit-text-stroke: 15px var(--ink);
+      text-shadow: 0 9px 0 var(--ink);
+      z-index: 4;
+    }
+    .ms-game-show .tele.center-title {
+      left: 0;
+      width: 1920px;
+      text-align: center;
+      font-size: 82px;
+      line-height: 0.96;
+      -webkit-text-stroke: 15px var(--ink);
+      text-shadow: 0 9px 0 var(--ink);
+      z-index: 4;
+    }
+    .ms-game-show .tele .g { color: var(--green); }
+    .ms-game-show .tele .r { color: var(--red); }
+    .ms-game-show .tele .s { color: var(--sky); }
+
+    /* Contestant cards for 16:9 */
+    .ms-game-show .row.wide {
+      left: 72px;
+      width: 1020px;
+      height: 150px;
+      padding: 0 32px;
+      font-size: 44px;
+      box-sizing: border-box;
+      z-index: 4;
+    }
+    .ms-game-show .row.wide .ico {
+      width: 74px;
+      height: 74px;
+      margin-right: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 38px;
+      font-family: var(--display);
+    }
+    .ms-game-show .row.wide .tag {
+      font-size: 38px;
+      padding: 8px 24px 4px;
+      white-space: nowrap;
+    }
+
+    /* Mascot placement on right stage */
+    .ms-game-show .mascot.stage-right {
+      left: 1350px;
+      top: 190px;
+      width: 470px;
+      height: 685px;
+      z-index: 3;
+    }
+
+    /* Judgement starburst */
+    .ms-game-show .burst.stage-burst {
+      width: 380px;
+      height: 380px;
+      z-index: 10;
+    }
+    .ms-game-show .burst.stage-burst .tele {
+      position: relative;
+      font-size: 72px;
+      -webkit-text-stroke: 12px var(--ink);
+      text-shadow: 0 7px 0 var(--ink);
+    }
+
+    /* Round 6 Split-Screen Contestant Cards (Heatmap vs. Ears) */
+    .split-card {
+      position: absolute;
+      top: 235px;
+      width: 850px;
+      height: 610px;
+      background: var(--cream);
+      border: var(--line) solid var(--ink);
+      border-radius: 36px;
+      box-shadow: var(--shadow) var(--shadow) 0 var(--ink);
+      overflow: hidden;
+      box-sizing: border-box;
+      z-index: 4;
+    }
+    .split-card .hd {
+      height: 86px;
+      background: var(--ink);
+      color: var(--yellow);
+      font-family: var(--display);
+      font-size: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 32px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      border-bottom: var(--line) solid var(--ink);
+    }
+    .split-card .hd span.badge {
+      background: var(--green);
+      color: var(--ink);
+      padding: 4px 20px 2px;
+      border-radius: 99px;
+      font-size: 32px;
+    }
+    .split-card .hd span.badge.hot {
+      background: var(--red);
+      color: #fff;
+    }
+    .heatmap-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 18px;
+      padding: 26px;
+      height: 480px;
+      box-sizing: border-box;
+    }
+    .sector-col {
+      border: var(--line) solid var(--ink);
+      border-radius: 26px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 14px;
+      text-align: center;
+      box-shadow: 6px 6px 0 var(--ink);
+    }
+    .sector-col.clear { background: #23283D; color: #fff; }
+    .sector-col.close { background: var(--orange); color: var(--ink); }
+    .sector-col .ear-lbl { font-family: var(--display); font-size: 32px; text-transform: uppercase; }
+    .sector-col .dist-big { font-family: var(--display); font-size: 74px; line-height: 1; }
+    .sector-col .pill-stat {
+      font-family: var(--display);
+      font-size: 30px;
+      padding: 6px 20px 3px;
+      border-radius: 99px;
+      border: 5px solid var(--ink);
+      text-transform: uppercase;
+    }
+
+    /* Round 7 Final Report Card */
+    .report-card {
+      position: absolute;
+      left: 72px;
+      top: 175px;
+      width: 1120px;
+      height: 690px;
+      background: var(--cream);
+      border: var(--line) solid var(--ink);
+      border-radius: 36px;
+      box-shadow: var(--shadow) var(--shadow) 0 var(--ink);
+      box-sizing: border-box;
+      overflow: hidden;
+      z-index: 4;
+    }
+    .report-card .hd {
+      height: 92px;
+      background: var(--red);
+      border-bottom: var(--line) solid var(--ink);
+      color: #fff;
+      font-family: var(--display);
+      font-size: 46px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 36px;
+      text-transform: uppercase;
+    }
+    .report-card .rows {
+      padding: 24px 36px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .report-card .r-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 36px;
+      font-weight: 700;
+      border-bottom: 5px dashed var(--ink);
+      padding-bottom: 14px;
+    }
+    .report-card .r-line .st {
+      font-family: var(--display);
+      font-size: 32px;
+      padding: 6px 22px 2px;
+      border-radius: 99px;
+      border: 6px solid var(--ink);
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+<div id="stage" class="ms-game-show">
+
+  <!-- ==================== ROUND 1 (0.0 - 6.8s): THE PROBLEM IN NUMBERS ==================== -->
+  <section class="scene" id="r1">
+    <div class="set pink"><div class="pat"></div></div>
+    <div class="inner">
+      <div class="floor"></div>
+      <div class="sticker top-left" id="r1_st">Round 1 · The Problem</div>
+      <div class="pill top-right" id="r1_sc">People Affected <b id="s_r1">0</b><b>M</b></div>
+
+      <h1 class="tele left-title" id="r1_t1" style="top:132px">285 Million <span class="y">People</span></h1>
+      <h1 class="tele left-title" id="r1_t2" style="top:228px">43M Blind Worldwide</h1>
+
+      <div class="card row wide" id="r1_c1" style="top:375px">
+        <div class="nm"><div class="ico" style="background:#FFD23F">🦯</div>White Cane: Floor Only</div>
+        <div class="tag hot">Misses High!</div>
+      </div>
+      <div class="card row wide" id="r1_c2" style="top:548px">
+        <div class="nm"><div class="ico" style="background:#FF8FC7">🕶️</div>Smart Glasses Cost</div>
+        <div class="tag hot">€4,000+</div>
+      </div>
+      <div class="card row wide" id="r1_c3" style="top:721px">
+        <div class="nm"><div class="ico" style="background:#4CC9F0">⏳</div>Cloud Voice A.I.</div>
+        <div class="tag mid">3s Lag!</div>
+      </div>
+
+      <div class="mascot stage-right" id="mas1"></div>
+      <div class="burst stage-burst" id="bu1" style="left:1085px;top:625px"><div class="tele">Too Slow!</div></div>
+    </div>
+  </section>
+
+  <!-- ==================== ROUND 2 (6.8 - 13.6s): REPLACING YOUR PHONE'S ASSISTANT ==================== -->
+  <section class="scene" id="r2">
+    <div class="set orange"><div class="pat"></div></div>
+    <div class="inner">
+      <div class="floor"></div>
+      <div class="sticker g top-left" id="r2_st">Round 2 · New Assistant</div>
+      <div class="pill top-right" id="r2_sc">Hardware Cost <b>€</b><b id="s_r2">4000</b></div>
+
+      <h1 class="tele left-title" id="r2_t1" style="top:132px">Meet <span class="y">VoxEye!</span></h1>
+      <h1 class="tele left-title" id="r2_t2" style="top:228px">New Phone Assistant</h1>
+
+      <div class="card row wide" id="r2_c1" style="top:375px">
+        <div class="nm"><div class="ico" style="background:#4CC9F0">📱</div>Chest Lanyard Phone</div>
+        <div class="tag">Steady View ✓</div>
+      </div>
+      <div class="card row wide" id="r2_c2" style="top:548px">
+        <div class="nm"><div class="ico" style="background:#3DDC84">🎧</div>Stereo Earphones</div>
+        <div class="tag">Left &amp; Right ✓</div>
+      </div>
+      <div class="card row wide" id="r2_c3" style="top:721px">
+        <div class="nm"><div class="ico" style="background:#FFD23F">🧠</div>Built for Blind Users</div>
+        <div class="tag">0€ Extra ✓</div>
+      </div>
+
+      <div class="mascot stage-right" id="mas2"></div>
+      <div class="burst stage-burst" id="bu2" style="left:1085px;top:625px"><div class="tele">Upgrade!</div></div>
+    </div>
+  </section>
+
+  <!-- ==================== ROUND 3 (13.6 - 21.8s): SONAR VISION (PARKING SENSOR) ==================== -->
+  <section class="scene" id="r3">
+    <div class="set blue"><div class="pat"></div></div>
+    <div class="inner">
+      <div class="floor"></div>
+      <div class="sticker b top-left" id="r3_st">Round 3 · Sonar Vision</div>
+      <div class="pill top-right" id="r3_sc">Reaction Speed <b id="s_r3">1</b><b>x Faster</b></div>
+
+      <h1 class="tele left-title" id="r3_t1" style="top:132px">Car <span class="y">Parking Sensor</span></h1>
+      <h1 class="tele left-title" id="r3_t2" style="top:228px">In Your Stereo Ears!</h1>
+
+      <div class="card row wide" id="r3_c1" style="top:375px">
+        <div class="nm"><div class="ico" style="background:#3DDC84">👂</div>Left Ear · 2.4m Away</div>
+        <div class="tag">Quiet = Clear ✓</div>
+      </div>
+      <div class="card row wide" id="r3_c2" style="top:548px">
+        <div class="nm"><div class="ico" style="background:#FF4D6D;color:#fff">⚡</div>Center · 0.8m Hazard!</div>
+        <div class="tag hot">Fast Beeps!</div>
+      </div>
+      <div class="card row wide" id="r3_c3" style="top:721px">
+        <div class="nm"><div class="ico" style="background:#4CC9F0">👂</div>Right Ear · 2.1m Away</div>
+        <div class="tag">Slow Pulse ✓</div>
+      </div>
+
+      <div class="mascot stage-right" id="mas3"></div>
+      <div class="burst stage-burst" id="bu3" style="left:1085px;top:625px"><div class="tele">10x Faster!</div></div>
+    </div>
+  </section>
+
+  <!-- ==================== ROUND 4 (21.8 - 30.5s): SMART MEMORY & CLOCK DIRECTIONS ==================== -->
+  <section class="scene" id="r4">
+    <div class="set green"><div class="pat"></div></div>
+    <div class="inner">
+      <div class="floor"></div>
+      <div class="sticker top-left" id="r4_st">Round 4 · Smart Memory</div>
+      <div class="pill top-right" id="r4_sc">Target Clock <b id="s_r4">1</b><b>:00</b></div>
+
+      <h1 class="tele left-title" id="r4_t1" style="top:132px">Remembers <span class="y">Your Goal</span></h1>
+      <h1 class="tele left-title" id="r4_t2" style="top:228px">Filters Street Clutter</h1>
+
+      <div class="card row wide" id="r4_c1" style="top:375px">
+        <div class="nm"><div class="ico" style="background:#FFD23F">🗣️</div>"Πού είναι το φαρμακείο;"</div>
+        <div class="tag mid">Greek + EN ✓</div>
+      </div>
+      <div class="card row wide" id="r4_c2" style="top:548px">
+        <div class="nm"><div class="ico" style="background:#FF8FC7">🧹</div>Ignores Parked Cars</div>
+        <div class="tag">Zero Noise ✓</div>
+      </div>
+      <div class="card row wide" id="r4_c3" style="top:721px">
+        <div class="nm"><div class="ico" style="background:#3DDC84">🕛</div>Pharmacy Cross Ahead</div>
+        <div class="tag">12 O'Clock · 4 Steps</div>
+      </div>
+
+      <div class="mascot stage-right" id="mas4"></div>
+      <div class="burst stage-burst" id="bu4" style="left:1085px;top:625px"><div class="tele">Locked In!</div></div>
+    </div>
+  </section>
+
+  <!-- ==================== ROUND 5 (30.5 - 38.2s): COMPASS & MAPS ==================== -->
+  <section class="scene" id="r5">
+    <div class="set purple"><div class="pat"></div></div>
+    <div class="inner">
+      <div class="floor"></div>
+      <div class="sticker g top-left" id="r5_st">Round 5 · Compass &amp; Maps</div>
+      <div class="pill top-right" id="r5_sc">Route Steps <b id="s_r5">0</b><b> Steps</b></div>
+
+      <h1 class="tele left-title" id="r5_t1" style="top:132px">Turn Your <span class="y">Body</span></h1>
+      <h1 class="tele left-title" id="r5_t2" style="top:228px">Directions Stay True!</h1>
+
+      <div class="card row wide" id="r5_c1" style="top:375px">
+        <div class="nm"><div class="ico" style="background:#FFD23F">🧭</div>Phone Compass Sensor</div>
+        <div class="tag">360° Lock ✓</div>
+      </div>
+      <div class="card row wide" id="r5_c2" style="top:548px">
+        <div class="nm"><div class="ico" style="background:#4CC9F0">🗺️</div>Google Maps + Places</div>
+        <div class="tag">Live Turn Cues</div>
+      </div>
+      <div class="card row wide" id="r5_c3" style="top:721px">
+        <div class="nm"><div class="ico" style="background:#3DDC84">📷</div>3D Depth Camera</div>
+        <div class="tag">30 FPS Live ✓</div>
+      </div>
+
+      <div class="mascot stage-right" id="mas5"></div>
+      <div class="burst stage-burst" id="bu5" style="left:1085px;top:625px"><div class="tele">On Track!</div></div>
+    </div>
+  </section>
+
+  <!-- ==================== ROUND 6 (38.2 - 53.5s): SPLIT-SCREEN PROTOTYPE VIEW ==================== -->
+  <section class="scene" id="r6">
+    <div class="set sky"><div class="pat"></div></div>
+    <div class="inner">
+      <div class="floor"></div>
+      <div class="sticker top-left" id="r6_st">Round 6 · Live Prototype</div>
+      <div class="pill top-right" id="r6_sc">Obstacle Ahead <b id="s_r6">24</b><b>0 cm</b></div>
+
+      <h1 class="tele center-title" id="r6_t1" style="top:130px">What It <span class="y">Sees</span> vs. What You <span class="y">Hear</span></h1>
+
+      <!-- Left Contestant Window: Camera Depth Heatmap -->
+      <div class="split-card" id="r6_left" style="left:72px">
+        <div class="hd">
+          <span>1. Camera Depth Heatmap</span>
+          <span class="badge">Live 3-Sector View</span>
+        </div>
+        <div class="heatmap-grid">
+          <div class="sector-col clear">
+            <div class="ear-lbl" style="color:#3DDC84">Left Sector</div>
+            <div class="dist-big" style="color:#3DDC84">2.4m</div>
+            <div style="font-size:28px;opacity:.85">Cool Dark = Far</div>
+            <div class="pill-stat" style="background:#3DDC84;color:#1B1030">Clear Path ✓</div>
+          </div>
+          <div class="sector-col close" id="r6_hot_col">
+            <div class="ear-lbl">Center Sector</div>
+            <div class="dist-big">0.8m</div>
+            <div style="font-size:28px;font-weight:700">Warm Glow = Close!</div>
+            <div class="pill-stat" style="background:#FF4D6D;color:#fff">Hazard Ahead!</div>
+          </div>
+          <div class="sector-col clear">
+            <div class="ear-lbl" style="color:#4CC9F0">Right Sector</div>
+            <div class="dist-big" style="color:#4CC9F0">2.1m</div>
+            <div style="font-size:28px;opacity:.85">Cool Dark = Far</div>
+            <div class="pill-stat" style="background:#4CC9F0;color:#1B1030">Clear ✓</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Contestant Window: What You Hear in Stereo Ears -->
+      <div class="split-card" id="r6_right" style="left:998px">
+        <div class="hd">
+          <span>2. What You Hear in Stereo</span>
+          <span class="badge hot">Instant Audio</span>
+        </div>
+        <div style="padding:24px 30px;display:flex;flex-direction:column;gap:20px">
+          <div class="card" style="position:relative;padding:18px 28px;border-radius:24px;display:flex;justify-content:space-between;align-items:center;font-size:38px;font-weight:700;background:#fff">
+            <span>🎧 Left Earphone</span>
+            <span style="font-family:var(--display);background:#3DDC84;padding:6px 22px 2px;border:5px solid var(--ink);border-radius:99px;font-size:32px">Quiet = Steer Left ✓</span>
+          </div>
+          <div class="card" id="r6_beep_card" style="position:relative;padding:18px 28px;border-radius:24px;display:flex;justify-content:space-between;align-items:center;font-size:38px;font-weight:700;background:#FFD23F">
+            <span>🔊 Both Ears (0.8m)</span>
+            <span style="font-family:var(--display);background:#FF4D6D;color:#fff;padding:6px 22px 2px;border:5px solid var(--ink);border-radius:99px;font-size:32px">BEEP · BEEP · BEEP!</span>
+          </div>
+          <div class="card" id="r6_voice_card" style="position:relative;padding:22px 28px;border-radius:24px;display:flex;flex-direction:column;gap:8px;background:#3DDC84">
+            <div style="font-family:var(--display);font-size:30px;text-transform:uppercase">🗣️ Spoken Memory Guidance (Hold Screen Anytime):</div>
+            <div style="font-size:38px;font-weight:700">"Step left — Pharmacy door 12 o'clock, 3 steps!"</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="burst stage-burst" id="bu6" style="left:770px;top:730px;width:340px;height:340px"><div class="tele" style="font-size:64px">Real Time!</div></div>
+    </div>
+  </section>
+
+  <!-- ==================== ROUND 7 (53.5 - 60.0s): REPORT CARD & ROADMAP ==================== -->
+  <section class="scene" id="r7">
+    <div class="set yellow"><div class="pat"></div></div>
+    <div class="inner">
+      <div class="floor"></div>
+      <div class="sticker top-left" id="r7_st">Final Round · Roadmap</div>
+      <div class="pill top-right" id="r7_sc">VoxEye Score <b id="s_r7">100</b><b>%</b></div>
+
+      <div class="report-card" id="rc">
+        <div class="hd">
+          <span>VoxEye — Status &amp; Next Steps</span>
+          <span style="background:#FFD23F;color:#1B1030;padding:4px 20px 2px;border-radius:99px;border:5px solid #1B1030;font-size:32px">GenAI Summit 2026</span>
+        </div>
+        <div class="rows">
+          <div class="r-line">
+            <span>✅ Working Today: Sonar Vision + Voice Memory</span>
+            <span class="st" style="background:#3DDC84">Prototype Ready ✓</span>
+          </div>
+          <div class="r-line">
+            <span>👥 Next 1: Test Audio UX with Real Blind Users</span>
+            <span class="st" style="background:#FFD23F">User Feedback</span>
+          </div>
+          <div class="r-line">
+            <span>🎵 Next 2: Fine-Tune Sonar Sounds &amp; Comfort</span>
+            <span class="st" style="background:#4CC9F0">Audio Polish</span>
+          </div>
+          <div class="r-line" style="border-bottom:none">
+            <span>🤖 Next 3: Hands-Free Default Android Assistant</span>
+            <span class="st" style="background:#FF8FC7">Full Launch</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="mascot stage-right" id="mas7" style="left:1370px;top:190px"></div>
+      <div class="burst stage-burst" id="bu7" style="left:1085px;top:625px"><div class="tele" style="font-size:115px">A+</div></div>
+    </div>
+  </section>
+
+</div>
+
+<script>window.TIMELINE = { width: 1920, height: 1080, fps: 24, duration: 60.0 };</script>
+<script src="../../.agents/skills/brag/runtime/gsap.js"></script>
+<script src="../../.agents/skills/brag/runtime/timeline.js"></script>
+<script src="../../.agents/skills/brag/runtime/motion.js"></script>
+<script src="../../.agents/skills/brag/motion-styles/game-show/kit.js"></script>
+<script>
+BRAG.build((tl, fx) => {
+  const S = BRAG.styles['game-show'];
+
+  // Custom starburst judgement that stays centered inside 380x380
+  function judgeBurst(sel, at, o = {}) {
+    const b = document.querySelector(sel);
+    if (!b) return;
+    if (!b.querySelector('svg')) {
+      const pts = [];
+      for (let i = 0; i < 24; i++) {
+        const a = (i / 24) * Math.PI * 2, r = i % 2 ? 230 : 320;
+        pts.push((320 + Math.cos(a) * r).toFixed(1) + ',' + (320 + Math.sin(a) * r).toFixed(1));
+      }
+      b.insertAdjacentHTML('afterbegin', `<svg viewBox="0 0 640 640"><polygon class="star" points="${pts.join(' ')}" fill="${o.fill || '#FFD23F'}" stroke="#1B1030" stroke-width="12" stroke-linejoin="round"/></svg>`);
+    }
+    const star = b.querySelector('.star'), word = b.querySelector('.tele');
+    tl.from(b, { scale: 0, rotation: -30, autoAlpha: 0, transformOrigin: '50% 50%', duration: 0.3, ease: 'back.out(2.4)', immediateRender: true }, at);
+    tl.fromTo(star, { rotation: 0, svgOrigin: '320 320' }, { rotation: 40, svgOrigin: '320 320', duration: o.spin ?? 1.6, ease: 'none', immediateRender: false }, at);
+    tl.from(word, { scale: 2.2, autoAlpha: 0, duration: 0.2, ease: 'power4.in', immediateRender: true }, at + 0.1);
+  }
+  function buildVoxEyeMascot(sel, o = {}) {
+    S.mascot(sel, o);
+    const svg = document.querySelector(sel + ' svg');
+    if (!svg) return;
+    svg.insertAdjacentHTML('beforeend', `
+      <!-- Stereo Headphones Arc & Ear Cups -->
+      <path d="M52 175 C52 10, 468 10, 468 175" fill="none" stroke="#1B1030" stroke-width="18" stroke-linecap="round"/>
+      <rect x="18" y="130" width="46" height="96" rx="22" fill="#3DDC84" stroke="#1B1030" stroke-width="8"/>
+      <rect x="456" y="130" width="46" height="96" rx="22" fill="#4CC9F0" stroke="#1B1030" stroke-width="8"/>
+      <!-- Signature Cloth Blindfold over the Eyes -->
+      <rect x="48" y="128" width="424" height="84" rx="22" fill="#3A6BFF" stroke="#1B1030" stroke-width="8"/>
+      <path d="M74 156 H446" stroke="#82DAFA" stroke-width="6" stroke-linecap="round" opacity="0.8"/>
+      <!-- Chest Lanyard & Smartphone Camera -->
+      <path d="M160 300 L230 430 M360 300 L290 430" stroke="#1B1030" stroke-width="8" stroke-linecap="round"/>
+      <rect x="205" y="420" width="110" height="175" rx="22" fill="#1B1030" stroke="#1B1030" stroke-width="8"/>
+      <rect x="215" y="434" width="90" height="145" rx="14" fill="#4CC9F0"/>
+      <circle cx="260" cy="468" r="18" fill="#FFD23F" stroke="#1B1030" stroke-width="6"/>
+    `);
+  }
+
+  buildVoxEyeMascot('#mas1', { color: '#FFF4D6', belly: '#FFFFFF' });
+  buildVoxEyeMascot('#mas2', { color: '#E9F4FF', belly: '#FFFFFF' });
+  buildVoxEyeMascot('#mas3', { color: '#FFF4D6', belly: '#FFFFFF' });
+  buildVoxEyeMascot('#mas4', { color: '#E9F4FF', belly: '#FFFFFF' });
+  buildVoxEyeMascot('#mas5', { color: '#FFF4D6', belly: '#FFFFFF' });
+  buildVoxEyeMascot('#mas7', { color: '#E9F4FF', belly: '#FFFFFF' });
+
+  // 7 Game-Show Rounds aligned to the exact 60.0s voiceover cues
+  S.scenes(fx, [
+    { el: '#r1', start: 0.0,  end: 6.8,  out: 'wipe-diag', outDur: 0.4 },
+    { el: '#r2', start: 6.8,  end: 13.6, out: 'push-left', outDur: 0.4 },
+    { el: '#r3', start: 13.6, end: 21.8, out: 'zoom',      outDur: 0.4 },
+    { el: '#r4', start: 21.8, end: 30.5, out: 'wipe-diag', outDur: 0.4 },
+    { el: '#r5', start: 30.5, end: 38.2, out: 'push-left', outDur: 0.4 },
+    { el: '#r6', start: 38.2, end: 53.5, out: 'zoom',      outDur: 0.4 },
+    { el: '#r7', start: 53.5, end: 60.0 },
+  ]);
+
+  // Continuous background motion on all 7 candy sets
+  S.set('#r1 .set', 0.0,  6.8);
+  S.set('#r2 .set', 6.4,  13.6);
+  S.set('#r3 .set', 13.2, 21.8);
+  S.set('#r4 .set', 21.4, 30.5);
+  S.set('#r5 .set', 30.1, 38.2);
+  S.set('#r6 .set', 37.8, 53.5);
+  S.set('#r7 .set', 53.1, 60.0);
+
+  // ---- ROUND 1 (0.0 - 6.8s): 285M People, Cane, €4,000 Glasses, 3s Lag ----
+  S.pop('#r1_st', 0.1, { rot: -5 });
+  S.pop('#r1_sc', 0.2, { rot: 0 });
+  S.score('#s_r1', 285, 0.4, { from: 0, steps: 15, dur: 1.6 });
+  S.telop('#r1_t1,#r1_t2', 0.2, { every: 1 });
+  tl.from('#mas1', { y: 260, duration: 0.45, ease: 'back.out(1.6)', immediateRender: true }, 0.2);
+  S.deal('#r1_c1,#r1_c2,#r1_c3', 1.6, { every: 2.2, y: 420, rot: 4 });
+  S.hop('#mas1', 2.0, { n: 6, h: 48 });
+  judgeBurst('#bu1', 4.8, { fill: '#FF4D6D' });
+  S.shout('#mas1', 4.8, { hold: 2 });
+
+  // ---- ROUND 2 (6.8 - 13.6s): Meet VoxEye — Replaces Phone Assistant ----
+  S.pop('#r2_st', 6.9, { rot: -4 });
+  S.pop('#r2_sc', 7.0, { rot: 0 });
+  S.score('#s_r2', 0, 7.4, { from: 4000, steps: 10, dur: 1.6 });
+  S.telop('#r2_t1,#r2_t2', 7.0, { every: 1 });
+  tl.from('#mas2', { y: 260, duration: 0.45, ease: 'back.out(1.6)', immediateRender: true }, 7.0);
+  S.deal('#r2_c1,#r2_c2,#r2_c3', 8.2, { every: 2.0, y: 420, rot: -4 });
+  S.hop('#mas2', 8.4, { n: 7, h: 52 });
+  judgeBurst('#bu2', 11.4, { fill: '#3DDC84' });
+  S.shout('#mas2', 11.4, { hold: 2 });
+
+  // ---- ROUND 3 (13.6 - 21.8s): Sonar Vision — Car Parking Sensor in Stereo ----
+  S.pop('#r3_st', 13.7, { rot: -4 });
+  S.pop('#r3_sc', 13.8, { rot: 0 });
+  S.score('#s_r3', 10, 14.2, { from: 1, steps: 9, dur: 1.8 });
+  S.telop('#r3_t1,#r3_t2', 13.8, { every: 1 });
+  tl.from('#mas3', { y: 260, duration: 0.45, ease: 'back.out(1.6)', immediateRender: true }, 13.8);
+  S.deal('#r3_c1,#r3_c2,#r3_c3', 15.2, { every: 2.2, y: 420, rot: 4 });
+  S.hop('#mas3', 15.2, { n: 9, h: 52 });
+  fx.pulse('#r3_c2', 17.4, { scale: 1.05, dur: 0.35 });
+  judgeBurst('#bu3', 19.2, { fill: '#FFD23F' });
+  S.shout('#mas3', 19.2, { hold: 2 });
+
+  // ---- ROUND 4 (21.8 - 30.5s): Smart Memory & Clock Directions ----
+  S.pop('#r4_st', 21.9, { rot: -4 });
+  S.pop('#r4_sc', 22.0, { rot: 0 });
+  S.score('#s_r4', 12, 22.4, { from: 1, steps: 11, dur: 1.8 });
+  S.telop('#r4_t1,#r4_t2', 22.0, { every: 1 });
+  tl.from('#mas4', { y: 260, duration: 0.45, ease: 'back.out(1.6)', immediateRender: true }, 22.0);
+  S.deal('#r4_c1,#r4_c2,#r4_c3', 23.2, { every: 2.4, y: 420, rot: -4 });
+  S.hop('#mas4', 23.6, { n: 8, h: 50 });
+  judgeBurst('#bu4', 27.6, { fill: '#FFD23F' });
+  S.shout('#mas4', 27.6, { hold: 2 });
+
+  // ---- ROUND 5 (30.5 - 38.2s): Compass & Maps ----
+  S.pop('#r5_st', 30.6, { rot: -4 });
+  S.pop('#r5_sc', 30.7, { rot: 0 });
+  S.score('#s_r5', 45, 31.2, { from: 0, steps: 15, dur: 1.8 });
+  S.telop('#r5_t1,#r5_t2', 30.7, { every: 1 });
+  tl.from('#mas5', { y: 260, duration: 0.45, ease: 'back.out(1.6)', immediateRender: true }, 30.7);
+  S.deal('#r5_c1,#r5_c2,#r5_c3', 31.8, { every: 2.0, y: 420, rot: 4 });
+  S.hop('#mas5', 32.0, { n: 7, h: 50 });
+  judgeBurst('#bu5', 35.4, { fill: '#3DDC84' });
+  S.shout('#mas5', 35.4, { hold: 2 });
+
+  // ---- ROUND 6 (38.2 - 53.5s): Split-Screen Prototype View (Heatmap vs. Ears) ----
+  S.pop('#r6_st', 38.3, { rot: -4 });
+  S.pop('#r6_sc', 38.4, { rot: 0 });
+  S.score('#s_r6', 8, 39.0, { from: 24, steps: 16, dur: 2.4 });
+  S.telop('#r6_t1', 38.4, {});
+  S.deal('#r6_left', 39.0, { y: 520, rot: -3 });
+  S.deal('#r6_right', 40.2, { y: 520, rot: 3 });
+  fx.pulse('#r6_hot_col', 41.2, { scale: 1.04, dur: 0.4 });
+  fx.pulse('#r6_beep_card', 42.4, { scale: 1.04, dur: 0.4 });
+  fx.pulse('#r6_voice_card', 46.2, { scale: 1.04, dur: 0.45 });
+  judgeBurst('#bu6', 49.0, { fill: '#FFD23F' });
+
+  // ---- ROUND 7 (53.5 - 60.0s): Final Report Card & User Testing Roadmap ----
+  S.pop('#r7_st', 53.6, { rot: -4 });
+  S.pop('#r7_sc', 53.7, { rot: 0 });
+  S.deal('#rc', 53.8, { y: 700, rot: -3 });
+  tl.from('#mas7', { y: 260, duration: 0.45, ease: 'back.out(1.6)', immediateRender: true }, 54.0);
+  S.hop('#mas7', 54.6, { n: 8, h: 55 });
+  judgeBurst('#bu7', 55.6, { fill: '#3DDC84', spin: 1.2 });
+  S.shout('#mas7', 55.6, { hold: 3 });
+  fx.shake('#rc', 55.85, { strength: 10 });
+  S.confetti('#r7 .inner', 55.8, 28);
+});
+</script>
+</body>
+</html>

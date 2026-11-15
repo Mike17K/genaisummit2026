@@ -1,0 +1,87 @@
+{
+  "title": "VoxEye — #07 Game Show Edition (Beat-Driven Rounds & Scoreboards)",
+  "type": "story",
+  "style": "game-show",
+  "styleCustom": false,
+  "tone": "default",
+  "energy": "punchy",
+  "aspect": "16:9",
+  "width": 1920,
+  "height": 1080,
+  "fps": 24,
+  "bpm": 150,
+  "duration": 60,
+  "version": 1,
+  "panels": [
+    {
+      "id": "round-1-problem",
+      "start": 0,
+      "end": 6.8,
+      "t": 5.4,
+      "dur": 6.8,
+      "tag": "ROUND 1 · THE PROBLEM",
+      "image": "panels/v1/p01.jpg",
+      "strip": "panels/v1/p01-strip.jpg"
+    },
+    {
+      "id": "round-2-assistant",
+      "start": 6.8,
+      "end": 13.6,
+      "t": 12.2,
+      "dur": 6.8,
+      "tag": "ROUND 2 · NEW ASSISTANT",
+      "image": "panels/v1/p02.jpg",
+      "strip": "panels/v1/p02-strip.jpg"
+    },
+    {
+      "id": "round-3-sonar",
+      "start": 13.6,
+      "end": 21.8,
+      "t": 20,
+      "dur": 8.2,
+      "tag": "ROUND 3 · SONAR VISION",
+      "image": "panels/v1/p03.jpg",
+      "strip": "panels/v1/p03-strip.jpg"
+    },
+    {
+      "id": "round-4-memory",
+      "start": 21.8,
+      "end": 30.5,
+      "t": 28.5,
+      "dur": 8.7,
+      "tag": "ROUND 4 · SMART MEMORY",
+      "image": "panels/v1/p04.jpg",
+      "strip": "panels/v1/p04-strip.jpg"
+    },
+    {
+      "id": "round-5-compass",
+      "start": 30.5,
+      "end": 38.2,
+      "t": 36.2,
+      "dur": 7.7,
+      "tag": "ROUND 5 · COMPASS & MAPS",
+      "image": "panels/v1/p05.jpg",
+      "strip": "panels/v1/p05-strip.jpg"
+    },
+    {
+      "id": "round-6-prototype",
+      "start": 38.2,
+      "end": 53.5,
+      "t": 50,
+      "dur": 15.3,
+      "tag": "ROUND 6 · LIVE PROTOTYPE",
+      "image": "panels/v1/p06.jpg",
+      "strip": "panels/v1/p06-strip.jpg"
+    },
+    {
+      "id": "round-7-roadmap",
+      "start": 53.5,
+      "end": 60,
+      "t": 57.5,
+      "dur": 6.5,
+      "tag": "FINAL ROUND · REPORT CARD",
+      "image": "panels/v1/p07.jpg",
+      "strip": "panels/v1/p07-strip.jpg"
+    }
+  ]
+}

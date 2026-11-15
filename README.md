@@ -33,10 +33,15 @@ flowchart LR
 
 ---
 
-## Hackathon Context & Strategy Docs (`context/` & `project-context/`)
+## Hackathon Context & Research Docs (`context/`)
+
+All project research, architecture plans, hackathon rules, and ideation live in **[context/](context/README.md)**:
 
 - **[VoxEye Application Guide](app/README.md)** — Detailed server/client module diagram, dual-pipeline flow, user stories, and quickstart.
-- **[TrialPulse Blueprint (ALTP Clinical Trials)](project-context/ideas/trialpulse-altp-challenge.md)** — Athens LifeHack challenge brief analysis.
-- **[Top 5 Winning Ideas & 4-Stream Grand Slam](project-context/top-5-winning-ideas.md)** — Track concepts and architecture notes.
-- **[Championship Blueprint](project-context/championship-blueprint.md)** — Hardware setup and sprint plan.
-- **[Kickoff Deck Notes](project-context/kickoff-deck.md)** & **[Credits & Claim Links](project-context/credits-and-tools.md)** — Event schedule, judging criteria (*Usefulness*, *Craft*, *Aura*), and partner credits.
+- **[BLV Research TL;DR: Problem Spectrum, SOTA, Competitors & OSS Upgrades](context/research/tldr-sota-competitors-oss.md)** — Master executive summary & prioritized roadmap:
+  - **[Competitors & Commercial Landscape](context/research/competitors-solutions.md)** — 19 smartphone apps, wearables/mobility rigs, and live VLMs vs. VoxEye.
+  - **[Open-Source Repositories & Codebase Upgrades](context/research/open-source-repos.md)** — 21 GitHub repos & Hugging Face models mapped to `app/static/` and `app/server/`.
+  - **[BLV Problem Spectrum & 2024–2026 Academic SOTA](context/research/problem-spectrum-sota.md)** — Micro/meso/macro navigation taxonomy, walking kinematics vs. latency, and System-1/System-2 architectures.
+- **[VoxEye Architecture & Optimization Plans](context/architecture/)** — Design notes (`eyes-app.md`, `fast-warnings-master-plan.md`, `ar-spatial-decision-plan.md`).
+- **[Hackathon Strategy, Judges, Tracks & Credits](context/hackathon/)** — [Kickoff Deck Notes](context/hackathon/kickoff-deck.md), [Judges](context/hackathon/judges.md), [Sponsors](context/hackathon/sponsors-research.md), [Credits & Tools](context/hackathon/credits-and-tools.md), and [Championship Blueprint](context/hackathon/championship-blueprint.md).
+- **[Video Demo Blueprint & `/brag` Skill](context/video-demo-blueprint.md)** — Verified SOTA comparison (`brag` `product-native` vs. OpenMontage/`openmontaz`), 3-Zone `1920x1080` split-screen stage architecture, bilingual TTS + stereo Geiger sonar audio pipeline, and CLI commands for [`.agents/skills/brag/SKILL.md`](.agents/skills/brag/SKILL.md).

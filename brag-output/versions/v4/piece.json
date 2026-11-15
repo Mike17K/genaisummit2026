@@ -1,0 +1,20 @@
+{
+  "style": "sketchbook",
+  "width": 1920,
+  "height": 1080,
+  "fps": 24,
+  "bpm": 120,
+  "duration": 60.0,
+  "formats": ["16:9"],
+  "music": {
+    "file": "../../.agents/skills/brag/assets/music/happy-beats-business-moves-vol-10-by-ende-dot-app.mp3",
+    "start": 0,
+    "gain": -3,
+    "fade": 1.5
+  },
+  "voice": {
+    "file": "voice/voice.wav",
+    "music": -6,
+    "gain": 4
+  }
+}

@@ -1,0 +1,5 @@
+VoxEye turns any smartphone + stereo earphones into a real-time 3D spatial depth sonar and bilingual (English / Ελληνικά) voice guide for blind and low-vision pedestrians — zero extra hardware required.
+
+Built in Athens for Gen AI Summit Hackathon 2026 with Google Gemini Live & Flash, Google Maps API, fal.ai ElevenLabs v3 TTS, and WebXR ARCore / ONNX Depth-Anything-V2.
+
+Open-source: https://github.com/Mike17K/genaisummit2026

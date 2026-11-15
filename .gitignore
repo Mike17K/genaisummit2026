@@ -1,5 +1,11 @@
 .DS_Store
 *.DS_Store
+.env
+.env.*
+app/.env
+app/.env.*
+!.env.example
+!app/.env.example
 .worktrees/
 server.log
 server.pid
@@ -8,4 +14,10 @@ app/trigger_logs/
 app/.last_lang
 app/.user_memory.json
 app/.models/
+brag-output/**/frames/
+brag-output/**/renders/
+brag-output/piece/voice/
+brag-output/composition/
+brag-output/work/
+brag-skill.zip
 

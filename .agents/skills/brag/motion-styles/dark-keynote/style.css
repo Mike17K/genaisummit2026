@@ -1,0 +1,86 @@
+/* dark-keynote: near-black stage, hairline 48px grid, soft cool light, one lime accent. Scoped under #stage.ms-dark-keynote */
+@font-face { font-family: 'DK Inter'; src: url(assets/Inter.ttf); font-weight: 100 900; }
+@font-face { font-family: 'DK Tight'; src: url(assets/InterTight.ttf); font-weight: 100 900; }
+@font-face { font-family: 'DK Mono'; src: url(assets/JetBrainsMono.ttf); font-weight: 100 800; }
+
+#stage.ms-dark-keynote {
+  --bg: #05060a; --s1: #0b0d14; --s2: #11141d; --s3: #181c28;
+  --line: rgba(255,255,255,.08); --hi: rgba(255,255,255,.10);
+  --t1: #f2f4f8; --t2: #9aa3b5; --t3: #5d6679;
+  --accent: #B7F34A; --accent-glow: rgba(183,243,74,.38);
+  --problem: #FF6B5A;
+  --mod: 48px;
+  position: relative; overflow: hidden; color: var(--t1); font-family: 'DK Inter', system-ui, sans-serif;
+  background:
+    radial-gradient(60% 38% at 50% 0%, rgba(120,150,255,.13), transparent 70%),
+    radial-gradient(70% 45% at 85% 70%, rgba(110,130,255,.07), transparent 70%),
+    var(--bg);
+}
+/* hairline grid: 48px module, every 4th line stronger */
+#stage.ms-dark-keynote::before {
+  content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    repeating-linear-gradient(90deg, rgba(255,255,255,.06) 0 1px, transparent 1px calc(var(--mod) * 4)),
+    repeating-linear-gradient(0deg, rgba(255,255,255,.06) 0 1px, transparent 1px calc(var(--mod) * 4)),
+    repeating-linear-gradient(90deg, rgba(255,255,255,.028) 0 1px, transparent 1px var(--mod)),
+    repeating-linear-gradient(0deg, rgba(255,255,255,.028) 0 1px, transparent 1px var(--mod));
+  -webkit-mask-image: radial-gradient(90% 70% at 50% 40%, #000 30%, rgba(0,0,0,.35) 100%);
+          mask-image: radial-gradient(90% 70% at 50% 40%, #000 30%, rgba(0,0,0,.35) 100%);
+}
+/* corner vignette */
+#stage.ms-dark-keynote::after {
+  content: ''; position: absolute; inset: 0; z-index: 8000; pointer-events: none;
+  background: radial-gradient(120% 90% at 50% 45%, transparent 52%, rgba(0,0,0,.72) 100%);
+}
+#stage.ms-dark-keynote .scene { position: absolute; inset: 0; z-index: 1; }
+#stage.ms-dark-keynote .inner { position: absolute; inset: 0; padding: 0 96px; box-sizing: border-box; }
+#stage.ms-dark-keynote .dk-center { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+
+/* type */
+#stage.ms-dark-keynote .dk-h1 { font-weight: 600; font-size: 132px; line-height: 1.02; letter-spacing: -0.045em; margin: 0; max-width: 900px; color: var(--t1); }
+#stage.ms-dark-keynote .dk-h2 { font-weight: 600; font-size: 104px; line-height: 1.02; letter-spacing: -0.04em; margin: 0; color: var(--t1); }
+#stage.ms-dark-keynote .dk-label { font-family: 'DK Mono', monospace; font-weight: 500; font-size: 26px; letter-spacing: .22em; text-transform: uppercase; color: var(--t3); }
+#stage.ms-dark-keynote .dk-big { font-family: 'DK Tight', 'DK Inter', sans-serif; font-weight: 600; font-size: 760px; line-height: .8; letter-spacing: -0.045em; color: var(--accent);
+  text-shadow: 0 0 120px var(--accent-glow), 0 0 28px rgba(183,243,74,.25); }
+#stage.ms-dark-keynote .dk-sub { font-weight: 500; font-size: 52px; letter-spacing: -0.02em; color: var(--t2); margin: 0; }
+#stage.ms-dark-keynote .dk-accent { color: var(--accent); }
+
+/* light reveal: --p (percent) moves a soft edge across; unlit pixels sit at ~7% */
+#stage.ms-dark-keynote .dk-lit {
+  --p: -30;
+  -webkit-mask-image: linear-gradient(105deg, #000 calc(var(--p) * 1% - 22%), rgba(0,0,0,.07) calc(var(--p) * 1%));
+          mask-image: linear-gradient(105deg, #000 calc(var(--p) * 1% - 22%), rgba(0,0,0,.07) calc(var(--p) * 1%));
+}
+#stage.ms-dark-keynote .dk-light {
+  position: absolute; z-index: 5; top: -10%; bottom: -10%; width: 420px; left: -520px; pointer-events: none; mix-blend-mode: screen;
+  background: linear-gradient(90deg, transparent, rgba(160,185,255,.0) 10%, rgba(190,210,255,.20) 50%, transparent);
+  transform: skewX(-15deg); filter: blur(10px);
+}
+
+/* surfaces */
+#stage.ms-dark-keynote .dk-window { background: linear-gradient(180deg, var(--s2), var(--s1)); border: 1px solid var(--hi); border-radius: 36px; box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 40px 120px rgba(0,0,0,.65), 0 0 0 1px rgba(0,0,0,.4); overflow: hidden; }
+#stage.ms-dark-keynote .dk-bar { display: flex; align-items: center; gap: 16px; padding: 26px 34px; border-bottom: 1px solid var(--line); }
+#stage.ms-dark-keynote .dk-glyph { width: 26px; height: 26px; border-radius: 8px; background: var(--accent); box-shadow: 0 0 24px var(--accent-glow); }
+#stage.ms-dark-keynote .dk-bar b { font-weight: 600; font-size: 28px; letter-spacing: -.01em; color: var(--t2); }
+#stage.ms-dark-keynote .dk-row { display: flex; align-items: center; gap: 30px; padding: 30px 34px; border-bottom: 1px solid var(--line); background: transparent; }
+#stage.ms-dark-keynote .dk-row:last-of-type { border-bottom: 0; }
+#stage.ms-dark-keynote .dk-thumb { width: 96px; height: 96px; border-radius: 24px; flex: none; border: 1px solid var(--hi); }
+#stage.ms-dark-keynote .dk-name { flex: 1; font-weight: 600; font-size: 46px; letter-spacing: -.025em; }
+#stage.ms-dark-keynote .dk-badge { font-family: 'DK Mono', monospace; font-weight: 600; font-size: 28px; letter-spacing: .04em; padding: 12px 24px; border-radius: 99px; border: 1px solid var(--line); color: var(--t2); background: var(--s3); }
+#stage.ms-dark-keynote .dk-badge.warn { color: var(--problem); border-color: rgba(255,107,90,.4); background: rgba(255,107,90,.10); }
+#stage.ms-dark-keynote .dk-badge.ok { color: #0a0d06; border-color: var(--accent); background: var(--accent); box-shadow: 0 0 36px var(--accent-glow); }
+#stage.ms-dark-keynote .dk-btn { display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 40px; letter-spacing: -.02em; padding: 30px 56px; border-radius: 28px; background: var(--accent); color: #0a0d06; box-shadow: 0 0 60px var(--accent-glow); }
+#stage.ms-dark-keynote .dk-toast { display: inline-flex; align-items: center; gap: 22px; padding: 26px 40px; border-radius: 99px; background: rgba(20,24,36,.82); border: 1px solid var(--hi); box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 24px 70px rgba(0,0,0,.6); font-weight: 500; font-size: 36px; color: var(--t1); }
+#stage.ms-dark-keynote .dk-dot { width: 16px; height: 16px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 22px var(--accent); }
+
+/* kit pieces */
+#stage.ms-dark-keynote .dk-cursor { position: absolute; z-index: 60; width: 54px; height: 54px; left: 0; top: 0; pointer-events: none; filter: drop-shadow(0 6px 14px rgba(0,0,0,.7)); }
+#stage.ms-dark-keynote .dk-ring { position: absolute; z-index: 59; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; border: 3px solid var(--accent); pointer-events: none; opacity: 0; }
+#stage.ms-dark-keynote .dk-expand { position: absolute; z-index: 7000; border-radius: 99px; background: linear-gradient(180deg, #151a26, #0c0f17); border: 1px solid var(--hi); box-shadow: 0 0 0 1px rgba(183,243,74,.35), 0 0 80px var(--accent-glow); visibility: hidden; pointer-events: none; }
+#stage.ms-dark-keynote .dk-ping { position: absolute; inset: 0; z-index: 2; pointer-events: none; --r: 0; opacity: 0;
+  background:
+    repeating-linear-gradient(90deg, rgba(183,243,74,.35) 0 1px, transparent 1px var(--mod)),
+    repeating-linear-gradient(0deg, rgba(183,243,74,.35) 0 1px, transparent 1px var(--mod));
+  -webkit-mask-image: radial-gradient(circle at var(--cx, 50%) var(--cy, 50%), transparent calc(var(--r) * 1px - 90px), #000 calc(var(--r) * 1px - 40px), transparent calc(var(--r) * 1px));
+          mask-image: radial-gradient(circle at var(--cx, 50%) var(--cy, 50%), transparent calc(var(--r) * 1px - 90px), #000 calc(var(--r) * 1px - 40px), transparent calc(var(--r) * 1px)); }
+#stage.ms-dark-keynote .dk-ticks { position: absolute; left: 50%; top: 50%; width: 960px; height: 960px; margin: -480px 0 0 -480px; border-radius: 50%; border: 1px solid var(--line); pointer-events: none; }

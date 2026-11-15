@@ -8,6 +8,7 @@
   <link rel="icon" href="/favicon.ico" sizes="48x48 32x32 16x16">
   <link rel="icon" type="image/png" href="/static/icon-192.png" sizes="192x192">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.json">
   <style>
     /* Palette taken from the VoxEye logo: deep navy, mint shield, orange aperture. */
     :root {
@@ -33,6 +34,8 @@
     #badge.depth { background: #4fb7c4; color: #06262b; }
     #badge.error { background: var(--bad); color: #330906; }
     #badge.connecting, #badge.starting { background: #6e6c92; }
+    #landingLink { flex: none; color: var(--muted); font-size: .75rem; text-decoration: none; padding: .2rem .55rem; border: 1px solid var(--line); border-radius: 999px; }
+    #landingLink:hover { color: var(--mint); border-color: var(--mint); }
     #status { flex: 1; min-width: 0; color: var(--muted); font-size: .9rem; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; }
 
     /* ---- main stage / big button ---- */
@@ -98,6 +101,7 @@
     <span id="brand">Vox<b>Eye</b></span>
     <span id="badge">idle</span>
     <span id="status">Tap the button to start</span>
+    <a id="landingLink" href="/landing">landing</a>
   </div>
   <div id="stage">
     <canvas id="depthView" aria-hidden="true"></canvas>

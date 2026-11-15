@@ -1,0 +1,65 @@
+<!doctype html><html><head><meta charset="utf-8"><style>@font-face { font-family: SG; src: url(assets/sg.ttf); font-weight: 300 700; }
+@font-face { font-family: JB; src: url(assets/jb.ttf); }
+#stage { --accent: #ffcf3f; font-family: SG, sans-serif; color: #f4f1ea; background: radial-gradient(120% 120% at 20% 10%, #1f3b2d, #0c1712 70%); }
+.scene { position: absolute; inset: 0; }
+.inner { position: absolute; inset: 0; padding: 220px 90px; box-sizing: border-box; }
+.center { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+h1 { font-size: 132px; line-height: 1.02; letter-spacing: -0.03em; margin: 0; max-width: 900px; font-weight: 700; }
+h2 { font-size: 104px; line-height: 1.05; margin: 0 0 60px; letter-spacing: -0.02em; }
+#sw { color: var(--accent); }
+.cards { display: grid; grid-template-columns: 1fr; gap: 28px; }
+.card { background: #f4f1ea; color: #13221a; border-radius: 18px; padding: 40px 44px; display: flex; justify-content: space-between; align-items: center; font-size: 48px; box-shadow: 0 18px 40px #0006; }
+.tag { font-family: JB; font-size: 30px; background: #dfe8e1; padding: 6px 12px; border-radius: 99px; }
+.tag.warn { background: var(--accent); }
+.big { font-size: 420px; font-weight: 700; line-height: 0.9; color: var(--accent); letter-spacing: -0.05em; }
+#cap { font-size: 64px; margin: 20px 0 0; max-width: 800px; }
+#logo { font-size: 220px; }
+#tag { font-size: 64px; margin: 10px 0 0; opacity: .85; }
+
+#stage { background-size: 300% 300%; background-image: radial-gradient(60% 60% at 30% 30%, #2a5a40, transparent), radial-gradient(120% 120% at 20% 10%, #1f3b2d, #0c1712 70%); }
+</style></head><body><div id="stage">
+  <section class="scene" id="hook"><div class="inner center"><h1 id="h1">Your fridge knows more than you do.</h1></div></section>
+  <section class="scene" id="list"><div class="inner">
+    <h2 id="h2"><span id="h2a">See what's</span><br><span id="sw">expiring</span></h2>
+    <div class="cards">
+      <div class="card"><b>Greek yoghurt</b><span class="tag warn">2 days</span></div>
+      <div class="card"><b>Spinach</b><span class="tag warn">tomorrow</span></div>
+      <div class="card"><b>Feta</b><span class="tag">9 days</span></div>
+      <div class="card"><b>Eggs ×6</b><span class="tag">12 days</span></div>
+    </div></div></section>
+  <section class="scene" id="stat"><div class="inner center"><div class="big"><span id="num">12</span></div><p id="cap">recipes from what's already in your fridge</p></div></section>
+  <section class="scene" id="cta"><div class="inner center"><h1 id="logo">Pantry.</h1><p id="tag">Cook what you have.</p></div></section>
+
+</div><script>window.TIMELINE = { width: 1080, height: 1920, fps: 30, duration: 10 };</script>
+<script src="../../../../runtime/gsap.js"></script><script src="../../../../runtime/timeline.js"></script><script src="../../../../runtime/motion.js"></script>
+<script>
+BRAG.build((tl, fx) => {
+  fx.scenes([
+    { el: '#hook', start: 0, end: 2.4, out: 'whip-left' },
+    { el: '#list', start: 2.4, end: 5.2, out: 'zoom' },
+    { el: '#stat', start: 5.2, end: 7.6, out: 'bars' },
+    { el: '#cta',  start: 7.6, end: 10 },
+  ]);
+  fx.bgShift('#stage', 0, 10);
+  // hook: words rise out of masks, then the key word gets a marker
+  fx.text('#h1', 'rise', 0.15);
+  fx.highlight('#h1', 1.1, { words: [4, 5], color: '#ffcf3f55' });
+  fx.drift('#hook .inner', 0, 2.6, { scale: 1.07 });
+  // list: title chars, cards stagger in with a spring, word swaps
+  fx.text('#h2a', 'chars', 2.55);
+  tl.from('#sw', { yPercent: 60, autoAlpha: 0, duration: 0.5, ease: 'back.out(2)', immediateRender: true }, 2.85);
+  tl.from('#list .card', { y: 80, rotation: (i) => (i % 2 ? 4 : -4), autoAlpha: 0, duration: 0.7, ease: 'back.out(1.7)', stagger: 0.09, immediateRender: true }, 2.9);
+  fx.swap('#sw', ['running low', 'ready to cook'], 3.9, { every: 0.65 });
+  fx.float('#list .card', 3.6, 5.4, { y: 6, period: 2.2 });
+  // stat: counter + blur-in caption
+  fx.text('#num', 'slam', 5.1);
+  fx.count('#num', 12, 5.1, { from: 0, dur: 1.1 });
+  fx.text('#cap', 'blur', 5.6, { by: 'words', stagger: 0.05 });
+  fx.drift('#stat .inner', 5.2, 7.8, { scale: 1.05 });
+  // cta
+  fx.text('#logo', 'flip', 7.85);
+  fx.text('#tag', 'scramble', 8.5, { dur: 0.8 });
+  fx.underline('#tag', 9.2);
+  fx.drift('#cta .inner', 7.6, 10, { scale: 1.04 });
+});
+</script></body></html>

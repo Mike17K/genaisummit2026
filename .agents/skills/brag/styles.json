@@ -1,0 +1,137 @@
+{
+  "note": "The style picker's order and one-liners (tools/style-reel.mjs). renderer: product-native (the project's own UI, runtime/), motion (HTML + GSAP, motion-styles/<name>/), drawn (canvas engine, engine/styles/<name>/).",
+  "styles": [
+    {
+      "name": "product-native",
+      "renderer": "product-native",
+      "blurb": "Your real UI, fonts and colours, animated",
+      "bestFor": "Launches, walkthroughs, release notes"
+    },
+    {
+      "name": "dark-keynote",
+      "renderer": "motion",
+      "blurb": "Black stage, huge type, one glowing product moment",
+      "bestFor": "Product launches, SaaS"
+    },
+    {
+      "name": "glass-product",
+      "renderer": "motion",
+      "blurb": "Premium hero: glass, strip-light sweeps, caustics",
+      "bestFor": "Product reveals, consumer tech"
+    },
+    {
+      "name": "living-screencast",
+      "renderer": "motion",
+      "blurb": "The app in one living take: cursor, zooms, callouts",
+      "bestFor": "Tutorials, feature launches, onboarding"
+    },
+    {
+      "name": "swiss-motion",
+      "renderer": "motion",
+      "blurb": "Strict grid, bold grotesk, type that lays itself out",
+      "bestFor": "Brand films, events, design-led launches"
+    },
+    {
+      "name": "caption-news",
+      "renderer": "motion",
+      "blurb": "Sound-off social news: burned-in captions, straps, numbers",
+      "bestFor": "Viral shorts, data stories, announcements"
+    },
+    {
+      "name": "game-show",
+      "renderer": "motion",
+      "blurb": "Beat-driven show: entrances on the beat, scoreboards",
+      "bestFor": "Year in review, comparisons, timelines"
+    },
+    {
+      "name": "halftone-dossier",
+      "renderer": "motion",
+      "blurb": "Deadpan case file: halftone, stamps, red string",
+      "bestFor": "Humour, social shorts, 'the case for' pitches"
+    },
+    {
+      "name": "blueprint",
+      "renderer": "motion",
+      "blurb": "Engineering drawing: lines draw on, dimensions, exploded parts",
+      "bestFor": "How it works, hardware, architecture"
+    },
+    {
+      "name": "whiteboard",
+      "renderer": "motion",
+      "blurb": "Marker explainer: strokes draw on with the pen",
+      "bestFor": "Explainers, courses, onboarding"
+    },
+    {
+      "name": "telestrator",
+      "renderer": "motion",
+      "blurb": "Sports-analysis breakdown: freeze, circle, arrow, split",
+      "bestFor": "Feature breakdowns, before/after, viral analysis"
+    },
+    {
+      "name": "kinetic-reel",
+      "renderer": "motion",
+      "blurb": "Giant type slammed onto colour fields, cut on the beat",
+      "bestFor": "Launch teasers, social, announcements"
+    },
+    {
+      "name": "chart-room",
+      "renderer": "motion",
+      "blurb": "Dark data board: lines draw, bars grow, numbers count (real data only)",
+      "bestFor": "Metrics, growth, benchmarks, year in review"
+    },
+    {
+      "name": "manim-explainer",
+      "renderer": "motion",
+      "blurb": "Diagrams and equations write themselves on a dark board",
+      "bestFor": "How it works, algorithms, technical explainers"
+    },
+    {
+      "name": "morph-ui",
+      "renderer": "motion",
+      "blurb": "One shape morphs through button, toggle, card into your real UI",
+      "bestFor": "Interaction stories, design systems, app launches"
+    },
+    {
+      "name": "cut-paper",
+      "renderer": "drawn",
+      "blurb": "Torn paper, drop shadows, crayon, characters",
+      "bestFor": "Histories, stories"
+    },
+    {
+      "name": "crosshatch",
+      "renderer": "drawn",
+      "blurb": "Boiling ink, hatch shading, warm paper",
+      "bestFor": "Explainers"
+    },
+    {
+      "name": "riso",
+      "renderer": "drawn",
+      "blurb": "Three-ink risograph: halftones, overprints",
+      "bestFor": "Editorial, indie brands"
+    },
+    {
+      "name": "sketchbook",
+      "renderer": "drawn",
+      "blurb": "Graphite and one accent on a sketchbook page",
+      "bestFor": "Softer explainers"
+    },
+    {
+      "name": "math",
+      "renderer": "drawn",
+      "blurb": "Manim-style: black stage, axes, colour-coded variables",
+      "bestFor": "Technical and math explainers"
+    },
+    {
+      "name": "pixel",
+      "renderer": "drawn",
+      "blurb": "Low-res eras, nearest-neighbour upscale",
+      "bestFor": "Histories, games, nostalgia"
+    },
+    {
+      "name": "isometric",
+      "renderer": "drawn",
+      "blurb": "Isometric line art, white faces, one accent",
+      "bestFor": "Devices, infrastructure"
+    }
+  ]
+}

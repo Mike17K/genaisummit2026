@@ -1,0 +1,28 @@
+/* Manim Explainer: a dark board, thin strokes that draw themselves, serif maths, four pastel roles. */
+@font-face { font-family: 'MXSerif'; src: url(assets/SourceSerif4.ttf); font-weight: 200 900; }
+@font-face { font-family: 'MXMono'; src: url(assets/JetBrainsMono.ttf); font-weight: 100 800; }
+#stage.ms-manim-explainer {
+  --ground: #1B1C21; --plane: #2A2C34; --axis: #4A4D59; --text: #ECECEC; --mute: #8D909C;
+  --blue: #58C4DD; --green: #83C167; --yellow: #FFE45C; --red: #FC6255;
+  --serif: 'MXSerif', Georgia, 'Times New Roman', serif; --mono: 'MXMono', ui-monospace, Menlo, monospace;
+  font-family: var(--serif); background: var(--ground); color: var(--text); font-weight: 400;
+}
+.ms-manim-explainer .scene { position: absolute; inset: 0; overflow: hidden; background: var(--ground); }
+.ms-manim-explainer .world { position: absolute; inset: 0; }
+.ms-manim-explainer .mx-plane { position: absolute; inset: 0; width: 100%; height: 100%; }
+.ms-manim-explainer .mx-plane line { stroke: var(--plane); stroke-width: 1.5; }
+.ms-manim-explainer .mx-plane line.axis { stroke: var(--axis); stroke-width: 2.5; }
+.ms-manim-explainer svg.mx { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: visible; }
+.ms-manim-explainer .mx-stroke { fill: none; stroke: var(--text); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
+.ms-manim-explainer .blue { stroke: var(--blue); } .ms-manim-explainer .green { stroke: var(--green); }
+.ms-manim-explainer .yellow { stroke: var(--yellow); } .ms-manim-explainer .red { stroke: var(--red); }
+.ms-manim-explainer .mx-fill-blue { fill: rgba(88,196,221,.16); } .ms-manim-explainer .mx-fill-green { fill: rgba(131,193,103,.18); }
+.ms-manim-explainer .mx-text { position: absolute; white-space: nowrap; line-height: 1.1; margin: 0; font-weight: 400; letter-spacing: -0.01em; }
+.ms-manim-explainer .mx-text.mono { font-family: var(--mono); font-size: 24px; letter-spacing: .02em; color: var(--mute); }
+.ms-manim-explainer .mx-ch { display: inline-block; }
+.ms-manim-explainer .c-blue { color: var(--blue); } .ms-manim-explainer .c-green { color: var(--green); }
+.ms-manim-explainer .c-yellow { color: var(--yellow); } .ms-manim-explainer .c-red { color: var(--red); } .ms-manim-explainer .c-mute { color: var(--mute); }
+.ms-manim-explainer .mx-eq { position: absolute; display: flex; align-items: center; gap: 36px; font-size: 118px; line-height: 1; white-space: nowrap; }
+.ms-manim-explainer .mx-frac { display: inline-flex; flex-direction: column; align-items: center; font-size: 82px; line-height: 1.12; }
+.ms-manim-explainer .mx-frac i { display: block; align-self: stretch; height: 5px; background: currentColor; margin: 6px 0; transform-origin: 0 50%; }
+.ms-manim-explainer .mx-label { position: absolute; font: 500 22px/1 var(--mono); text-align: center; letter-spacing: .02em; }
