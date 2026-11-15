@@ -34,7 +34,7 @@ const BRIDGES = [
   },
   {
     tc: 30.5,
-    A: () => ({ P: sketchBox(845, 405, 335, 180, 14), c: SK.sheet }),
+    A: () => ({ P: sketchBox(835, 398, 355, 192, 14), c: SK.sheet }),
     B: () => ({ P: ellipsePts(P5_COMP.x, P5_COMP.y, P5_COMP.r, P5_COMP.r, 0, 64), c: SK.sheet })
   },
   {

@@ -218,9 +218,23 @@ function scenePerson() {
   sketchPage({ grid: 'dots' });
 
   // Margin stars
-  [[160, 320, 0], [220, 480, 1], [140, 620, 2]].forEach(([x, y, i]) =>
-    doodleStar(x, y, 22 + 6 * ((B + i) % 3 === 0), 'p1_st' + i, { w: 3 })
+  [[140, 420, 0], [180, 560, 1], [135, 660, 2]].forEach(([x, y, i]) =>
+    doodleStar(x, y, 20 + 5 * ((B + i) % 3 === 0), 'p1_st' + i, { w: 2.8 })
   );
+
+  // Taped Notebook Stat Card in Top-Left: How many people have this problem & what problem we solve!
+  const pStat = ev(0.25, 0.45);
+  if (pStat > 0) {
+    const stBox = sketchBox(190, 212, 460, 124, 12);
+    gfill(stBox, SK.sheet, { off: [4, 4], key: 'p1_stf', a: pStat });
+    gline(stBox, { closed: true, w: 4.5, key: 'p1_sto', part: pStat });
+    tapeStrip(420, 210, 130, -0.03, 'p1_stt', 32);
+    if (pStat > 0.3) {
+      handLetter('285M+ PEOPLE (43M BLIND)', 420, 258, 28, { face: 'marker', col: SK.red, key: 'p1_stl1' });
+      handLetter('Canes only sweep the ground', 420, 294, 24, { face: 'hand', col: SK.ink, key: 'p1_stl2' });
+      handLetter('missing head-height overhangs!', 420, 322, 23, { face: 'hand', col: SK.graph, key: 'p1_stl3' });
+    }
+  }
 
   // Ground line & tiny ant walking it
   gpencil([[200, 745], [680, 740], [1180, 748], [1720, 742]], { key: 'p1_gnd', w: 3.2, a: 0.8 });
@@ -299,14 +313,25 @@ function scenePerson() {
       : writeEnd(closeP(signBox), pSign);
     pencilTool(tip[0], tip[1], -0.7 + 0.06 * Math.sin(B * 1.5), 0.9);
   }
+  // Competing solutions & costs card + rubber stamp
+  if (TT >= cu.p1_stamp - 0.35) {
+    const pAlt = ev(cu.p1_stamp - 0.35, 0.35);
+    const altBox = sketchBox(1055, 472, 295, 92, 10);
+    gfill(altBox, SK.sheet, { off: [3, 3], key: 'p1_altf', a: pAlt });
+    gline(altBox, { closed: true, w: 4, key: 'p1_alto', part: pAlt });
+    if (pAlt > 0.3) {
+      handLetter('SMART GLASSES', 1202, 510, 25, { face: 'marker', col: SK.ink, key: 'p1_alt1' });
+      handLetter('€3,500 – €5,000', 1202, 546, 28, { face: 'marker', col: SK.red, key: 'p1_alt2' });
+    }
+  }
   if (TT >= cu.p1_stamp) {
-    inkStamp('€5,000 / 3s LAG', 1230, 605, 0.52, -0.09, ev(cu.p1_stamp, 0.2), 'p1_stmp');
+    inkStamp('CLOUD AI: 3s LAG', 1205, 635, 0.48, -0.08, ev(cu.p1_stamp, 0.2), 'p1_stmp');
   }
 
-  skTag('the unseen world');
+  skTag('the problem in numbers');
   skCaption(
-    ['a cane feels the ground', 'not what hangs above'],
-    [[1, 'above']]
+    ['285M visually impaired · canes miss overhangs', 'smart glasses cost €4,000+ · cloud AI lags 3s'],
+    [[1, '€4,000+']]
   );
 }
 
@@ -377,15 +402,17 @@ function sceneReveal() {
     handLetter('Bluetooth Stereo Fix (No Mono Drop)', 1320, 636, 29, { face: 'hand', col: SK.green, key: 'p2_phl2', reveal: ev(cu.p2_phone + 0.4, 0.35) });
     checkMark(1605, 600, 0.76, ev(cu.p2_chk, 0.28), SK.green, 'p2_chk');
 
-    // Left-side current build architecture pills (FastAPI /live WS + Kotlin Android APK)
-    const b1 = sketchBox(125, 555, 270, 52, 10);
-    const b2 = sketchBox(125, 622, 270, 52, 10);
+    // Left-side Personal Agent cards: Replaces Native Android Assistant + Memory & Behavioral UX
+    const b1 = sketchBox(95, 535, 330, 64, 10);
+    const b2 = sketchBox(95, 612, 330, 64, 10);
     gfill(b1, SK.sheet, { off: [3, 3], key: 'p2_b1f', a: phPart });
     gline(b1, { closed: true, w: 3.8, key: 'p2_b1o', part: phPart });
-    handLetter('FastAPI /live WS', 260, 590, 25, { face: 'marker', col: SK.ink, key: 'p2_b1t' });
+    handLetter('REPLACES ANDROID ASSIST', 260, 565, 22, { face: 'marker', col: SK.ink, key: 'p2_b1t' });
+    handLetter('Native Kotlin Personal Agent', 260, 590, 20, { face: 'hand', col: SK.graph, key: 'p2_b1s' });
     gfill(b2, SK.sheet, { off: [3, 3], key: 'p2_b2f', a: phPart });
     gline(b2, { closed: true, w: 3.8, key: 'p2_b2o', part: phPart });
-    handLetter('Kotlin Android APK', 260, 657, 25, { face: 'marker', col: SK.graph, key: 'p2_b2t' });
+    handLetter('MEMORY + BEHAVIORAL UX', 260, 642, 22, { face: 'marker', col: SK.green, key: 'p2_b2t' });
+    handLetter('Tailored for Blind Walkers', 260, 667, 20, { face: 'hand', col: SK.graph, key: 'p2_b2s' });
   }
 
   // Pencil tool: first draws the bulb (6.9-7.8s), then sketches the chest phone (7.8-8.7s)
@@ -403,15 +430,15 @@ function sceneReveal() {
     gline(arcPts(hx, hy, r, -Math.PI * 0.16, Math.PI * 0.16, 12), { w: 4, col: SK.ink, key: 'p2_wr' + k, second: false, part: ev(7.6 + k * 0.1, 0.25) });
   }
 
-  skTag('current build');
+  skTag('personal android agent');
   skCaption(
-    ['Hold-to-Talk uses the phone mic', 'keeping Bluetooth in true stereo'],
-    [[1, 'stereo']]
+    ['replaces the native Android assistant', 'with memory & behavioral UX for the blind'],
+    [[0, 'Android']]
   );
 }
 
 // =====================================================================
-//  ERA 2 (13.6 - 21.8s): STEREO SONAR (Depth-Anything-V2 + WebAudio)
+//  ERA 2 (13.6 - 21.8s): WHY STEREO SONAR WORKS (<50ms vs 3s Speech)
 // =====================================================================
 function sceneSonar() {
   const cu = TIMELINE.cues;
@@ -420,13 +447,14 @@ function sceneSonar() {
   // Ground line
   gpencil([[180, 745], [700, 750], [1250, 742], [1740, 748]], { key: 'p3_gnd', w: 3, a: 0.75 });
 
-  // Hand-drawn Current Tech Badge at top-right of sonar: Depth-Anything-V2 (WebGPU + ONNX 5Hz) -> WebAudio
+  // Hand-drawn "WHY SONAR WORKS" Card at top-right of sonar
   const pTech = ev(13.85, 0.4);
   if (pTech > 0) {
-    const tb = sketchBox(775, 118, 650, 56, 12);
+    const tb = sketchBox(720, 104, 760, 80, 12);
     gfill(tb, SK.sheet, { off: [3, 3], key: 'p3_tbf', a: pTech });
     gline(tb, { closed: true, w: 4, key: 'p3_tbo', part: pTech });
-    handLetter('Depth-Anything-V2 (WebGPU / ONNX 5Hz) -> WebAudio', 1100, 154, 25, { face: 'marker', col: SK.ink, key: 'p3_tbt' });
+    handLetter('WHY SONAR WORKS: Ears Locate Sound in <50ms (vs 3s Speech)', 1100, 138, 23, { face: 'marker', col: SK.green, key: 'p3_tbt1' });
+    handLetter('Depth-Anything-V2 (WebGPU / ONNX 5Hz) -> Per-Ear Stereo Beeps', 1100, 168, 22, { face: 'hand', col: SK.ink, key: 'p3_tbt2' });
   }
 
   // Blindfolded hero advances from x=350 to x=440 as distance ticks down 1.8m -> 1.2m -> 0.8m!
@@ -497,15 +525,15 @@ function sceneSonar() {
   handLetter(distStr, ox + 92, oy + 185, 52, { face: 'marker', col: SK.red, key: 'p3_obm_' + distStr });
   handLetter('HAZARD', ox + 92, oy + 235, 28, { face: 'marker', col: SK.ink, key: 'p3_obhl' });
 
-  skTag('stereo depth sonar');
+  skTag('why sonar works');
   skCaption(
-    ['Depth-Anything-V2 at 5Hz', 'drives per-ear WebAudio beeps'],
-    [[1, 'beeps']]
+    ['ears locate sound in 50ms — 10x faster than speech', 'Depth-Anything-V2 drives left · center · right beeps'],
+    [[0, '50ms']]
   );
 }
 
 // =====================================================================
-//  ERA 3 (21.8 - 30.5s): VOICE & MEMORY ROUTER (router.py + Gemini + fal.ai)
+//  ERA 3 (21.8 - 30.5s): BEHAVIORAL ENGINEERING & PERSISTENT MEMORY
 // =====================================================================
 function sceneVoice() {
   const cu = TIMELINE.cues;
@@ -546,20 +574,21 @@ function sceneVoice() {
     scrap(ex - 65, ey + 45, 0.4, 0.55, 'p4_cr1');
   }
 
-  // Crisp Taped Router + Memory Card in the center + green checkmark
+  // Crisp Taped Behavioral Engineering + Persistent Memory Card in the center + green checkmark
   const np = ev(cu.p4_router, 0.4);
-  const mcBox = sketchBox(845, 405, 335, 180, 14);
+  const mcBox = sketchBox(835, 398, 355, 192, 14);
   if (np > 0) {
-    smudge(1012, 500, 165, 92, 0.14 * np, -0.03);
+    smudge(1012, 495, 175, 96, 0.14 * np, -0.03);
     gfill(mcBox, SK.sheet, { off: [4, 4], key: 'p4_mcf', a: np });
     gpencil(mcBox, { closed: true, w: 2.5, key: 'p4_mcp', part: np });
     gline(mcBox, { closed: true, w: 5, key: 'p4_mco', part: np });
-    tapeStrip(1012, 402, 130, -0.04, 'p4_mct', 34);
+    tapeStrip(1012, 395, 130, -0.04, 'p4_mct', 34);
     if (np > 0.35) {
-      handLetter('router.py · UserMemory', 1012, 452, 24, { face: 'marker', col: SK.graph, key: 'p4_nct0' });
-      handLetter('Goal: Pharmacy', 1012, 498, 34, { face: 'marker', col: SK.ink, key: 'p4_nct1' });
-      handLetter('fal.ai 24kHz · 4 steps', 1012, 548, 27, { face: 'hand', col: SK.green, key: 'p4_nct2' });
-      checkMark(1205, 425, 0.78, ev(cu.p4_router + 0.3, 0.25), SK.green, 'p4_chk');
+      handLetter('BEHAVIORAL + MEMORY', 1012, 442, 23, { face: 'marker', col: SK.graph, key: 'p4_nct0' });
+      handLetter('Saved Goal: Pharmacy', 1012, 484, 31, { face: 'marker', col: SK.ink, key: 'p4_nct1' });
+      handLetter('12 o\'clock · 4 steps', 1012, 526, 28, { face: 'marker', col: SK.green, key: 'p4_nct2' });
+      handLetter('Never vague "over there"', 1012, 566, 22, { face: 'hand', col: SK.graph, key: 'p4_nct3' });
+      checkMark(1215, 420, 0.78, ev(cu.p4_router + 0.3, 0.25), SK.green, 'p4_chk');
     }
   }
 
@@ -581,14 +610,14 @@ function sceneVoice() {
     gline(door, { closed: true, w: 5.5, key: 'p4_do', part: dp });
     gline(loopPts(dx + dw - 35, dy + dh * 0.52, 12, 12, 0.1), { w: 4.5, key: 'p4_knb' });
     // Two clean arrows: Hero -> Memory Card -> Pharmacy Door
-    arrowPencil([[hx + 145, hy - 10], [830, 500]], clamp(np * 1.2), { key: 'p4_arw1', w: 3.8 });
-    arrowPencil([[1190, 505], [dx - 22, 535]], dp, { key: 'p4_arw2', w: 3.8 });
+    arrowPencil([[hx + 145, hy - 10], [820, 500]], clamp(np * 1.2), { key: 'p4_arw1', w: 3.8 });
+    arrowPencil([[1200, 505], [dx - 22, 535]], dp, { key: 'p4_arw2', w: 3.8 });
   }
 
-  skTag('voice & memory router');
+  skTag('behavioral engineering');
   skCaption(
-    ['router.py filters noise, saves goals', 'and streams fal.ai voice'],
-    [[0, 'goals'], [1, 'fal.ai']]
+    ['remembers your goal across detours', 'speaks in clock-face & steps — never "over there"'],
+    [[0, 'goal'], [1, 'steps']]
   );
 }
 
@@ -869,23 +898,23 @@ function sceneWhatsNext() {
   const steps = [
     {
       t0: 53.7, x: 560, y: 210, w: 830, h: 82, done: true,
-      title: 'WORKING NOW: PTT Stereo Fix · Depth-Anything-V2 (5Hz)',
-      sub: 'Gemini 2.5 Flash router.py · fal.ai 24kHz TTS · Android APK'
+      title: 'WORKING NOW: Android Personal Agent · PTT Stereo Fix · 5Hz Depth',
+      sub: 'Persistent Memory Router · Behavioral Clock-Face UX · fal.ai 24kHz TTS'
     },
     {
       t0: 54.15, x: 590, y: 330, w: 830, h: 82, done: false,
-      title: 'NEXT STEP 1: Enable WebXR ARCore Depth (xr_depth.js)',
-      sub: 'Zero-latency hardware metric depth alongside ONNX / WebGPU'
+      title: 'NEXT STEP 1: Test Audio & Voice UX with Real Blind Walkers',
+      sub: 'Gather real-user feedback on spoken pacing, barge-in & cognitive load'
     },
     {
       t0: 54.55, x: 620, y: 450, w: 830, h: 82, done: false,
-      title: 'NEXT STEP 2: Hands-Free Duplex Voice Gate',
-      sub: 'Keep Bluetooth earphones in stereo without holding Push-to-Talk'
+      title: 'NEXT STEP 2: Fine-Tune Sonar Sounds, Pitch Curves & Experience',
+      sub: 'Shape pleasant per-ear frequencies, spatial earcons & WebXR depth'
     },
     {
       t0: 54.95, x: 650, y: 570, w: 830, h: 82, done: false,
-      title: 'NEXT STEP 3: Outdoor Blind-Walker Street Trials',
-      sub: 'Calibrate head-height overhang & curb alerts on real Athens walks'
+      title: 'NEXT STEP 3: Default Android Assistant OS Replacement',
+      sub: 'Hands-free duplex voice gate & wake-button launch on every phone'
     }
   ];
 
@@ -923,9 +952,9 @@ function sceneWhatsNext() {
 
   inkStamp('NEXT STEPS', 1645, 520, 0.48, -0.08, ev(55.2, 0.25), 'p7_st');
 
-  skTag('roadmap & next steps');
+  skTag('user testing & refinement');
   skCaption(
-    ['built & working in repo today —', '3 next steps to make it work everywhere'],
-    [[1, 'work']]
+    ['next: test voice UX with real blind users', '& fine-tune the sonar sounds and experience'],
+    [[0, 'real'], [1, 'sounds']]
   );
 }
