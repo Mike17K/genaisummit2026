@@ -8,7 +8,7 @@
     "fadeOut": 1.5
   },
   "voice": {
-    "file": "voice/voice.wav",
+    "file": "../piece/voice/voice.wav",
     "gain": 4,
     "musicUnderVoice": -8
   },

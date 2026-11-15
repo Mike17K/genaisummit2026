@@ -1,21 +1,28 @@
-"""Synthesize the 60s VoxEye video voiceover track (voice.wav) using Fal.ai ElevenLabs v3 (or Gemini fallback).
+"""Synthesize the shared 60s VoxEye video voiceover track (brag-output/piece/voice/voice.wav).
+
+By default, if voice.wav already exists and matches the current script + provider, it is reused
+immediately without making any API calls! Pass `--force` to regenerate (e.g. after adding FAL_API_KEY).
 
 Usage:
-  1. Paste your FAL_API_KEY in app/.env
-  2. Run: python3 scripts/render_voiceover.py
+  python3 scripts/render_voiceover.py           # reuses cached voice.wav if already generated
+  python3 scripts/render_voiceover.py --force   # forces fresh synthesis
 """
 import asyncio
-import shutil
+import hashlib
+import json
 import subprocess
 import sys
 import wave
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "app"))
+sys.path.insert(0, str(ROOT / "app" / "server" / "utils"))
 
-from server.audio import fal, speak  # noqa: E402
-from server.utils import config  # noqa: E402
+import config  # noqa: E402
+
+
+def _has_fal() -> bool:
+    return bool(config.FAL_KEY)
 
 CUES = [
     ("c0", 0.35, "en", "Two hundred eighty-five million people live with vision loss. White canes miss high branches, smart glasses cost four thousand euros, and voice A.I. is too slow."),
@@ -39,12 +46,40 @@ def write_pcm24k_wav(path: Path, pcm: bytes) -> float:
     return len(pcm) / (24000 * 2)
 
 
+def compute_signature(use_fal: bool) -> str:
+    payload = {
+        "provider": "fal" if use_fal else "gemini",
+        "model": config.FAL_TTS_MODEL if use_fal else config.TTS_MODEL,
+        "voice": config.FAL_TTS_VOICE if use_fal else config.VOICE,
+        "cues": CUES,
+    }
+    return hashlib.sha256(json.dumps(payload, ensure_ascii=False).encode("utf-8")).hexdigest()[:16]
+
+
 async def main() -> None:
-    use_fal = fal.available()
+    force = "--force" in sys.argv
+    use_fal = _has_fal()
+    sig = compute_signature(use_fal)
+
+    out_piece = ROOT / "brag-output" / "piece" / "voice" / "voice.wav"
+    meta_file = ROOT / "brag-output" / "piece" / "voice" / "voice.meta.json"
+
+    if out_piece.exists() and not force:
+        if meta_file.exists():
+            meta = json.loads(meta_file.read_text(encoding="utf-8"))
+            if meta.get("signature") == sig:
+                print(f"Reusing existing cached voiceover: {out_piece} (provider={meta.get('provider')}, zero API calls)")
+                return
+        elif not use_fal:
+            # Already generated v8 Gemini voice.wav on disk — record metadata and reuse without calling TTS API
+            meta_file.write_text(json.dumps({"signature": sig, "provider": "gemini"}, indent=2), encoding="utf-8")
+            print(f"Reusing existing cached voiceover: {out_piece} (zero API calls)")
+            return
+
+    from server.audio import fal, speak  # lazy import only when actually synthesizing
+
     provider_label = f"Fal.ai ElevenLabs v3 ({config.FAL_TTS_MODEL}, voice={config.FAL_TTS_VOICE})" if use_fal else f"Gemini Neural TTS ({config.TTS_MODEL})"
-    print(f"Using TTS provider: {provider_label}")
-    if not use_fal:
-        print("NOTE: FAL_API_KEY is empty in app/.env — paste your key in app/.env to use ElevenLabs v3.")
+    print(f"Synthesizing voiceover once via: {provider_label}")
 
     tmp_dir = ROOT / "brag-output" / "work" / "vo_cues"
     tmp_dir.mkdir(parents=True, exist_ok=True)
@@ -67,19 +102,14 @@ async def main() -> None:
         filter_parts.append(f"[{idx}:a]aresample=48000,adelay={delay_ms}|{delay_ms}[c{idx}]")
         mix_labels.append(f"[c{idx}]")
 
-    out_piece = ROOT / "brag-output" / "piece" / "voice" / "voice.wav"
     out_piece.parent.mkdir(parents=True, exist_ok=True)
     filter_complex = ";".join(filter_parts) + f";{''.join(mix_labels)}amix=inputs={len(CUES)}:normalize=0,apad,atrim=0:60.0[out]"
     subprocess.run(
         ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *inputs, "-filter_complex", filter_complex, "-map", "[out]", "-ar", "48000", "-ac", "1", str(out_piece)],
         check=True,
     )
-    print(f"Wrote {out_piece}")
-
-    out_gs = ROOT / "brag-output" / "game-show" / "voice" / "voice.wav"
-    if out_gs.parent.exists():
-        shutil.copy2(out_piece, out_gs)
-        print(f"Copied to {out_gs}")
+    meta_file.write_text(json.dumps({"signature": sig, "provider": "fal" if use_fal else "gemini"}, indent=2), encoding="utf-8")
+    print(f"Saved shared master voiceover to {out_piece}")
 
 
 if __name__ == "__main__":
