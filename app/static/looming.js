@@ -59,12 +59,36 @@
     }
   }
 
-  // Phone motion: turning (panning), walking and tilt, from the phone's gyroscope and accelerometer.
+  const CARDINALS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+  function cardinalFromDeg(deg) {
+    if (typeof deg !== "number" || !Number.isFinite(deg)) return null;
+    const norm = ((deg % 360) + 360) % 360;
+    return CARDINALS[Math.round(norm / 45) % 8];
+  }
+
+  // Tilt-compensated forward azimuth (0=N, 90=E, 180=S, 270=W) from W3C Euler angles (alpha, beta, gamma),
+  // seamlessly handling phones held flat (beta~0) through upright rear-camera posture (beta~90).
+  function compassHeadingFromEuler(alpha, beta, gamma) {
+    if (typeof alpha !== "number" || !Number.isFinite(alpha)) return null;
+    const a = (alpha * Math.PI) / 180;
+    const b = ((typeof beta === "number" && Number.isFinite(beta) ? beta : 0) * Math.PI) / 180;
+    const g = ((typeof gamma === "number" && Number.isFinite(gamma) ? gamma : 0) * Math.PI) / 180;
+    const x2 = -Math.sin(g);
+    const y2 = Math.cos(b) + Math.sin(b) * Math.cos(g);
+    if (Math.hypot(x2, y2) < 1e-4) return null;
+    const east = Math.cos(a) * x2 - Math.sin(a) * y2;
+    const north = Math.sin(a) * x2 + Math.cos(a) * y2;
+    return ((Math.atan2(east, north) * 180) / Math.PI + 360) % 360;
+  }
+
+  // Phone motion & compass: turning (panning), walking, tilt, and magnetic heading.
   // walking is true / false / null (unknown). Unknown must never be read as "standing still".
   class ImuState {
     constructor({ panDegS = 65, stableDegS = 50, walkVariance = 0.3, stillVariance = 0.06, windowMs = 800 } = {}) {
       Object.assign(this, { panDegS, stableDegS, walkVariance, stillVariance, windowMs });
       this.angularSpeed = 0; this.panning = false; this.stable = true; this.pitchDeg = null; this.walking = null; this.turnDir = null;
+      this.compassDeg = null; this.compassDir = null; this.compassAbs = false;
+      this._hasAbsCompass = false; this._compCos = null; this._compSin = null;
       this._acc = []; this._yaw = [];
     }
     handleMotion(e, now) {
@@ -87,16 +111,51 @@
         if (this._acc.length >= 6) {
           const mean = this._acc.reduce((s, x) => s + x.mag, 0) / this._acc.length;
           const variance = this._acc.reduce((s, x) => s + (x.mag - mean) ** 2, 0) / this._acc.length;
-          // Three answers, biased so that a wrong guess never hides an alert: clearly shaking = walking, clearly still = stationary,
-          // anything in between = unknown (the server then treats the user as possibly moving). Thresholds are not yet tuned on real phones.
           this.walking = variance > this.walkVariance ? true : variance < this.stillVariance ? false : null;
         }
       }
     }
-    handleOrientation(e) { if (e && e.beta != null) this.pitchDeg = Math.round(e.beta); }
+    handleOrientation(e, isAbsoluteEvent = false) {
+      if (!e) return;
+      if (e.beta != null && Number.isFinite(e.beta)) this.pitchDeg = Math.round(e.beta);
+      let rawDeg = null;
+      let isAbs = false;
+      if (typeof e.webkitCompassHeading === "number" && Number.isFinite(e.webkitCompassHeading) && e.webkitCompassHeading >= 0) {
+        rawDeg = ((e.webkitCompassHeading % 360) + 360) % 360;
+        isAbs = true;
+      } else if (e.alpha != null && Number.isFinite(e.alpha)) {
+        isAbs = !!(isAbsoluteEvent || e.absolute === true);
+        if (!isAbs && this._hasAbsCompass) return;
+        rawDeg = compassHeadingFromEuler(e.alpha, e.beta, e.gamma);
+      }
+      if (rawDeg === null) return;
+      if (isAbs && !this._hasAbsCompass) {
+        this._hasAbsCompass = true;
+        this._compCos = null;
+        this._compSin = null;
+      }
+      const rad = (rawDeg * Math.PI) / 180;
+      const c = Math.cos(rad), s = Math.sin(rad);
+      if (this._compCos === null || this._compSin === null) {
+        this._compCos = c;
+        this._compSin = s;
+      } else {
+        this._compCos = 0.72 * this._compCos + 0.28 * c;
+        this._compSin = 0.72 * this._compSin + 0.28 * s;
+      }
+      const smoothed = ((Math.atan2(this._compSin, this._compCos) * 180) / Math.PI + 360) % 360;
+      this.compassDeg = Math.round(smoothed) % 360;
+      this.compassDir = cardinalFromDeg(this.compassDeg);
+      this.compassAbs = isAbs;
+    }
     snapshot() {
       const snap = { angularSpeed: this.angularSpeed, panning: this.panning, walking: this.walking, pitchDeg: this.pitchDeg };
       if (this.turnDir) snap.turnDir = this.turnDir;
+      if (this.compassDeg !== null) {
+        snap.compassDeg = this.compassDeg;
+        snap.compassDir = this.compassDir;
+        snap.compassAbs = this.compassAbs;
+      }
       return snap;
     }
   }
@@ -279,7 +338,7 @@
   const api = {
     KNOWN_WIDTHS_M, DEFAULTS, distanceMeters, zone, RollingBaseline, ImuState, LoomingTracker,
     lumaMotion, parseFocusDistance, depthFeedback, extractCenterDisparity, DepthCalibrator,
-    MOBILE_SLOW_MS, chooseDepthTarget,
+    MOBILE_SLOW_MS, chooseDepthTarget, cardinalFromDeg, compassHeadingFromEuler,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else Object.assign(root, { Looming: api });

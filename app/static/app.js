@@ -36,8 +36,30 @@ const micGate = new MicGate({
 });
 
 const imu = new Looming.ImuState({ panDegS: 160, stableDegS: 110 });
+const INFO_FRAME_MIN_GAP_MS = 2500; // Max 0.4 fps on-demand Q&A frame when user speaks
+const IMU_PUSH_MIN_GAP_MS = 250;
+let lastInfoFrameAt = 0;
+let lastAnyFrameAt = 0;
+let lastImuPushAt = 0;
+let lastPushedCompassDeg = null;
+
+function maybePushImu() {
+  if (!running || !socket || socket.readyState !== 1 || imu.compassDeg === null) return;
+  const now = Date.now();
+  if (now - lastImuPushAt < IMU_PUSH_MIN_GAP_MS) return;
+  const diff = lastPushedCompassDeg === null
+    ? 999
+    : Math.abs((((imu.compassDeg - lastPushedCompassDeg) % 360) + 540) % 360 - 180);
+  if (diff >= 5) {
+    lastImuPushAt = now;
+    lastPushedCompassDeg = imu.compassDeg;
+    socket.send(JSON.stringify({ type: "imu", imu: imu.snapshot() }));
+  }
+}
+
 window.addEventListener("devicemotion", (e) => imu.handleMotion(e, performance.now()));
-window.addEventListener("deviceorientation", (e) => imu.handleOrientation(e));
+window.addEventListener("deviceorientationabsolute", (e) => { imu.handleOrientation(e, true); maybePushImu(); });
+window.addEventListener("deviceorientation", (e) => { imu.handleOrientation(e, false); maybePushImu(); });
 let spatial = null;
 const ON_DEVICE = new URLSearchParams(location.search).get("ondevice") === "1";
 let alertMuteUntil = 0;
@@ -55,15 +77,15 @@ function requestSensorPermissions() {
   } catch (_) {}
 }
 
-// Expressive local TTS calibrated to danger_level 1..5
+// Calm, natural local TTS calibrated to danger_level 1..5
 function speakLocal(text, dangerLevel = 0) {
   try {
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     u.lang = /[\u0370-\u03ff\u1f00-\u1fff]/.test(text) ? "el-GR" : "en-US";
     const lvl = Math.max(1, Math.min(5, +dangerLevel || 3));
-    u.rate = [1.0, 1.05, 1.12, 1.2, 1.3, 1.38][lvl];
-    u.pitch = [1.0, 1.0, 1.05, 1.12, 1.22, 1.32][lvl];
+    u.rate = [1.0, 1.0, 1.02, 1.06, 1.10, 1.14][lvl];
+    u.pitch = [1.0, 1.0, 1.0, 1.02, 1.04, 1.06][lvl];
     speechSynthesis.speak(u);
   } catch (_) {}
 }
@@ -111,10 +133,10 @@ let depthProbeSeq = 0;
 
 const dbg = {
   state: "idle", camera: "-", mic: "-", audioCtx: "-", ws: "-", gemini: "-",
-  micLevel: 0, micPeak: 0, sentKB: 0, sentFrames: 0, recvKB: 0, recvChunks: 0,
+  micLevel: 0, micPeak: 0, sentKB: 0, sentFrames: 0, sentWatchFrames: 0, sentInfoFrames: 0, recvKB: 0, recvChunks: 0,
   lastHeard: "", lastReply: "", lastEvent: "", lastModelAudioAt: 0, lastSpeechAt: 0,
   error: "", startedAt: 0, log: [],
-  watch: "-", lastAlert: "-", alertMode: "normal", alerts: 0, conn: "-", fps: 2, attention: "normal", frameStamps: [], voiceOpen: false, effGate: 0, depth: "-", depthModel: "idle", memory: "empty", memoryObj: { goal: "", notes: [] },
+  watch: "-", lastAlert: "-", alertMode: "normal", alerts: 0, conn: "-", fps: 1.5, attention: "normal", frameStamps: [], voiceOpen: false, effGate: 0, depth: "-", depthModel: "idle", memory: "empty", memoryObj: { goal: "", notes: [] }, compassTarget: "",
 };
 const hideDebug = new URLSearchParams(location.search).get("debug") === "0";
 if (hideDebug) debugEl.style.display = "none";
@@ -201,10 +223,13 @@ function renderDebug() {
   const sinceAudio = dbg.lastModelAudioAt ? ((now - dbg.lastModelAudioAt) / 1000).toFixed(1) + "s ago" : "never";
   const talkingNow = !!dbg.voiceOpen;
   const up = dbg.startedAt ? Math.round((now - dbg.startedAt) / 1000) + "s" : "-";
+  const compassText = imu.compassDeg !== null
+    ? `${imu.compassDeg}° ${imu.compassDir || ""}${imu.compassAbs ? "" : " (rel)"}${dbg.compassTarget ? "  -> target: " + dbg.compassTarget : ""}`
+    : (dbg.compassTarget ? `waiting for sensor (target: ${dbg.compassTarget})` : "no sensor");
   const rows = [
     ["state", cls(dbg.state === "error" ? false : dbg.state === "idle" ? null : true, dbg.state) + "  up " + up],
-    ["camera", cls(dbg.camera === "ok" ? true : dbg.camera === "-" ? null : false, dbg.camera) + `  sent ${dbg.sentFrames} frames`],
-    ["camera rate", `${dbg.fps} fps set (measured ${(dbg.frameStamps.length / 3).toFixed(1)}), attention: ` + cls(dbg.attention === "normal" ? null : dbg.attention === "high" ? false : true, dbg.attention)],
+    ["camera", cls(dbg.camera === "ok" ? true : dbg.camera === "-" ? null : false, dbg.camera) + `  watch: ${dbg.sentWatchFrames} frames · Q&A: ${dbg.sentInfoFrames} frames (on speech)`],
+    ["camera rate", `${dbg.fps} fps set (measured ${(dbg.frameStamps.length / 3).toFixed(1)}), Q&A <=0.4 fps, attention: ` + cls(dbg.attention === "normal" ? null : dbg.attention === "high" ? false : true, dbg.attention)],
     ["mic", cls(dbg.mic === "ok" ? true : dbg.mic === "-" ? null : false, dbg.mic) + `  sent ${dbg.sentKB.toFixed(0)} KB` +
       `<div id="meter"><div style="width:${Math.min(100, dbg.micLevel * 250)}%"></div><i style="left:${Math.min(99, (micGate.lastOpenThresh || dbg.effGate || gate) * 250)}%"></i></div>` +
       `level ${dbg.micLevel.toFixed(3)} floor ${micGate.noiseFloor.toFixed(3)} open ${(micGate.lastOpenThresh || dbg.effGate || gate).toFixed(3)} gate ${gate.toFixed(3)}${dbg.effGate > gate ? " (raised: assistant speaking)" : ""} ${talkingNow ? cls(true, "(voice open: sending speech)") : dbg.micLevel > (micGate.lastOpenThresh || dbg.effGate || gate) ? cls(null, "(sound above gate, waiting to confirm)") : cls(null, "(below gate: sending silence)")}`],
@@ -219,6 +244,7 @@ function renderDebug() {
     ["on-device", esc(spatial ? spatial.summary() : (ON_DEVICE ? "waiting to start" : "off (add ?ondevice=1 to try it)"))],
     ["depth model", esc(`[${depthMode === "auto" ? "auto->" + depthDevice : depthMode}] ` + (dbg.depthModel || "-"))],
     ["center depth", esc(dbg.depth || "-")],
+    ["compass", esc(compassText)],
     ["phone motion", esc(imu.panning ? "panning" : imu.walking === true ? "walking" : imu.walking === false ? "stationary" : "movement unknown") + `  gyro ${imu.angularSpeed} deg/s, pitch ${imu.pitchDeg ?? "?"}`],
     ["watcher", esc(dbg.watch) + "  (mode: " + esc(dbg.alertMode) + ")"],
     ["last alert", (dbg.alerts ? dbg.alerts + " so far. " : "") + esc(dbg.lastAlert)],
@@ -368,7 +394,10 @@ function startMic() {
       sendAudio(chunk, flag);
     }
     dbg.voiceOpen = micGate.open;
-    if (!wasOpen && micGate.open) setTimeout(() => sendFrame(true), 0);
+    if (!wasOpen && micGate.open && now - lastInfoFrameAt >= INFO_FRAME_MIN_GAP_MS) {
+      lastInfoFrameAt = now;
+      setTimeout(() => sendFrame(true), 0);
+    }
   };
   const mute = ctx.createGain(); mute.gain.value = 0;
   source.connect(processor); processor.connect(mute); mute.connect(ctx.destination);
@@ -378,10 +407,10 @@ function startMic() {
 }
 
 function setFrameRate(fps) {
-  fps = Math.min(5, Math.max(0.5, +fps || 1));
+  fps = Math.min(3.0, Math.max(0.5, +fps || 1.5));
   dbg.fps = fps;
   clearInterval(frameTimer);
-  frameTimer = setInterval(sendFrame, 1000 / fps);
+  frameTimer = setInterval(() => sendFrame(false), 1000 / fps);
 }
 
 const motionCanvas = document.createElement("canvas");
@@ -615,12 +644,14 @@ function stopDepthScan(notifyServer = true) {
 }
 
 function sendFrame(fresh = false) {
-  if (!cam.videoWidth || !socket || socket.readyState !== 1) return;
-  const w = fresh === true ? 640 : 384;
+  if (!cam.videoWidth || !socket || socket.readyState !== 1 || depthScanActive) return;
+  const now = Date.now();
+  if (fresh !== true && now - lastAnyFrameAt < 280) return;
+  const w = fresh === true ? 512 : 352;
   canvas.width = w;
   canvas.height = Math.round(w * cam.videoHeight / cam.videoWidth);
   canvas.getContext("2d").drawImage(cam, 0, 0, canvas.width, canvas.height);
-  const data = canvas.toDataURL("image/jpeg", fresh === true ? 0.6 : 0.5).split(",")[1];
+  const data = canvas.toDataURL("image/jpeg", fresh === true ? 0.58 : 0.48).split(",")[1];
   const motion = frameMotion();
   const imuSnap = imu.snapshot();
   const pdafM = readPdafDistance();
@@ -632,10 +663,14 @@ function sendFrame(fresh = false) {
   if (motion !== null) msg.motion = Number(motion.toFixed(4));
   if (fresh === true) msg.fresh = true;
   socket.send(JSON.stringify(msg));
+  lastAnyFrameAt = now;
+  lastImuPushAt = now;
+  if (imu.compassDeg !== null) lastPushedCompassDeg = imu.compassDeg;
   dbg.sentFrames++;
-  const t = Date.now();
-  dbg.frameStamps.push(t);
-  while (dbg.frameStamps.length && t - dbg.frameStamps[0] > 3000) dbg.frameStamps.shift();
+  if (fresh === true) dbg.sentInfoFrames++;
+  else dbg.sentWatchFrames++;
+  dbg.frameStamps.push(now);
+  while (dbg.frameStamps.length && now - dbg.frameStamps[0] > 3000) dbg.frameStamps.shift();
 }
 
 function scheduleReconnect() {
@@ -746,6 +781,13 @@ function openLiveSocket(isInitial = false) {
       renderMemories(m);
       note("memory -> " + dbg.memory);
     }
+    else if (m.type === "compass_target") {
+      dbg.compassTarget = m.label ? `${m.label} (${Math.round(m.deg)}°)` : "";
+      note("compass target -> " + (dbg.compassTarget || "cleared"));
+    }
+    else if (m.type === "compass_cue") {
+      if (m.text) { dbg.lastReply = m.text; note("compass cue: " + m.text); }
+    }
     else if (m.type === "lang") {
       if (m.lang === "English" || m.lang === "Greek") {
         sessionLang = m.lang;
@@ -801,6 +843,10 @@ function openLiveSocket(isInitial = false) {
       const moveTag = m.move ? ` move:${m.move}` : "";
       dbg.watch = `${m.outcome}${lvlTag}${codeTag}${moveTag}${m.key ? " [" + m.key + "]" : ""} conf ${(+m.confidence).toFixed(2)} ${m.ms} ms`;
     }
+    else if (m.type === "watch_idle") {
+      const mvTag = typeof m.move_score === "number" ? ` (move ${m.move_score.toFixed(2)})` : "";
+      dbg.watch = `standby: ${m.reason}${mvTag}`;
+    }
     else if (m.type === "speak_text") { speakLocal(m.text, m.danger_level); note("fallback voice: " + m.text); }
     else if (m.type === "rate") {
       setFrameRate(m.fps); dbg.attention = m.attention;
@@ -830,8 +876,8 @@ async function start() {
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
   reconnecting = false;
   reconnectAttempts = 0;
-  Object.assign(dbg, { error: "", camera: "-", mic: "-", ws: "-", gemini: "-", sentKB: 0, sentFrames: 0, recvKB: 0,
-    recvChunks: 0, lastHeard: "", lastReply: "", lastEvent: "", lastModelAudioAt: 0, lastSpeechAt: 0, micPeak: 0,
+  Object.assign(dbg, { error: "", camera: "-", mic: "-", ws: "-", gemini: "-", sentKB: 0, sentFrames: 0, sentWatchFrames: 0, sentInfoFrames: 0, recvKB: 0,
+    recvChunks: 0, lastHeard: "", lastReply: "", lastEvent: "", lastModelAudioAt: 0, lastSpeechAt: 0, micPeak: 0, compassTarget: "",
     startedAt: Date.now() });
   setState("starting", "Starting...");
 
@@ -868,7 +914,7 @@ async function start() {
   note(`camera: ${cam.videoWidth}x${cam.videoHeight}, pdaf: ${videoCaps.focusDistance ? "supported" : "fallback"}`);
 
   startMic();
-  setFrameRate(3);
+  setFrameRate(1.5);
   ensureDepthEngine(); // Pre-load & pre-compile WebGPU Depth-Anything-V2-Small in background worker
   if (ON_DEVICE && typeof SpatialSentry === "function") spatial = new SpatialSentry({
     video: cam, imu,

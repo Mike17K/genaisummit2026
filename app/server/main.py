@@ -1,17 +1,20 @@
-"""FastAPI server: serves the page and one WebSocket for frames, voice text and replies."""
+"""FastAPI entrypoint (`uvicorn server.main:app`): static UI, HTTP endpoints, and `/live` WebSocket."""
 import asyncio
 import base64
 from contextlib import asynccontextmanager
-from pathlib import Path
 import uuid
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import agent, config, live, local_depth, memory, speak, tools, trace
+from .assistant import agent, tools
+from .audio import speak
+from .core import live, memory
+from .depth import local_depth
+from .utils import config, trace
 
-STATIC = Path(__file__).resolve().parent.parent / "static"
+STATIC = config.APP_DIR / "static"
 
 
 @asynccontextmanager
