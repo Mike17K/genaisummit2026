@@ -276,7 +276,7 @@ async def _serve(socket: WebSocket, conn_id: str) -> None:
     except Exception as exc:
         trace.log("error", error=f"{type(exc).__name__}: {exc}"[:300])
         try:
-            await socket.send_json({"type": "error", "text": "Voice connection lost. Tap to restart."})
+            await socket.send_json({"type": "error", "text": "Voice connection lost. Reconnecting..."})
         except Exception:
             pass
     finally:

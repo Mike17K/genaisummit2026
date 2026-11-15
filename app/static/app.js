@@ -57,8 +57,12 @@ function speakLocal(text, dangerLevel = 0) {
   } catch (_) {}
 }
 
+const WS_RECONNECT_MS = 500;
 let socket, stream, ctx, processor, frameTimer, wakeLock, debugTimer;
 let running = false;
+let reconnectTimer = null;
+let reconnecting = false;
+let reconnectAttempts = 0;
 let nextPlayTime = 0;
 const playing = new Set();
 
@@ -167,7 +171,7 @@ function renderDebug() {
 }
 
 function updateLiveState() {
-  if (!running || depthScanActive) return;
+  if (!running || depthScanActive || reconnecting || !socket || socket.readyState !== 1) return;
   const now = Date.now();
   if (dbg.voiceOpen && assistantEnabled) dbg.lastSpeechAt = now;
   const speaking = playing.size > 0 || (dbg.lastModelAudioAt && now - dbg.lastModelAudioAt < 700);
@@ -563,53 +567,58 @@ function sendFrame(fresh = false) {
   while (dbg.frameStamps.length && t - dbg.frameStamps[0] > 3000) dbg.frameStamps.shift();
 }
 
-async function start() {
-  requestSensorPermissions();
-  try { speechSynthesis.speak(new SpeechSynthesisUtterance("")); } catch (_) {}
-  Object.assign(dbg, { error: "", camera: "-", mic: "-", ws: "-", gemini: "-", sentKB: 0, sentFrames: 0, recvKB: 0,
-    recvChunks: 0, lastHeard: "", lastReply: "", lastEvent: "", lastModelAudioAt: 0, lastSpeechAt: 0, micPeak: 0,
-    startedAt: Date.now() });
-  setState("starting", "Starting...");
-
-  ctx = new (window.AudioContext || window.webkitAudioContext)();
-  await ctx.resume();
-  dbg.audioCtx = ctx.state;
-  ctx.onstatechange = () => { dbg.audioCtx = ctx.state; note("audio context: " + ctx.state); };
-
-  note("asking for camera and microphone");
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
-      video: { facingMode: "environment", focusMode: { ideal: "continuous" } },
-    });
-  } catch (err) {
-    dbg.camera = dbg.mic = "blocked (" + err.name + ")";
-    throw err;
+function scheduleReconnect() {
+  if (!running || reconnectTimer) return;
+  reconnecting = true;
+  reconnectAttempts++;
+  stopPlayback();
+  micGate.reset();
+  dbg.voiceOpen = false;
+  laptopInFlight = false;
+  dbg.gemini = "reconnecting";
+  if (!depthScanActive) {
+    setState("connecting", `Reconnecting in 0.5s (attempt ${reconnectAttempts})...`);
+    go.textContent = "Reconnecting... · Tap to stop";
   }
-  cam.srcObject = stream;
-  await cam.play();
-  videoTrack = stream.getVideoTracks()[0] || null;
-  videoCaps = (videoTrack && typeof videoTrack.getCapabilities === "function") ? videoTrack.getCapabilities() : {};
-  if (videoTrack && typeof videoTrack.applyConstraints === "function") {
-    if (Array.isArray(videoCaps.focusMode) && videoCaps.focusMode.includes("continuous")) {
-      await videoTrack.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(() => {});
-    }
-    if (videoCaps.pointsOfInterest) {
-      await videoTrack.applyConstraints({ advanced: [{ pointsOfInterest: [{ x: 0.5, y: 0.5 }] }] }).catch(() => {});
-    }
-  }
-  const initPdaf = readPdafDistance();
-  dbg.depth = initPdaf !== null ? `${initPdaf.toFixed(2)} m (PDAF)` : (videoCaps.focusDistance ? "PDAF ready" : "hold 1s (center-crop)");
-  dbg.camera = "ok";
-  note(`camera: ${cam.videoWidth}x${cam.videoHeight}, pdaf: ${videoCaps.focusDistance ? "supported" : "fallback"}`);
+  note(`reconnecting websocket in ${WS_RECONNECT_MS} ms (attempt ${reconnectAttempts})`);
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    if (running) openLiveSocket(false);
+  }, WS_RECONNECT_MS);
+}
 
-  setState("connecting", "Connecting to the assistant...");
+function openLiveSocket(isInitial = false) {
+  if (!running) return;
+  if (socket) {
+    socket.onopen = socket.onmessage = socket.onerror = socket.onclose = null;
+    try { if (socket.readyState <= 1) socket.close(); } catch (_) {}
+  }
+  reconnecting = true;
+  if (!depthScanActive) {
+    setState("connecting", isInitial ? "Connecting to the assistant..." : `Reconnecting (attempt ${reconnectAttempts})...`);
+    go.textContent = (isInitial ? "Connecting..." : "Reconnecting...") + " · Tap to stop";
+  }
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const langParam = (sessionLang === "English" || sessionLang === "Greek") ? `&lang=${encodeURIComponent(sessionLang)}` : "";
-  socket = new WebSocket(`${proto}://${location.host}/live?silence=${SILENCE_WAIT_MS}${langParam}${"speechSynthesis" in window ? "" : "&client_tts=0"}`);
-  note(`wait after you stop talking: ${SILENCE_WAIT_MS} ms`);
-  socket.binaryType = "arraybuffer";
-  socket.onmessage = (e) => {
+  const ws = new WebSocket(`${proto}://${location.host}/live?silence=${SILENCE_WAIT_MS}${langParam}${"speechSynthesis" in window ? "" : "&client_tts=0"}`);
+  socket = ws;
+  ws.binaryType = "arraybuffer";
+
+  ws.onopen = () => {
+    if (ws !== socket || !running) return;
+    reconnecting = false;
+    reconnectAttempts = 0;
+    dbg.error = "";
+    dbg.ws = "open";
+    note(isInitial ? "websocket open" : "websocket reconnected");
+    if (!depthScanActive) {
+      go.textContent = "Listening. Tap to stop · Hold 1s for depth";
+      setState("listening", assistantEnabled ? "Listening. Ask me anything." : "Safety watcher active (assistant off).");
+    }
+  };
+
+  ws.onmessage = (e) => {
+    if (ws !== socket) return;
     if (e.data instanceof ArrayBuffer) { if (!depthScanActive) playPcm(e.data); return; }
     const m = JSON.parse(e.data);
     dbg.lastEvent = m.type + (m.name ? ":" + m.name : "");
@@ -620,9 +629,14 @@ async function start() {
       }
       if (m.memory) dbg.memory = formatMemory(m.memory);
       dbg.gemini = "ready"; dbg.conn = m.conn || "-"; chime(); note(`gemini session ready, id ${dbg.conn} (${sessionLang || "English"})`);
-      socket.send(JSON.stringify({ type: "mode", mode: dbg.alertMode }));
-      socket.send(JSON.stringify({ type: "assistant", enabled: assistantEnabled }));
-      socket.send(JSON.stringify({ type: "depth_device", device: depthDevice, mode: depthMode, reason: depthReason }));
+      ws.send(JSON.stringify({ type: "mode", mode: dbg.alertMode }));
+      ws.send(JSON.stringify({ type: "assistant", enabled: assistantEnabled }));
+      ws.send(JSON.stringify({ type: "depth_device", device: depthDevice, mode: depthMode, reason: depthReason }));
+      if (depthScanActive) {
+        const d0 = readPdafDistance();
+        ws.send(JSON.stringify({ type: "depth_mode", active: true, pdaf: d0 !== null, device: depthDevice }));
+        if (depthDevice === "laptop" || !(depthEngine && depthEngine.ready)) sendLaptopDepthProbe();
+      }
     }
     else if (m.type === "depth_device_status") {
       if (m.provider) laptopProvider = m.provider;
@@ -672,7 +686,16 @@ async function start() {
     else if (m.type === "heard") { dbg.lastHeard = m.text; note("heard: " + m.text); }
     else if (m.type === "reply") { if (m.text) { dbg.lastReply = m.text; note("reply: " + m.text); } }
     else if (m.type === "tool") note("tool call: " + m.name + " " + JSON.stringify(m.args || {}));
-    else if (m.type === "error") { dbg.gemini = "error"; fail("server", m.text); chime(330); stop(false); }
+    else if (m.type === "error") {
+      const fatal = /not connected yet/i.test(m.text || "");
+      if (fatal) {
+        dbg.gemini = "error"; fail("server", m.text); chime(330); stop(false);
+      } else {
+        dbg.gemini = "reconnecting";
+        note("server error: " + m.text);
+        try { ws.close(); } catch (_) {}
+      }
+    }
     else if (m.type === "go_away") note("server says the session will end soon");
     else if (m.type === "depth_result") {
       if (depthScanActive && typeof m.dist_m === "number") {
@@ -714,15 +737,63 @@ async function start() {
     else if (m.type === "suppressed") note(`held back (${m.reason}): ${m.key}`);
     else if (m.type === "mode") { dbg.alertMode = m.mode; syncModeButton(); note("alert mode: " + m.mode); }
   };
-  socket.onclose = (e) => {
+
+  ws.onerror = () => {
+    if (ws !== socket) return;
+    dbg.ws = "error";
+    note("websocket error");
+  };
+
+  ws.onclose = (e) => {
+    if (ws !== socket) return;
     dbg.ws = `closed code ${e.code}${e.reason ? " " + e.reason : ""}`;
     note("websocket closed " + dbg.ws);
-    if (running) { fail("websocket", dbg.ws); stop(false); }
+    if (running) scheduleReconnect();
   };
-  await new Promise((res, rej) => {
-    socket.onopen = () => { dbg.ws = "open"; note("websocket open"); res(); };
-    socket.onerror = () => { dbg.ws = "error"; rej(new Error("could not reach the server (websocket error)")); };
-  });
+}
+
+async function start() {
+  requestSensorPermissions();
+  try { speechSynthesis.speak(new SpeechSynthesisUtterance("")); } catch (_) {}
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  reconnecting = false;
+  reconnectAttempts = 0;
+  Object.assign(dbg, { error: "", camera: "-", mic: "-", ws: "-", gemini: "-", sentKB: 0, sentFrames: 0, recvKB: 0,
+    recvChunks: 0, lastHeard: "", lastReply: "", lastEvent: "", lastModelAudioAt: 0, lastSpeechAt: 0, micPeak: 0,
+    startedAt: Date.now() });
+  setState("starting", "Starting...");
+
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  await ctx.resume();
+  dbg.audioCtx = ctx.state;
+  ctx.onstatechange = () => { dbg.audioCtx = ctx.state; note("audio context: " + ctx.state); };
+
+  note("asking for camera and microphone");
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+      video: { facingMode: "environment", focusMode: { ideal: "continuous" } },
+    });
+  } catch (err) {
+    dbg.camera = dbg.mic = "blocked (" + err.name + ")";
+    throw err;
+  }
+  cam.srcObject = stream;
+  await cam.play();
+  videoTrack = stream.getVideoTracks()[0] || null;
+  videoCaps = (videoTrack && typeof videoTrack.getCapabilities === "function") ? videoTrack.getCapabilities() : {};
+  if (videoTrack && typeof videoTrack.applyConstraints === "function") {
+    if (Array.isArray(videoCaps.focusMode) && videoCaps.focusMode.includes("continuous")) {
+      await videoTrack.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(() => {});
+    }
+    if (videoCaps.pointsOfInterest) {
+      await videoTrack.applyConstraints({ advanced: [{ pointsOfInterest: [{ x: 0.5, y: 0.5 }] }] }).catch(() => {});
+    }
+  }
+  const initPdaf = readPdafDistance();
+  dbg.depth = initPdaf !== null ? `${initPdaf.toFixed(2)} m (PDAF)` : (videoCaps.focusDistance ? "PDAF ready" : "hold 1s (center-crop)");
+  dbg.camera = "ok";
+  note(`camera: ${cam.videoWidth}x${cam.videoHeight}, pdaf: ${videoCaps.focusDistance ? "supported" : "fallback"}`);
 
   startMic();
   setFrameRate(3);
@@ -737,14 +808,17 @@ async function start() {
   running = true;
   dbg.startedAt = Date.now();
   go.setAttribute("aria-pressed", "true");
-  go.textContent = "Listening. Tap to stop · Hold 1s for depth";
-  setState("listening", assistantEnabled ? "Listening. Ask me anything." : "Safety watcher active (assistant off).");
+  note(`wait after you stop talking: ${SILENCE_WAIT_MS} ms`);
+  openLiveSocket(true);
 }
 
 function stop(announce = true) {
   const wasError = dbg.state === "error";
   stopDepthScan(false);
   running = false;
+  reconnecting = false;
+  reconnectAttempts = 0;
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
   videoTrack = null;
   videoCaps = {};
   smoothedDepthM = null;
@@ -754,7 +828,11 @@ function stop(announce = true) {
   stopPlayback();
   processor?.disconnect();
   stream?.getTracks().forEach((t) => t.stop());
-  if (socket && socket.readyState <= 1) socket.close();
+  if (socket) {
+    socket.onopen = socket.onmessage = socket.onerror = socket.onclose = null;
+    try { if (socket.readyState <= 1) socket.close(); } catch (_) {}
+    socket = null;
+  }
   wakeLock?.release?.();
   if (ctx && announce) chime(440);
   go.setAttribute("aria-pressed", "false");
