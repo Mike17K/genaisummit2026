@@ -1,0 +1,28 @@
+---
+description: Create, edit, storyboard, or render VoxEye product demo and launch videos using the local brag skill (.agents/skills/brag) and the VoxEye 3-Zone product-native blueprint (context/video-demo-blueprint.md). Trigger when the user mentions /brag, video demo, promo video, launch video, walkthrough video, storyboard, or OpenMontage/openmontaz.
+globs:
+  - "brag-output*/**"
+  - ".agents/skills/brag/**"
+  - "context/video-demo-blueprint.md"
+alwaysApply: false
+---
+
+# VoxEye Video Demo Skill (`/brag` + 3-Zone `product-native` Blueprint)
+
+When asked to plan, storyboard, or build a demo/launch/walkthrough video for **VoxEye (`genaisummit2026`)**, follow these two canonical project files:
+
+1. **Skill Workflow & Tooling:** [`.agents/skills/brag/SKILL.md`](../../.agents/skills/brag/SKILL.md)
+   - `<skill-dir>` in this repository is `.agents/skills/brag` (also installed globally at `~/.gemini/antigravity/skills/brag` and `~/.claude/skills/brag`).
+   - **Hard Rule:** Never animate or export the full video before the keyframe storyboard (`panels.mjs` + `review-server.mjs`) is approved by the user, unless `--no-storyboard` is explicitly requested.
+   - **Cursor Tool Mapping:**
+     - `AskUserQuestion` -> Ask concise multi-choice questions in chat (or use `ask_question` if available).
+     - `preview_start` -> Run `open <url>` via terminal command to open the local storyboard review page (`http://127.0.0.1:4517/`).
+     - `SendUserFile` -> Link the rendered files (`brag.mp4`, `brag.jpg`, `storyboard/panels/v1/pNN.jpg`) in markdown.
+
+2. **VoxEye Architecture & SOTA Demo Blueprint:** [`context/video-demo-blueprint.md`](../../context/video-demo-blueprint.md)
+   - Always use **`product-native` mode** (`runtime/timeline.js` + `tools/export-dom.mjs`) rather than hand-drawn 2D canvas styles (`cut-paper`, `riso`), so judges see VoxEye's real working UI and live telemetry.
+   - Build the **3-Zone Split-Screen `1920x1080` (`30fps`, ~45–60s) Stage**:
+     - **Left Zone:** Physical POV / Camera `<video data-start="...">` + `Depth-Anything-V2` plasma heatmap + center-probe distance (`2.1m -> 0.82m`) + compass bearing (`203° SW -> +30° turn`).
+     - **Center Zone:** Real `app/static/index.html` DOM (`#top` header + `#badge` + giant `#go` button transitioning `#0b5fff` hearing -> `#1a7f37` listening -> `#8250df` speaking -> `#d92d20` emergency stop -> `#0e7490` depth sonar + `#membox` + `#meter`).
+     - **Right Zone:** Real `app/static/trace.html` (`/panel`) live judge telemetry rows (`.heard`, `.tool`, `.reply`, `.error`) proving `router.py` (`decide_user_command`, `keep_memory=True`), `alerts.py` (`depth_stop <= 0.9m`), and `local_depth.py` / `spatial_sonar.js`.
+   - Drive timing **audio-first** using real bilingual (English & Greek) TTS audio synthesized via `app/server/audio/speak.py` + stereo Geiger sonar pulses from `app/static/spatial_sonar.js`, mixed via `<output-dir>/composition/audio.json` with FFmpeg `sidechaincompress` ducking and `-14 LUFS` loudness normalization.

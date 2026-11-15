@@ -9,6 +9,7 @@ Single source of truth for all research, architecture plans, hackathon rules, an
 ```text
 context/
 ├── VoxEye_logo.png
+├── video-demo-blueprint.md         # /brag Product-Native 3-Zone Video Demo Blueprint & SOTA Research
 ├── research/                       # BLV SOTA, Competitors & Open-Source Repo Research
 │   ├── tldr-sota-competitors-oss.md
 │   ├── competitors-solutions.md
@@ -58,3 +59,6 @@ context/
 - **[Kickoff Deck Notes](hackathon/kickoff-deck.md)** · **[Judges](hackathon/judges.md)** · **[Sponsors Research](hackathon/sponsors-research.md)**
 - **[Tracks & Credits](hackathon/tracks-and-credits.md)** · **[Credits & Claim Links](hackathon/credits-and-tools.md)**
 - **[Championship Blueprint](hackathon/championship-blueprint.md)** · **[Top 5 Winning Ideas](hackathon/top-5-winning-ideas.md)** · **[Benchmark](hackathon/benchmark.md)**
+
+### 4. Video Demo Blueprint & `/brag` Skill (`context/video-demo-blueprint.md`)
+- **[VoxEye Video Demo Blueprint & 2025–2026 Programmatic Video SOTA](video-demo-blueprint.md)** — `brag` (`product-native`) vs. OpenMontage (`openmontaz`) comparison, 3-Zone `1920x1080` stage architecture (`app/static/index.html` + `trace.html` + `Depth-Anything-V2` HUD), bilingual TTS & stereo Geiger sonar audio pipeline, and CLI commands for [`.agents/skills/brag/SKILL.md`](../.agents/skills/brag/SKILL.md).

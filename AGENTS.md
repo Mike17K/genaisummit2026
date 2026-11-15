@@ -1,1 +1,5 @@
 in the context folder we have all the context of the genaisummit
+
+## Video Demo Skill & VoxEye 3-Zone Blueprint (`/brag`)
+- **Video Demo Skill (`brag`)**: Installed in-repo at [`.agents/skills/brag/SKILL.md`](.agents/skills/brag/SKILL.md) (and globally at `~/.gemini/antigravity/skills/brag/SKILL.md` and `~/.claude/skills/brag/SKILL.md`), with Cursor rule support at [`.cursor/rules/brag-video-demo.mdc`](.cursor/rules/brag-video-demo.mdc).
+- **VoxEye Video Demo Blueprint & SOTA Research**: Read **[`context/video-demo-blueprint.md`](context/video-demo-blueprint.md)** for the verified comparison of `brag` (`product-native` mode) vs. OpenMontage (`openmontaz`) & 2025–2026 programmatic video SOTA, the **VoxEye 3-Zone `product-native` Demo Stage Blueprint** (`1920x1080`, `30fps`), the **Audio-First Bilingual TTS & Stereo Geiger Sonar Pipeline** (`app/server/audio/speak.py` + `app/static/spatial_sonar.js` -> `composition/audio.json`), and exact CLI commands (`panels.mjs`, `review-server.mjs`, `export-dom.mjs`).
