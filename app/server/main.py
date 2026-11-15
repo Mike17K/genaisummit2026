@@ -3,9 +3,10 @@ import asyncio
 import base64
 from contextlib import asynccontextmanager
 import uuid
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from .assistant import agent, tools
@@ -30,21 +31,20 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(title="VoxEye", lifespan=lifespan)
 
 
-@app.get("/")
-async def index(request: Request) -> FileResponse:
-    """Serve the VoxEye Sketchbook Landing Page by default, or the WebApp when ?app=1 is passed."""
-    if request.query_params.get("app") in ("1", "true") or "sonar" in request.query_params:
-        return FileResponse(STATIC / "index.html")
-    landing = STATIC / "landing.html"
-    if landing.exists():
-        return FileResponse(landing)
-    return FileResponse(STATIC / "index.html")
-
-
-@app.get("/landing")
-async def landing_page() -> FileResponse:
-    """Explicit route for the VoxEye Hackathon Landing Page."""
+@app.get("/", response_model=None)
+async def index(request: Request) -> FileResponse | RedirectResponse:
+    """Landing page. The WebApp lives at /app (old /?app=1 and /?sonar=... links redirect there)."""
+    q = request.query_params
+    if q.get("app") in ("1", "true") or "sonar" in q:
+        rest = urlencode([(k, v) for k, v in q.multi_items() if k != "app"])
+        return RedirectResponse("/app" + (f"?{rest}" if rest else ""), status_code=307)
     return FileResponse(STATIC / "landing.html")
+
+
+@app.get("/landing", include_in_schema=False)
+async def landing_page() -> RedirectResponse:
+    """Old landing URL: the landing page is now at /."""
+    return RedirectResponse("/", status_code=308)
 
 
 @app.get("/app")

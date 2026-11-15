@@ -118,7 +118,7 @@ class MainActivity : Activity() {
         if (missing().isNotEmpty()) requestPermissions(perms, 1)
         intent.getStringExtra("url")?.let { prefs().edit().putString(KEY, it).apply() }
         val saved = prefs().getString(KEY, null)
-        if (saved.isNullOrBlank()) askUrl("Enter VoxEye server URL:") else web.loadUrl(saved)
+        if (saved.isNullOrBlank()) askUrl("Enter VoxEye server URL:") else web.loadUrl(appUrl(saved))
     }
 
     private fun prefs() = getSharedPreferences("voxeye", Context.MODE_PRIVATE)
@@ -137,7 +137,7 @@ class MainActivity : Activity() {
                 if (u.isNotEmpty()) {
                     if (!u.contains("://")) u = "http://$u"
                     prefs().edit().putString(KEY, u).apply()
-                    web.loadUrl(u)
+                    web.loadUrl(appUrl(u))
                 }
             }
             .setNegativeButton("Cancel", null).show()
@@ -163,6 +163,13 @@ class MainActivity : Activity() {
     }
 
     companion object { const val KEY = "url" }
+
+    /** The server root is the landing page; the assistant runs at /app. A URL with its own path is kept. */
+    private fun appUrl(u: String): String {
+        val uri = Uri.parse(u)
+        val path = uri.path ?: ""
+        return if (path.isEmpty() || path == "/") uri.buildUpon().path("/app").build().toString() else u
+    }
 
     private fun origin(u: String?): String = try { Uri.parse(u ?: "").let { "${it.scheme}://${it.authority}" } } catch (_: Throwable) { "" }
 
