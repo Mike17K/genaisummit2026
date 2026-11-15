@@ -424,3 +424,19 @@ Expected: All test suites PASS with 0 regressions.
 git add app/server/live.py app/static/app.js app/static/index.html app/tests/test_spatial_decision.py
 git commit -m "feat(live,ui): wire 5-10Hz spatial telemetry stream, Live 3D scene tool, stereo earcons, and optional sonar"
 ```
+
+---
+
+### Task 5: Center-View Depth Identification Mode — Phased Roadmap (PDAF Now -> Depth-Anything-V2 Future)
+
+**Phased Architecture Decision:**
+1. **Phase 1 (Now — Approach 1: Web PDAF `focusDistance` + Hold-1s Tactile/Audio Depth Scanner):**
+   - **Sensor Readout:** Query `MediaStreamTrack.getCapabilities().focusDistance` and `videoTrack.getSettings().focusDistance` (in meters, continuous autofocus enabled via `applyConstraints({ advanced: [{ focusMode: "continuous" }] })` on Chrome for Android). When browser/HAL does not expose `focusDistance` (e.g., iOS Safari or uncalibrated Camera2 HAL), fall back seamlessly to fast center-patch `(0.5, 0.5)` visual distance estimation over the active WebSocket so hold-to-scan works on every phone.
+   - **Hold-to-Scan UI (`> 1.0 s` press-and-hold on `#go`):**
+     - Short tap (`< 1.0 s`): starts/stops VoxEye as normal.
+     - Press & hold (`>= 1.0 s` while running): enters **Depth Identification Mode** continuously for as long as the finger stays held down, exiting cleanly back to listening the instant the finger releases (suppressing the release `click` so the session never stops accidentally).
+   - **Distance-Proportional Haptic Power + Volume Beeping:**
+     - **Haptic Vibration (Primary when `navigator.vibrate` is supported):** Scales perceived vibration power via PWM pulse width & cadence (`12 ms` gentle tick every `520 ms` at `>= 3.5 m` ramping up to `100 ms` high-power buzz every `110 ms` at `<= 0.2 m`).
+     - **Volume-Scaled Sonar Beep (Synchronized / Automatic Fallback):** Soft WebAudio sine/triangle ping whose **volume (`GainNode`)** scales quadratically with proximity (`0.012` whisper when far up to `0.28` loud ping when very close), muting mic gate echo during scan.
+2. **Phase 2 (Future if Needed — `Depth-Anything-V2-Metric-Small`):**
+   - Because smartphone PDAF hits its optical hyperfocal ceiling around `~1.5–2.0 m` and lacks phase contrast on blank flat walls, if higher-range (`0.3–8.0 m`) or universal cross-browser metric accuracy is needed later, add `Depth-Anything-V2-Metric-Small` (server-side GPU/ONNX or WebGPU) sampling the exact center `(0.5, 0.5)` patch and 3-corridor clearance grid on existing camera frames without changing the Hold-1s UI or haptic/beep feedback loop.
