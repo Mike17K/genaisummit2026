@@ -1,0 +1,12 @@
+.venv
+.env
+.git
+.debug
+.pytest_cache
+.ruff_cache
+__pycache__
+*.pyc
+.user_memory.json
+.last_lang
+tests
+debug_triggers
