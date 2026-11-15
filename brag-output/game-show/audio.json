@@ -1,0 +1,22 @@
+{
+  "lufs": -14,
+  "music": {
+    "file": "../../.agents/skills/brag/assets/music/happy-beats-business-moves-vol-10-by-ende-dot-app.mp3",
+    "start": 0,
+    "gain": -3,
+    "fadeIn": 0.05,
+    "fadeOut": 1.5
+  },
+  "voice": {
+    "file": "voice/voice.wav",
+    "gain": 4,
+    "musicUnderVoice": -8
+  },
+  "sfx": [
+    {
+      "file": "voice/stem-sfx.wav",
+      "t": 0.0,
+      "gain": 0
+    }
+  ]
+}
